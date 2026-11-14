@@ -325,12 +325,13 @@ class MainActivity : Activity() {
 
     override fun onStop() {
         super.onStop()
+        PlaybackService.appVisible = false
         BgLog.add("actividad", "onStop")
         if (::web.isInitialized) web.resumeTimers()      // que la página siga ejecutándose con la pantalla apagada
         resumeSoon()
     }
 
-    override fun onStart() { super.onStart(); BgLog.add("actividad", "onStart"); resumeSoon() }
+    override fun onStart() { super.onStart(); PlaybackService.appVisible = true; BgLog.add("actividad", "onStart"); resumeSoon() }
 
     override fun onDestroy() {
         BgLog.add("actividad", "onDestroy")

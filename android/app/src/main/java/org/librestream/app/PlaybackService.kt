@@ -44,6 +44,9 @@ class PlaybackService : Service() {
         @Volatile private var instance: PlaybackService? = null
         val isRunning: Boolean get() = instance != null
 
+        /** La pantalla de Nsound está a la vista. Solo entonces se puede soltar el primer plano al pausar: desde segundo plano Android 12+ no deja volver a ponerlo y mata el servicio. */
+        @Volatile var appVisible = false
+
         fun update(ctx: Context, title: String, artist: String, album: String, artwork: String, duration: Double, position: Double, playing: Boolean) {
             val i = Intent(ctx, PlaybackService::class.java).setAction(ACTION_UPDATE)
                 .putExtra("title", title).putExtra("artist", artist).putExtra("album", album).putExtra("artwork", artwork)
@@ -195,6 +198,10 @@ class PlaybackService : Service() {
                 else startForeground(NOTIFICATION_ID, n)
                 foreground = true
                 BgLog.add("servicio", "en primer plano (notificación puesta)")
+            } else if (foreground && !appVisible) {
+                // Pausa con la app en segundo plano (p. ej. YouTube se pausa solo al apagar la pantalla): se mantiene el primer plano,
+                // porque si se suelta Android no deja recuperarlo (ForegroundServiceStartNotAllowedException) y mata el servicio.
+                (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).notify(NOTIFICATION_ID, n)
             } else {
                 // En pausa la notificación se puede descartar deslizando
                 stopForeground(Service.STOP_FOREGROUND_DETACH)
