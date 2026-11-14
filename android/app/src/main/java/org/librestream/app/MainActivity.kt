@@ -7,6 +7,9 @@ import android.content.ComponentName
 import android.content.Context
 import android.net.Uri
 import android.os.PowerManager
+import android.content.BroadcastReceiver
+import android.content.IntentFilter
+import android.media.AudioManager
 import android.provider.Settings
 import org.json.JSONObject
 import android.os.Build
@@ -97,6 +100,7 @@ class MainActivity : Activity() {
             // Los enlaces externos se abren en el navegador; la propia app y los iframes siguen dentro
             override fun onRenderProcessGone(view: WebView, detail: android.webkit.RenderProcessGoneDetail): Boolean {
                 // El sistema cerró el proceso de la página (suele pasar en segundo plano con poca memoria o ahorro agresivo): se vuelve a cargar
+                BgLog.add("página", "el sistema cerró el proceso de la página (se cerró por fallo: ${detail.didCrash()})")
                 view.post { view.reload() }
                 return true
             }
@@ -139,6 +143,9 @@ class MainActivity : Activity() {
         }
 
         web.addJavascriptInterface(NativeBridge(this, web), "AndroidBridge")
+        BgLog.init(filesDir)
+        BgLog.add("actividad", "onCreate · nueva ejecución de Nsound")
+        registerReceiver(screenReceiver, IntentFilter().apply { addAction(Intent.ACTION_SCREEN_OFF); addAction(Intent.ACTION_SCREEN_ON); addAction(Intent.ACTION_USER_PRESENT) })
 
         // Ecualizador: se inyecta en el iframe de YouTube antes de que cargue su contenido
         if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
@@ -270,6 +277,38 @@ class MainActivity : Activity() {
         }
     }
 
+    private val screenReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            BgLog.add("pantalla", when (intent?.action) {
+                Intent.ACTION_SCREEN_OFF -> "apagada"
+                Intent.ACTION_SCREEN_ON -> "encendida"
+                Intent.ACTION_USER_PRESENT -> "desbloqueada"
+                else -> intent?.action ?: "?"
+            } + " · música sonando en el sistema: ${(getSystemService(Context.AUDIO_SERVICE) as AudioManager).isMusicActive}")
+        }
+    }
+
+    /** Informe de segundo plano: datos del móvil, permisos y los últimos eventos. El usuario lo copia y lo envía. */
+    fun bgReport(): String {
+        val sb = StringBuilder()
+        fun line(k: String, v: Any?) { sb.append(k).append(": ").append(v).append('\n') }
+        line("Móvil", "${Build.MANUFACTURER} ${Build.MODEL} (${Build.BRAND})")
+        line("Android", "${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})")
+        line("Nsound", try { packageManager.getPackageInfo(packageName, 0).versionName } catch (_: Exception) { "?" })
+        line("WebView", try { if (Build.VERSION.SDK_INT >= 26) WebView.getCurrentWebViewPackage()?.let { "${it.packageName} ${it.versionName}" } else "antiguo" } catch (_: Exception) { "?" })
+        line("Script de arranque admitido", WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT))
+        line("Restricción de batería quitada", try { (getSystemService(Context.POWER_SERVICE) as PowerManager).isIgnoringBatteryOptimizations(packageName) } catch (_: Exception) { "?" })
+        line("Notificaciones permitidas", try { (getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager).areNotificationsEnabled() } catch (_: Exception) { "?" })
+        if (Build.VERSION.SDK_INT >= 33) line("Permiso de notificaciones concedido", checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) == android.content.pm.PackageManager.PERMISSION_GRANTED)
+        if (Build.VERSION.SDK_INT >= 28) line("Grupo de espera de la app", try { (getSystemService(Context.USAGE_STATS_SERVICE) as android.app.usage.UsageStatsManager).appStandbyBucket } catch (_: Exception) { "?" })
+        line("Servicio de música en marcha", PlaybackService.isRunning)
+        line("Música sonando en el sistema", (getSystemService(Context.AUDIO_SERVICE) as AudioManager).isMusicActive)
+        sb.append("\n--- Últimos eventos ---\n").append(BgLog.dump())
+        return sb.toString()
+    }
+
+    override fun onResume() { super.onResume(); BgLog.add("actividad", "onResume") }
+
     private val lifecycleHandler = Handler(Looper.getMainLooper())
 
     /** Al salir, apagar la pantalla o desbloquear, el sistema puede pausar el reproductor de YouTube: se pide a la interfaz que reanude (solo si sonaba y no la pausó el usuario). */
@@ -282,17 +321,20 @@ class MainActivity : Activity() {
         }
     }
 
-    override fun onPause() { super.onPause(); resumeSoon() }
+    override fun onPause() { super.onPause(); BgLog.add("actividad", "onPause"); resumeSoon() }
 
     override fun onStop() {
         super.onStop()
+        BgLog.add("actividad", "onStop")
         if (::web.isInitialized) web.resumeTimers()      // que la página siga ejecutándose con la pantalla apagada
         resumeSoon()
     }
 
-    override fun onStart() { super.onStart(); resumeSoon() }
+    override fun onStart() { super.onStart(); BgLog.add("actividad", "onStart"); resumeSoon() }
 
     override fun onDestroy() {
+        BgLog.add("actividad", "onDestroy")
+        try { unregisterReceiver(screenReceiver) } catch (_: Exception) { /* ya quitado */ }
         lifecycleHandler.removeCallbacksAndMessages(null)
         PlaybackService.listener = null
         PlaybackService.stop(this)

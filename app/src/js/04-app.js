@@ -522,6 +522,10 @@
           <button class="chip" data-act="bgauto">Inicio automático / segundo plano</button>
           <button class="chip" data-act="bgapp">Ajustes de la app</button></div>
         <p class="note" id="bgSteps"></p>
+        <div class="row-actions"><button class="chip" data-act="bgreport">Informe de segundo plano</button><button class="chip" data-act="bgclear">Borrar informe</button></div>
+        <p class="note">Para ver por qué se para: pon una canción, apaga la pantalla, espera un minuto, enciéndela y pulsa «Informe de segundo plano». Cópialo y envíaselo a quien te lo pidió.</p>
+        <textarea id="bgReport" readonly rows="12" style="width:100%;display:none;font:12px/1.4 monospace;background:#0000004d;color:inherit;border:1px solid #ffffff22;border-radius:8px;padding:8px"></textarea>
+        <div class="row-actions"><button class="chip" data-act="bgcopy" id="bgCopy" style="display:none">Copiar informe</button></div>
         <p class="note">Muchos móviles (Oppo, Xiaomi, Vivo, Huawei, a veces Samsung) cierran las apps en segundo plano aunque suene música. Estos ajustes se lo impiden a Nsound; sin ellos el móvil puede parar la música al apagar la pantalla. Más información: <a href="https://dontkillmyapp.com" target="_blank" rel="noopener">dontkillmyapp.com</a>.</p></section>` : ''}
       <!-- Privacidad (bloqueo de anuncios): oculto en la interfaz; el bloqueo sigue activo por defecto -->
       <section class="panel"><h2>Acerca de</h2><p class="note">Nsound es gratuita, sin ánimo de lucro y sin suscripciones; su código es visible para uso no comercial. YouTube se reproduce con su reproductor oficial y no se descarga. Letras: LRCLIB. Plataforma: ${esc(Native.platform)}.</p></section>`;
@@ -644,6 +648,7 @@
     }
     if (Native.platform !== 'web' && Native.platform !== 'ios') Native.call('nowPlaying', { title: m.title, artist: m.artist, album: m.album, artwork: m.artwork[0] ? m.artwork[0].src : '', duration: it.duration || 0, position: 0, playing: true }).catch(() => {});
   }
+  const bgState = { playing: null };
   function mediaSessionTick(st) {
     if (S.now && S.msSent !== S.now.key && st.playing) { S.msSent = S.now.key; S.msAck = false; msFrame({ lsMedia: LS.mediaMeta(S.now) }); }   // el marco puede crearse después
     if (S.now && st.playing && !S.msAck && Date.now() - (S.msLast || 0) > (S.msAck ? 8000 : 2000)) msResend();   // sin confirmación: cada 2 s; con ella, cada 8 s (al bloquear y desbloquear iOS puede volver a poner «±10 s»)
@@ -693,7 +698,7 @@
     if (!e || e.type !== 'remote') return;
     if (e.cmd === 'play') Player.play(); else if (e.cmd === 'pause') Player.pause();
     // Al salir de la app, bloquear o desbloquear el móvil el sistema puede pausar YouTube: se reanuda solo si sonaba y no la pausó el usuario
-    else if (e.cmd === 'resume') { msResend(); if (S.now && S.wantPlay && !S.userPause && !(S.duration > 0 && S.time >= S.duration - 2)) rawPlay(); }
+    else if (e.cmd === 'resume') { if (Native.platform === 'android') Native.call('bgLog', { msg: 'se pide reanudar · suena=' + !!S.playing + ' · quería sonar=' + !!S.wantPlay + ' · pausa del usuario=' + !!S.userPause }).catch(() => {}); msResend(); if (S.now && S.wantPlay && !S.userPause && !(S.duration > 0 && S.time >= S.duration - 2)) rawPlay(); }
     else if (e.cmd === 'next' || e.cmd === 'prev') {
       if (e.cmd === 'next') next(); else prev();
       // Con la pantalla bloqueada y en pausa la canción nueva puede quedarse sin empezar: se insiste unos segundos
@@ -777,6 +782,10 @@
   }
 
   Player.on('state', (st) => {
+    if (Native.platform === 'android' && bgState.playing !== !!st.playing) {
+      bgState.playing = !!st.playing;
+      Native.call('bgLog', { msg: (st.playing ? 'suena' : 'en pausa') + ' · t=' + Math.round(st.time || 0) + ' s · pausa del usuario=' + !!S.userPause + ' · página oculta=' + document.hidden }).catch(() => {});
+    }
     if (st.playing && !S.userPause) S.wantPlay = true;
     if (st.playing && Native.platform === 'android' && !S.bgHinted) {
       S.bgHinted = true;
@@ -1191,6 +1200,9 @@
       case 'play': play(d.key, d.list); break;
       case 'bgbattery': bgAction('batteryRequest', (r) => r === 'peticion' ? 'Pulsa «Permitir» en el aviso del sistema.' : 'Busca Nsound en la lista y elige «Sin restricciones».'); break;
       case 'bgauto': bgAction('autostartSettings', (r) => r === 'fabricante' ? 'Activa Nsound en esa pantalla.' : 'No hay pantalla de inicio automático en tu móvil: se abrieron los ajustes de la app (Batería → Sin restricciones).'); break;
+      case 'bgreport': Native.call('bgReport', {}).then((t) => { const el = $('#bgReport'); if (!el) return; el.value = JSON.parse(t); el.style.display = 'block'; $('#bgCopy').style.display = ''; el.scrollTop = el.scrollHeight; }).catch((e) => toast('No se pudo generar el informe: ' + e.message, 5000)); break;
+      case 'bgclear': Native.call('bgClear', {}).then(() => { const el = $('#bgReport'); if (el) { el.value = ''; el.style.display = 'none'; } toast('Informe borrado.', 2500); }).catch(() => {}); break;
+      case 'bgcopy': { const el = $('#bgReport'); if (!el) break; el.focus(); el.select(); let ok = false; try { ok = document.execCommand('copy'); } catch (e) { /* sin permiso */ } toast(ok ? 'Informe copiado.' : 'Selecciona el texto y cópialo a mano.', 3500); break; }
       case 'bgapp': bgAction('appSettings', () => 'En Batería, elige «Sin restricciones».'); break;
       case 'artist': go(LS.artistHash(d.name)); break;
       case 'back': if (history.length > 1) history.back(); else go('#/music'); break;

@@ -42,6 +42,7 @@ class PlaybackService : Service() {
         /** Quién recibe las órdenes de los botones: (orden, posición en segundos). Se ejecuta en el hilo principal. */
         @Volatile var listener: ((String, Double) -> Unit)? = null
         @Volatile private var instance: PlaybackService? = null
+        val isRunning: Boolean get() = instance != null
 
         fun update(ctx: Context, title: String, artist: String, album: String, artwork: String, duration: Double, position: Double, playing: Boolean) {
             val i = Intent(ctx, PlaybackService::class.java).setAction(ACTION_UPDATE)
@@ -84,6 +85,7 @@ class PlaybackService : Service() {
     override fun onCreate() {
         super.onCreate()
         instance = this
+        BgLog.add("servicio", "creado")
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val ch = NotificationChannel(CHANNEL, "Reproducción", NotificationManager.IMPORTANCE_LOW)
             ch.setShowBadge(false)
@@ -102,6 +104,7 @@ class PlaybackService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        BgLog.add("servicio", "orden ${intent?.action?.substringAfterLast('.') ?: "sin acción"}")
         when (intent?.action) {
             ACTION_UPDATE -> {
                 title = intent.getStringExtra("title") ?: ""
@@ -191,13 +194,16 @@ class PlaybackService : Service() {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) startForeground(NOTIFICATION_ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK)
                 else startForeground(NOTIFICATION_ID, n)
                 foreground = true
+                BgLog.add("servicio", "en primer plano (notificación puesta)")
             } else {
                 // En pausa la notificación se puede descartar deslizando
                 stopForeground(Service.STOP_FOREGROUND_DETACH)
                 foreground = false
                 (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).notify(NOTIFICATION_ID, n)
             }
-        } catch (e: Exception) { /* sin permiso de notificaciones: la música sigue */ }
+        } catch (e: Exception) {
+            BgLog.add("servicio", "NO pudo ponerse en primer plano: ${e.javaClass.simpleName}: ${e.message}")   // sin permiso de notificaciones o sistema que lo impide
+        }
     }
 
     /** Solo se descargan carátulas de los servidores de imágenes de YouTube. */
@@ -217,11 +223,13 @@ class PlaybackService : Service() {
 
     override fun onTaskRemoved(rootIntent: Intent?) {
         // Se cierra la app desde recientes: se para también la música y la notificación
+        BgLog.add("servicio", "app cerrada desde recientes")
         stopSelf()
         super.onTaskRemoved(rootIntent)
     }
 
     override fun onDestroy() {
+        BgLog.add("servicio", "destruido")
         try { if (wake?.isHeld == true) wake?.release() } catch (e: Exception) { /* ya liberado */ }
         session?.isActive = false
         session?.release()

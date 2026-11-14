@@ -51,6 +51,9 @@ class NativeBridge(private val activity: MainActivity, private val web: WebView)
                         PlaybackService.state(activity, p.optDouble("position", 0.0), p.optDouble("duration", 0.0), p.optBoolean("playing", false))
                         resolve(id, true, "\"ok\"")
                     }
+                    "bgLog" -> { BgLog.add("página", p.optString("msg").take(160)); resolve(id, true, "\"ok\"") }
+                    "bgReport" -> resolve(id, true, JSONObject.quote(activity.bgReport()))
+                    "bgClear" -> { BgLog.clear(); resolve(id, true, "\"ok\"") }
                     "batteryInfo" -> resolve(id, true, activity.batteryInfo().toString())
                     "batteryRequest" -> resolve(id, true, JSONObject.quote(activity.openBatterySettings()))
                     "appSettings" -> resolve(id, true, JSONObject.quote(activity.openAppSettings()))
