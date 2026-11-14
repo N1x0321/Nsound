@@ -12,9 +12,9 @@ A logcat -c
 A shell pm grant org.librestream.app android.permission.POST_NOTIFICATIONS 2>/dev/null
 P "abrir en Ajustes"; A shell am start -n org.librestream.app/.MainActivity --es route settings 2>&1 | tee "$OUT/start.txt"
 sleep 30; SHOT 1-ajustes.png
-for i in 1 2 3 4 5 6; do A shell input swipe 540 1900 540 500 300; sleep 1; done
+for i in $(seq 1 14); do A shell input keyevent 93; sleep 0.6; done   # Re Pág: el deslizamiento táctil no desplazaba la página
 sleep 2; SHOT 2-segundo-plano.png
-for i in 1 2; do A shell input swipe 540 1900 540 500 300; sleep 1; done; SHOT 3-mas-abajo.png
+for i in $(seq 1 8); do A shell input keyevent 93; sleep 0.6; done; SHOT 3-mas-abajo.png
 P "segundo plano"; A shell input keyevent 3; sleep 8; SHOT 4-fuera.png
 P "volver"; A shell am start -n org.librestream.app/.MainActivity; sleep 8
 P "pantalla apagada y encendida"; A shell input keyevent 26; sleep 5; A shell input keyevent 26; sleep 3; A shell input keyevent 82; sleep 4; SHOT 5-pantalla.png
