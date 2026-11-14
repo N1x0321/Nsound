@@ -698,7 +698,7 @@
     if (!e || e.type !== 'remote') return;
     if (e.cmd === 'play') Player.play(); else if (e.cmd === 'pause') Player.pause();
     // Al salir de la app, bloquear o desbloquear el móvil el sistema puede pausar YouTube: se reanuda solo si sonaba y no la pausó el usuario
-    else if (e.cmd === 'resume') { if (Native.platform === 'android') Native.call('bgLog', { msg: 'se pide reanudar · suena=' + !!S.playing + ' · quería sonar=' + !!S.wantPlay + ' · pausa del usuario=' + !!S.userPause }).catch(() => {}); msResend(); if (S.now && S.wantPlay && !S.userPause && !(S.duration > 0 && S.time >= S.duration - 2)) rawPlay(); }
+    else if (e.cmd === 'resume') { if (Native.platform === 'android' && (S.wantPlay || S.playing)) Native.call('bgLog', { msg: 'se pide reanudar · suena=' + !!S.playing + ' · quería sonar=' + !!S.wantPlay + ' · pausa del usuario=' + !!S.userPause }).catch(() => {}); msResend(); if (S.now && S.wantPlay && !S.userPause && !(S.duration > 0 && S.time >= S.duration - 2)) rawPlay(); }
     else if (e.cmd === 'next' || e.cmd === 'prev') {
       if (e.cmd === 'next') next(); else prev();
       // Con la pantalla bloqueada y en pausa la canción nueva puede quedarse sin empezar: se insiste unos segundos
