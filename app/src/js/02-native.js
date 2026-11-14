@@ -48,8 +48,8 @@ var LS = globalThis.LS = globalThis.LS || {};
     return webCall(name, payload);
   }
 
-  /** ¿Es una app de móvil (iPhone o Android)? Ahí el ecualizador no se puede usar sin cortar la música en segundo plano. */
-  LS.eqUnavailable = () => !!(LS.Native && (LS.Native.platform === 'ios' || LS.Native.platform === 'android'));
+  /** El ecualizador está retirado de la interfaz compartida (móvil y navegador): calentaba el móvil y cortaba la música en segundo plano. Solo queda en la app de Windows, que tiene el suyo. */
+  LS.eqUnavailable = () => true;
 
   LS.Native = {
     platform,
