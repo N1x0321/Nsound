@@ -22,18 +22,18 @@
       ],
       "version": "0.8.0",
       "versionDate": "2026-11-14",
-      "downloadURL": "https://github.com/vhkp259r94-cmyk/spotios/releases/download/v0.8.0-beta.6/Nsound-0.8.0-beta.6-unsigned.ipa",
-      "size": 1188363,
+      "downloadURL": "https://github.com/vhkp259r94-cmyk/spotios/releases/download/v0.8.0-beta.7/Nsound-0.8.0-beta.7-unsigned.ipa",
+      "size": 1190854,
       "versions": [
         {
           "version": "0.8.0",
-          "buildVersion": "60",
+          "buildVersion": "61",
           "date": "2026-11-14",
-          "localizedDescription": "Nsound v0.8.0-beta.6",
-          "downloadURL": "https://github.com/vhkp259r94-cmyk/spotios/releases/download/v0.8.0-beta.6/Nsound-0.8.0-beta.6-unsigned.ipa",
-          "size": 1188363,
+          "localizedDescription": "Nsound v0.8.0-beta.7",
+          "downloadURL": "https://github.com/vhkp259r94-cmyk/spotios/releases/download/v0.8.0-beta.7/Nsound-0.8.0-beta.7-unsigned.ipa",
+          "size": 1190854,
           "minOSVersion": "16.0",
-          "sha256": "991eb806a0ede840c43f954f2f6912701ac2a37f740c1ab34aa2b2ab612f43d8"
+          "sha256": "4dff4ffc21d8a415757e37eb9892d0d5b133562e835c9b64f14f0d78d471c509"
         }
       ],
       "appPermissions": {
