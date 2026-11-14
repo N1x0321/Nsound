@@ -138,7 +138,9 @@ var LS = globalThis.LS = globalThis.LS || {};
       if (yt && ytReady) yt.setVolume(volume);
       media().volume = volume / 100;
     },
-    setEq(gains, enabled) { eq = { gains: gains.slice(), on: !!enabled }; postEq(); },
+    // En las apps de iPhone y Android el ecualizador queda apagado siempre: engancha el sonido a un procesador de audio que el sistema
+    // corta al salir de la app o bloquear el móvil (la música se paraba del todo). Solo funciona en Windows y en navegadores.
+    setEq(gains, enabled) { eq = { gains: gains.slice(), on: !!enabled && !LS.eqUnavailable() }; postEq(); },
     eqStatus,
   };
 })(LS);
