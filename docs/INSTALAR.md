@@ -108,6 +108,7 @@ y la app deja de abrirse, y pasas tus datos por terceros que no controlas.
   Esto lo decide iOS y no se puede evitar con una app que no es de la tienda.
 - **Android:** una notificación de reproducción mantiene la música con la pantalla apagada. Si cierras Nsound desde las apps recientes, se para a propósito.
   Algunos móviles con ahorro de batería agresivo pueden cerrarla igualmente: en ese caso quita la restricción de batería para Nsound.
-- El **ecualizador** y las **descargas sin conexión** son lo menos probado.
+- El **ecualizador** solo funciona en **Windows y en el navegador**. En **iPhone y Android está desactivado**: al engancharse al sonido de YouTube,
+  el sistema cortaba la música al salir de la app o bloquear el móvil. Las **descargas sin conexión** son lo menos probado.
 - YouTube no se descarga: solo se reproduce con su reproductor oficial. Las descargas son del contenido libre
   (Creative Commons).

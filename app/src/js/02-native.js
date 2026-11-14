@@ -48,6 +48,9 @@ var LS = globalThis.LS = globalThis.LS || {};
     return webCall(name, payload);
   }
 
+  /** ¿Es una app de móvil (iPhone o Android)? Ahí el ecualizador no se puede usar sin cortar la música en segundo plano. */
+  LS.eqUnavailable = () => !!(LS.Native && (LS.Native.platform === 'ios' || LS.Native.platform === 'android'));
+
   LS.Native = {
     platform,
     call,

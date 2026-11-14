@@ -510,7 +510,8 @@
         <p class="note">Elige el estilo: cambia colores, brillo y animaciones al momento. «Clásico» es el aspecto de siempre; los demás se apagan solos si tu móvil tiene «reducir movimiento».</p><label class="switch"><input type="checkbox" id="reactiveOn" ${s.reactive ? 'checked' : ''}> Efectos que reaccionan a la música</label>
         <p class="note">Pulso suave en la pantalla «Reproduciendo». Con el ecualizador activo sigue el audio real. Se apaga solo con «reducir movimiento», ahorro de datos o batería baja.</p></section>
       <section class="panel"><h2>Ecualizador</h2>
-        <label class="switch"><input type="checkbox" id="eqOn" ${s.eqEnabled ? 'checked' : ''}> Activar ecualizador</label>
+        <label class="switch"><input type="checkbox" id="eqOn" ${s.eqEnabled && !LS.eqUnavailable() ? 'checked' : ''} ${LS.eqUnavailable() ? 'disabled' : ''}> Activar ecualizador</label>
+        ${LS.eqUnavailable() ? '<p class="note"><b>No disponible en el móvil:</b> en iPhone y Android el ecualizador cortaba la música al salir de la app o bloquear la pantalla, así que está desactivado. Sigue disponible en Windows y en el navegador.</p>' : ''}
         <label class="field">Ajuste <select id="eqPreset">${[...Object.keys(LS.EQ_PRESETS), LS.EQ_CUSTOM].map((n) => `<option ${n === s.eqPreset ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select></label>
         <div class="eq" id="eqBands">${s.eqBands.map((b, i) => `<label><span>${LS.EQ_LABELS[i]}</span><input type="range" min="-12" max="12" step="1" value="${b}" data-band="${i}"><output>${fmtGain(b)}</output></label>`).join('')}</div>
         <p id="eqStatus" class="hint"></p>
@@ -525,6 +526,7 @@
   async function refreshEqStatus() {
     const el = $('#eqStatus');
     if (!el) return;
+    if (LS.eqUnavailable()) { el.textContent = 'Ecualizador no disponible en el móvil.'; return; }
     if (!store.settings.get().eqEnabled) { el.textContent = 'Ecualizador desactivado.'; return; }
     const st = await Player.eqStatus();
     if (!$('#eqStatus')) return;
