@@ -115,6 +115,7 @@ public sealed partial class MainWindow : Window
             }
         });
         _heroTimer.Start();
+        _colorDelay.Tick += (_, _) => Safe("Color", ApplyPendingAccent);
         _searchDelay.Tick += (_, _) => { _searchDelay.Stop(); _ = SearchYouTubeAsync(Search.Text); };
         _saveTimer.Tick += (_, _) => { _saveTimer.Stop(); Safe("Guardar ajustes", _settings.Save); };
         Closed += (_, _) => Safe("Cierre", () => { _settings.Save(); _timer.Stop(); _heroTimer.Stop(); });
@@ -124,7 +125,7 @@ public sealed partial class MainWindow : Window
         BuildChips(Genres, GenreNames, Genre_Click);
         BuildChips(ScopeChips, ["Todo", "Música", "Vídeos"], Scope_Click, ["all", "track", "video"]);
         BuildEqUi();
-        LookBox.ItemsSource = Themes.All.Select(t => t.Name).ToList();
+        LookBox.ItemsSource = Themes.Names;
         ApplyLook(_settings.Current.Look);
         StartKenBurns();
         _ = LoadAsync();
@@ -1159,7 +1160,8 @@ public sealed partial class MainWindow : Window
         }
         DownloadFolderText.Text = "Carpeta: " + _settings.DownloadFolder;
         AdBlockToggle.IsOn = s.AdBlock;
-        LookBox.SelectedIndex = Math.Max(0, Array.FindIndex(Themes.All, t => t.Id == s.Look));
+        LookBox.SelectedIndex = s.Look == Themes.CustomId ? Themes.All.Length : Math.Max(0, Array.FindIndex(Themes.All, t => t.Id == s.Look));
+        ShowCustomSwatch(s.CustomAccent);
         _loadingUi = false;
         _ = RefreshEqStatusAsync();
     }
@@ -1426,7 +1428,7 @@ public sealed partial class MainWindow : Window
     /// <summary>Aplica un estilo: cambia los pinceles compartidos en caliente (todo lo que los usa se actualiza).</summary>
     private void ApplyLook(string id)
     {
-        var t = _palette = Themes.Find(id);
+        var t = _palette = Themes.Resolve(id, _settings.Current.CustomAccent);
         var classic = t.Id == "clasico";
         // Los botones de acento de Fluent toman su color de SystemAccentColor*: se cambian y se fuerza a releer el tema
         var res = Application.Current.Resources;
@@ -1763,10 +1765,54 @@ public sealed partial class MainWindow : Window
     private void Look_Changed(object sender, SelectionChangedEventArgs e)
     {
         if (_loadingUi || LookBox.SelectedIndex < 0) return;
-        var id = Themes.All[LookBox.SelectedIndex].Id;
+        var custom = LookBox.SelectedIndex >= Themes.All.Length;
+        if (custom && _settings.Current.CustomAccent is null) _settings.Current.CustomAccent = Themes.NormalizeHex(_palette.Accent);   // sin color elegido aún: parte del acento actual
+        var id = custom ? Themes.CustomId : Themes.All[LookBox.SelectedIndex].Id;
         _settings.Current.Look = id;
+        ShowCustomSwatch(_settings.Current.CustomAccent);
         ScheduleSave();
         ApplyLook(id);
+    }
+
+    private readonly DispatcherTimer _colorDelay = new() { Interval = TimeSpan.FromMilliseconds(180) };
+    private string? _pendingAccent;
+
+    private void ShowCustomSwatch(string? hex)
+    {
+        var ok = Themes.TryParseHex(hex, out var c) && _settings.Current.Look == Themes.CustomId;
+        CustomSwatch.Visibility = Vis(ok);
+        if (!ok) return;
+        var color = Windows.UI.Color.FromArgb(255, c.R, c.G, c.B);
+        CustomSwatch.Background = new SolidColorBrush(color);
+        var was = _loadingUi;
+        _loadingUi = true;                       // el selector parte del color actual, sin que eso cuente como un cambio
+        AccentPicker.Color = color;
+        _loadingUi = was;
+    }
+
+    /// <summary>El usuario mueve el selector de color: se aplica al momento (agrupando los cambios rápidos para no repintar de más).</summary>
+    private void AccentPicker_ColorChanged(ColorPicker sender, ColorChangedEventArgs args)
+    {
+        if (_loadingUi) return;
+        var c = args.NewColor;
+        _pendingAccent = Themes.ToHex((c.R, c.G, c.B));
+        _colorDelay.Stop();
+        _colorDelay.Start();
+    }
+
+    private void ApplyPendingAccent()
+    {
+        _colorDelay.Stop();
+        if (_pendingAccent is null) return;
+        _settings.Current.CustomAccent = _pendingAccent;
+        _settings.Current.Look = Themes.CustomId;
+        _pendingAccent = null;
+        _loadingUi = true;
+        LookBox.SelectedIndex = Themes.All.Length;
+        _loadingUi = false;
+        ShowCustomSwatch(_settings.Current.CustomAccent);
+        ScheduleSave();
+        ApplyLook(Themes.CustomId);
     }
 
     // ===================== Eventos de la interfaz =====================
