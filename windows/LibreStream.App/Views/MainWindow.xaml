@@ -264,8 +264,23 @@
                             <StackPanel Spacing="8">
                                 <TextBlock Text="Aspecto" Style="{StaticResource SubtitleTextBlockStyle}" />
                                 <ComboBox x:Name="LookBox" Header="Estilo" Width="240" SelectionChanged="Look_Changed" />
+                                <StackPanel Orientation="Horizontal" Spacing="12">
+                                    <Button x:Name="CustomColorButton" AutomationProperties.Name="Elegir mi color">
+                                        <StackPanel Orientation="Horizontal" Spacing="8">
+                                            <FontIcon Glyph="&#xE790;" FontSize="14" />
+                                            <TextBlock Text="Elegir mi color…" />
+                                        </StackPanel>
+                                        <Button.Flyout>
+                                            <Flyout>
+                                                <ColorPicker x:Name="AccentPicker" IsAlphaEnabled="False" IsMoreButtonVisible="False"
+                                                             IsColorChannelTextInputVisible="False" IsHexInputVisible="True" ColorChanged="AccentPicker_ColorChanged" />
+                                            </Flyout>
+                                        </Button.Flyout>
+                                    </Button>
+                                    <Border x:Name="CustomSwatch" Width="26" Height="26" CornerRadius="13" BorderThickness="1" BorderBrush="{StaticResource NsLineBrush}" Visibility="Collapsed" />
+                                </StackPanel>
                                 <TextBlock Opacity="0.55" FontSize="12" TextWrapping="Wrap"
-                                           Text="Cambia colores, brillo y animaciones al momento. «Clásico» es el aspecto de siempre." />
+                                           Text="Cambia colores, brillo y animaciones al momento. «Clásico» es el aspecto de siempre. En «Elegir mi color» puedes poner el color que quieras: el texto de los botones se adapta solo para que siempre se lea." />
                             </StackPanel>
                             <StackPanel Spacing="8">
                                 <TextBlock Text="Ecualizador" Style="{StaticResource SubtitleTextBlockStyle}" />
