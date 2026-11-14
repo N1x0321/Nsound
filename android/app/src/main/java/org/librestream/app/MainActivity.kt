@@ -56,7 +56,7 @@ class MainActivity : Activity() {
         }
 
         root = FrameLayout(this).apply { setBackgroundColor(BACKGROUND) }
-        web = WebView(this).apply { setBackgroundColor(BACKGROUND) }
+        web = KeepAliveWebView(this).apply { setBackgroundColor(BACKGROUND) }
         root.addView(web, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
         setContentView(root)
         root.fitsSystemWindows = true
@@ -348,5 +348,16 @@ class MainActivity : Activity() {
         private const val BACKGROUND = 0xFF121214.toInt()
         private const val FILE_REQUEST = 4021
         private const val SAVE_REQUEST = 4022
+    }
+}
+
+/**
+ * WebView que sigue «visible» para el motor cuando la app pasa a segundo plano o se apaga la pantalla. En algunos fabricantes
+ * (ColorOS / Realme UI) el sistema oculta la ventana y Chromium corta el audio del reproductor de YouTube sin avisar a la página.
+ * Es el truco habitual para mantener audio de un WebView en segundo plano; la música la sostiene PlaybackService.
+ */
+class KeepAliveWebView(context: Context) : WebView(context) {
+    override fun onWindowVisibilityChanged(visibility: Int) {
+        super.onWindowVisibilityChanged(View.VISIBLE)
     }
 }
