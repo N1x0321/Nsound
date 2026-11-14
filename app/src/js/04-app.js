@@ -516,9 +516,36 @@
         <p id="eqStatus" class="hint"></p>
         <p class="note">Actúa sobre el sonido de YouTube dentro de la app. Los vídeos del catálogo libre no admiten ecualizador.</p></section>`}
       ${Native.platform === 'ios' || Native.platform === 'android' ? `<section class="panel"><h2>Segundo plano y pantalla bloqueada</h2><p class="note">Al salir de la app, apagar la pantalla o desbloquear el móvil, ${Native.platform === 'ios' ? 'iOS' : 'Android'} puede pausar por un instante el reproductor de YouTube. Nsound lo reanuda solo, así que puede notarse un corte de aproximadamente un segundo. Es una limitación del sistema con el reproductor oficial de YouTube. Si pausas tú la música (en la app, en la pantalla de bloqueo o con los cascos), Nsound no la reanuda.${Native.platform === 'ios' ? ' Si la música lleva mucho rato en pausa con el móvil bloqueado, iOS cierra la app para ahorrar batería y hay que abrirla para seguir.' : ''}</p></section>` : ''}
+      ${Native.platform === 'android' ? `<section class="panel" id="bgPanel"><h2>Música en segundo plano (Android)</h2>
+        <p class="note" id="bgInfo">Mirando tu móvil…</p>
+        <div class="row-actions"><button class="primary" data-act="bgbattery">Quitar restricción de batería</button>
+          <button class="chip" data-act="bgauto">Inicio automático / segundo plano</button>
+          <button class="chip" data-act="bgapp">Ajustes de la app</button></div>
+        <p class="note" id="bgSteps"></p>
+        <p class="note">Muchos móviles (Oppo, Xiaomi, Vivo, Huawei, a veces Samsung) cierran las apps en segundo plano aunque suene música. Estos ajustes se lo impiden a Nsound; sin ellos el móvil puede parar la música al apagar la pantalla. Más información: <a href="https://dontkillmyapp.com" target="_blank" rel="noopener">dontkillmyapp.com</a>.</p></section>` : ''}
       <!-- Privacidad (bloqueo de anuncios): oculto en la interfaz; el bloqueo sigue activo por defecto -->
       <section class="panel"><h2>Acerca de</h2><p class="note">Nsound es gratuita, sin ánimo de lucro y sin suscripciones; su código es visible para uso no comercial. YouTube se reproduce con su reproductor oficial y no se descarga. Letras: LRCLIB. Plataforma: ${esc(Native.platform)}.</p></section>`;
     refreshEqStatus();
+    if (Native.platform === 'android') refreshBgInfo();
+  }
+
+  // Android: datos del móvil, estado de la restricción de batería y pasos según el fabricante
+  async function refreshBgInfo() {
+    const info = $('#bgInfo'), steps = $('#bgSteps');
+    if (!info) return;
+    try {
+      const b = JSON.parse(await Native.call('batteryInfo', {}));
+      const guide = LS.bgSteps(b.manufacturer, b.brand);
+      if (!$('#bgInfo')) return;
+      info.innerHTML = `<b>${esc(b.manufacturer)} ${esc(b.model)}</b> · Android ${esc(b.release)} · Restricción de batería: <b>${b.ignoring ? 'quitada ✓' : 'activa (puede cerrar la música en segundo plano)'}</b>`;
+      steps.innerHTML = `<b>Pasos para ${esc(guide.name)}</b> (orientativos; cambian según el modelo):<br>${guide.steps.map((t, i) => `${i + 1}. ${esc(t)}`).join('<br>')}`;
+    } catch (e) { info.textContent = 'No se pudo leer la información del móvil.'; }
+  }
+  async function bgAction(name, okMsg) {
+    try {
+      const r = JSON.parse(await Native.call(name, {}));
+      toast(r === 'ninguna' ? 'No se pudo abrir esa pantalla en tu móvil: ve a Ajustes → Aplicaciones → Nsound.' : okMsg(r), 6000);
+    } catch (e) { toast('No se pudo abrir: ' + e.message, 5000); }
   }
   const fmtGain = (n) => (n > 0 ? '+' + n : String(n));
 
@@ -751,6 +778,14 @@
 
   Player.on('state', (st) => {
     if (st.playing && !S.userPause) S.wantPlay = true;
+    if (st.playing && Native.platform === 'android' && !S.bgHinted) {
+      S.bgHinted = true;
+      Native.call('batteryInfo', {}).then((t) => {
+        const b = JSON.parse(t);
+        let seen = false; try { seen = localStorage.getItem('ls.bgHint') === '1'; } catch (e) { /* sin almacenamiento */ }
+        if (!b.ignoring && !seen) { try { localStorage.setItem('ls.bgHint', '1'); } catch (e) { /* ya */ } toast('Para que suene con la pantalla apagada, revisa Ajustes → Música en segundo plano.', 9000); }
+      }).catch(() => {});
+    }
     S.playing = st.playing; S.time = st.time; if (st.duration > 0) S.duration = st.duration;
     mediaSessionTick(st);
     autoResume(st);
@@ -1154,6 +1189,9 @@
     if (d.sub) { go(d.sub === 'saved' ? '#/library' : d.sub === 'downloads' ? '#/library/downloads' : '#/library/pl/' + d.sub.slice(3)); return; }
     switch (d.act) {
       case 'play': play(d.key, d.list); break;
+      case 'bgbattery': bgAction('batteryRequest', (r) => r === 'peticion' ? 'Pulsa «Permitir» en el aviso del sistema.' : 'Busca Nsound en la lista y elige «Sin restricciones».'); break;
+      case 'bgauto': bgAction('autostartSettings', (r) => r === 'fabricante' ? 'Activa Nsound en esa pantalla.' : 'No hay pantalla de inicio automático en tu móvil: se abrieron los ajustes de la app (Batería → Sin restricciones).'); break;
+      case 'bgapp': bgAction('appSettings', () => 'En Batería, elige «Sin restricciones».'); break;
       case 'artist': go(LS.artistHash(d.name)); break;
       case 'back': if (history.length > 1) history.back(); else go('#/music'); break;
       case 'playartist': { const k = lists.get('artist') || []; if (k.length) play(k[0], 'artist'); break; }

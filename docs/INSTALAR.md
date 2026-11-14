@@ -106,6 +106,7 @@ y la app deja de abrirse, y pasas tus datos por terceros que no controlas.
   app con el título, la portada y los botones de anterior y siguiente. Si la música lleva **mucho rato en pausa** y el móvil bloqueado, **iOS cierra la
   app** para ahorrar batería (la deja dormida y luego la termina): entonces el reproductor desaparece o los botones tardan, y hay que abrir Nsound para seguir.
   Esto lo decide iOS y no se puede evitar con una app que no es de la tienda.
+- **Android y la batería de cada fabricante:** en Oppo/Realme/OnePlus (ColorOS), Xiaomi, Vivo, Huawei y a veces Samsung, el sistema cierra las apps en segundo plano aunque suene música. Nsound trae en **Ajustes → «Música en segundo plano (Android)»** un asistente que detecta tu móvil, pide quitar la restricción de batería y abre las pantallas de «inicio automático» del fabricante, con los pasos para tu modelo. Los nombres de los menús cambian según el modelo y la versión; hay más información en <https://dontkillmyapp.com>.
 - **Android:** una notificación de reproducción mantiene la música con la pantalla apagada. Si cierras Nsound desde las apps recientes, se para a propósito.
   Algunos móviles con ahorro de batería agresivo pueden cerrarla igualmente: en ese caso quita la restricción de batería para Nsound.
 - El **ecualizador** solo está en la **app de Windows**. En **iPhone, Android y navegador está en mantenimiento** y retirado por ahora: al engancharse al sonido de YouTube, calentaba el móvil y

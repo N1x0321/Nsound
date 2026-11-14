@@ -465,3 +465,15 @@ test('recentQuery: cada género pide lo nuevo del año', () => {
   for (const g of LS.GENRES) assert.match(LS.recentQuery(g, 2026), /2026/, g);
   assert.notEqual(LS.recentQuery('Reggaetón', 2026), LS.recentQuery('Rock', 2026));
 });
+
+test('bgSteps: pasos según el fabricante, con respaldo para los demás', () => {
+  assert.match(LS.bgSteps('OPPO', 'OPPO').name, /Oppo/);
+  assert.match(LS.bgSteps('realme', 'realme').name, /Realme/);
+  assert.match(LS.bgSteps('Xiaomi', 'Redmi').name, /Xiaomi/);
+  assert.match(LS.bgSteps('samsung', 'samsung').name, /Samsung/);
+  assert.match(LS.bgSteps('HUAWEI', 'HONOR').name, /Huawei/);
+  assert.match(LS.bgSteps('vivo', 'vivo').name, /Vivo/);
+  assert.equal(LS.bgSteps('Motorola', 'motorola').name, 'Tu móvil');
+  assert.equal(LS.bgSteps(undefined, undefined).name, 'Tu móvil');
+  for (const m of ['OPPO', 'Xiaomi', 'samsung', 'HUAWEI', 'vivo', 'Motorola']) assert.ok(LS.bgSteps(m, m).steps.length >= 1, m);
+});

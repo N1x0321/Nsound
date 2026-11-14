@@ -51,6 +51,10 @@ class NativeBridge(private val activity: MainActivity, private val web: WebView)
                         PlaybackService.state(activity, p.optDouble("position", 0.0), p.optDouble("duration", 0.0), p.optBoolean("playing", false))
                         resolve(id, true, "\"ok\"")
                     }
+                    "batteryInfo" -> resolve(id, true, activity.batteryInfo().toString())
+                    "batteryRequest" -> resolve(id, true, JSONObject.quote(activity.openBatterySettings()))
+                    "appSettings" -> resolve(id, true, JSONObject.quote(activity.openAppSettings()))
+                    "autostartSettings" -> resolve(id, true, JSONObject.quote(activity.openAutostartSettings()))
                     "setAdBlock" -> {
                         activity.adBlockEnabled = p.optBoolean("enabled", true)
                         resolve(id, true, "\"ok\"")

@@ -143,6 +143,34 @@ var LS = globalThis.LS = globalThis.LS || {};
     }
   };
 
+  /**
+   * Pasos para que Android no cierre la música en segundo plano, según el fabricante. Son orientativos: los nombres cambian según el modelo y la
+   * versión del sistema. Más información: https://dontkillmyapp.com
+   */
+  LS.bgSteps = function (manufacturer, brand) {
+    const m = (String(manufacturer || '') + ' ' + String(brand || '')).toLowerCase();
+    const pick = (re) => re.test(m);
+    if (pick(/oppo|realme|oneplus|coloros/)) return { name: 'Oppo / Realme / OnePlus (ColorOS)', steps: [
+      'Ajustes → Batería → Nsound (o «Más ajustes» → Optimización de batería): elige «Permitir actividad en segundo plano» o «Sin restricciones».',
+      'Ajustes → Aplicaciones → Gestión de aplicaciones → Nsound → Ahorro de batería: «Sin restricciones»; y activa «Inicio automático».',
+      'Abre las apps recientes, mantén pulsada la tarjeta de Nsound (o toca el menú de la tarjeta) y elige «Bloquear» para que no la cierre.'] };
+    if (pick(/xiaomi|redmi|poco|miui/)) return { name: 'Xiaomi / Redmi / POCO (MIUI, HyperOS)', steps: [
+      'Ajustes → Aplicaciones → Permisos → Inicio automático → activa Nsound.',
+      'Ajustes → Batería → Ahorro de batería de las apps → Nsound → «Sin restricciones».',
+      'En las apps recientes, mantén pulsada Nsound y toca el candado.'] };
+    if (pick(/samsung/)) return { name: 'Samsung (One UI)', steps: [
+      'Ajustes → Aplicaciones → Nsound → Batería → «Sin restricciones».',
+      'Ajustes → Batería → Límites de uso en segundo plano: quita Nsound de «Apps en suspensión» y de «Apps en suspensión profunda».'] };
+    if (pick(/huawei|honor/)) return { name: 'Huawei / Honor', steps: [
+      'Ajustes → Batería → Inicio de aplicaciones → Nsound → «Gestionar manualmente» y activa las tres opciones.'] };
+    if (pick(/vivo|iqoo/)) return { name: 'Vivo / iQOO', steps: [
+      'Ajustes → Batería → Consumo en segundo plano → Nsound → «Permitir».',
+      'Ajustes → Aplicaciones → Inicio automático → activa Nsound.'] };
+    return { name: 'Tu móvil', steps: [
+      'Ajustes → Aplicaciones → Nsound → Batería → «Sin restricciones» (el nombre cambia según el fabricante).',
+      'Si hay «Inicio automático» o «Actividad en segundo plano», actívalo para Nsound.'] };
+  };
+
   /** Búsqueda de lo recién publicado (últimos 7 días en YouTube) de un género: se muestra antes que el fondo de catálogo. */
   LS.recentQuery = function (genre, year) {
     switch (genre) {

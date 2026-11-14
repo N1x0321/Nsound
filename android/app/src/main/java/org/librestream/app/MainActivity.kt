@@ -3,7 +3,12 @@ package org.librestream.app
 import android.annotation.SuppressLint
 import android.app.Activity
 import android.content.Intent
+import android.content.ComponentName
+import android.content.Context
 import android.net.Uri
+import android.os.PowerManager
+import android.provider.Settings
+import org.json.JSONObject
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
@@ -90,6 +95,12 @@ class MainActivity : Activity() {
             }
 
             // Los enlaces externos se abren en el navegador; la propia app y los iframes siguen dentro
+            override fun onRenderProcessGone(view: WebView, detail: android.webkit.RenderProcessGoneDetail): Boolean {
+                // El sistema cerró el proceso de la página (suele pasar en segundo plano con poca memoria o ahorro agresivo): se vuelve a cargar
+                view.post { view.reload() }
+                return true
+            }
+
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                 if (request.url.host == ASSET_HOST || !request.isForMainFrame) return false
                 try { startActivity(Intent(Intent.ACTION_VIEW, request.url)) } catch (_: Exception) { /* sin navegador */ }
@@ -183,6 +194,80 @@ class MainActivity : Activity() {
         }
         @Suppress("DEPRECATION")
         super.onActivityResult(requestCode, resultCode, data)
+    }
+
+    // ---------- Segundo plano en cada fabricante (Oppo/ColorOS, Xiaomi, Samsung, Huawei, Vivo…) ----------
+    // Muchos móviles cierran o congelan las apps en segundo plano aunque tengan notificación de música. Lo que se puede hacer desde la app es
+    // pedir que no se la restrinja y llevar al usuario a los ajustes del fabricante; el resto lo decide el sistema del móvil.
+
+    /** Datos del móvil y si Nsound ya está fuera del ahorro de batería. */
+    fun batteryInfo(): JSONObject {
+        val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+        return JSONObject()
+            .put("manufacturer", Build.MANUFACTURER ?: "")
+            .put("brand", Build.BRAND ?: "")
+            .put("model", Build.MODEL ?: "")
+            .put("sdk", Build.VERSION.SDK_INT)
+            .put("release", Build.VERSION.RELEASE ?: "")
+            .put("ignoring", try { pm.isIgnoringBatteryOptimizations(packageName) } catch (_: Exception) { false })
+    }
+
+    private fun tryStart(intent: Intent): Boolean = try {
+        startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)); true
+    } catch (_: Exception) { false }          // no existe en este móvil o no se permite abrirla
+
+    /** Ejecuta en el hilo principal y espera el resultado (las pantallas de ajustes se abren desde ahí). */
+    private fun <T> onMain(default: T, block: () -> T): T {
+        val latch = java.util.concurrent.CountDownLatch(1)
+        var out: T = default
+        runOnUiThread { try { out = block() } finally { latch.countDown() } }
+        latch.await(3, java.util.concurrent.TimeUnit.SECONDS)
+        return out
+    }
+
+    /** Pide quitar la restricción de batería; si el móvil no lo permite, abre la lista de apps con ahorro. */
+    fun openBatterySettings(): String = onMain("ninguna") {
+        when {
+            tryStart(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:$packageName"))) -> "peticion"
+            tryStart(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)) -> "lista"
+            tryStart(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName"))) -> "detalles"
+            else -> "ninguna"
+        }
+    }
+
+    fun openAppSettings(): String = onMain("ninguna") {
+        if (tryStart(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName")))) "detalles" else "ninguna"
+    }
+
+    /** Pantallas de «inicio automático» / «actividad en segundo plano» de cada fabricante. Se prueban por orden; si ninguna existe, ajustes de la app. */
+    fun openAutostartSettings(): String {
+        val m = ((Build.MANUFACTURER ?: "") + " " + (Build.BRAND ?: "")).lowercase()
+        val candidates: List<Pair<String, String>> = when {
+            "xiaomi" in m || "redmi" in m || "poco" in m ->
+                listOf("com.miui.securitycenter" to "com.miui.permcenter.autostart.AutoStartManagementActivity")
+            "oppo" in m || "realme" in m || "oneplus" in m ->
+                listOf(
+                    "com.coloros.safecenter" to "com.coloros.safecenter.permission.startup.StartupAppListActivity",
+                    "com.coloros.safecenter" to "com.coloros.safecenter.startupapp.StartupAppListActivity",
+                    "com.oppo.safe" to "com.oppo.safe.permission.startup.StartupAppListActivity",
+                    "com.oplus.battery" to "com.oplus.powermanager.fuelgaue.PowerUsageModelActivity",
+                    "com.coloros.oppoguardelf" to "com.coloros.powermanager.fuelgaue.PowerUsageModelActivity")
+            "vivo" in m || "iqoo" in m ->
+                listOf(
+                    "com.vivo.permissionmanager" to "com.vivo.permissionmanager.activity.BgStartUpManagerActivity",
+                    "com.iqoo.secure" to "com.iqoo.secure.ui.phoneoptimize.AddWhiteListActivity")
+            "huawei" in m || "honor" in m ->
+                listOf(
+                    "com.huawei.systemmanager" to "com.huawei.systemmanager.startupmgr.ui.StartupNormalAppListActivity",
+                    "com.huawei.systemmanager" to "com.huawei.systemmanager.optimize.process.ProtectActivity")
+            "samsung" in m ->
+                listOf("com.samsung.android.lool" to "com.samsung.android.sm.ui.battery.BatteryActivity")
+            else -> emptyList()
+        }
+        return onMain("ninguna") {
+            if (candidates.any { (pkg, cls) -> tryStart(Intent().setComponent(ComponentName(pkg, cls))) }) "fabricante"
+            else if (tryStart(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName")))) "detalles" else "ninguna"
+        }
     }
 
     private val lifecycleHandler = Handler(Looper.getMainLooper())
