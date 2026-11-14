@@ -93,6 +93,17 @@ public sealed partial class MainWindow : Window
         int w = (int)(area.Width * 0.85), h = (int)(area.Height * 0.88);
         AppWindow.MoveAndResize(new Windows.Graphics.RectInt32(area.X + (area.Width - w) / 2, area.Y + (area.Height - h) / 2, w, h));
 
+        // Botones en la vista previa de la barra de tareas (Anterior, Reproducir/Pausa, Siguiente, Guardar)
+        try
+        {
+            _thumb = new ThumbBar(WinRT.Interop.WindowNative.GetWindowHandle(this),
+                () => Safe("Barra de tareas: anterior", Previous),
+                () => Safe("Barra de tareas: reproducir", () => Play_Click(this, null!)),
+                () => Safe("Barra de tareas: siguiente", Next),
+                () => Safe("Barra de tareas: guardar", () => Save_Click(this, null!)));
+        }
+        catch (Exception ex) { App.Log("Barra de tareas", ex); }
+
         AdBlock.Enabled = _settings.Current.AdBlock;
         Volume.Value = _settings.Current.Volume;
         Video.SetMediaPlayer(_player.Player);
@@ -118,7 +129,7 @@ public sealed partial class MainWindow : Window
         _colorDelay.Tick += (_, _) => Safe("Color", ApplyPendingAccent);
         _searchDelay.Tick += (_, _) => { _searchDelay.Stop(); _ = SearchYouTubeAsync(Search.Text); };
         _saveTimer.Tick += (_, _) => { _saveTimer.Stop(); Safe("Guardar ajustes", _settings.Save); };
-        Closed += (_, _) => Safe("Cierre", () => { _settings.Save(); _timer.Stop(); _heroTimer.Stop(); });
+        Closed += (_, _) => Safe("Cierre", () => { _settings.Save(); _timer.Stop(); _heroTimer.Stop(); _thumb?.Dispose(); });
 
         ShowYouTubeLayer(false);
         RebuildPlaylistNav();
@@ -780,11 +791,14 @@ public sealed partial class MainWindow : Window
         UpdateNowPlayingBar();
     }
 
+    private ThumbBar? _thumb;
+
     private bool IsPlaying => _mode == Mode.YouTube ? _ytPlaying : _player.IsPlaying;
 
     private void UpdateNowPlayingBar()
     {
         PlayIcon.Symbol = IsPlaying ? Symbol.Pause : Symbol.Play;
+        _thumb?.Update(IsPlaying, _now is not null, _now is not null && _library.Contains(_now.Source, _now.Id));
         if (_now is null) return;
         NowTitle.Text = _now.Title;
         NowArtist.Text = _now.YouTubeId is null ? _now.Subtitle : $"{_now.Subtitle} · YouTube";
