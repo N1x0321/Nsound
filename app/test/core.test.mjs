@@ -577,3 +577,15 @@ test('éxitos por país: nombre del país y elección de la lista oficial', () =
   assert.equal(LS.pickHitsList(lists.slice(0, 1)).title, 'Las 20 tendencias en Colombia');
   assert.equal(LS.pickHitsList([]), null);
 });
+
+test('estanterías de Vídeos por país: renovables, con el país y con lo de siempre en España', () => {
+  const co = LS.shelvesFor('CO', 'Colombia'), es = LS.shelvesFor('ES', 'España');
+  assert.equal(co.length, 8);
+  assert.match(co[0].title, /Colombia/);
+  assert.ok(co.filter((s) => s.queries.some((q) => q.week)).length >= 5, 'varias estanterías se renuevan cada semana');
+  assert.ok(co.every((s) => s.queries.length >= 1 && s.queries.every((q) => typeof q.q === 'string' && q.q.trim().length > 3)));
+  assert.ok(es.find((s) => s.title === 'Eventos del año').queries.some((q) => /Velada/.test(q.q)));
+  assert.ok(es.find((s) => s.title === 'YouTubers').queries.some((q) => q.q === 'Ibai'));
+  assert.ok(!co.find((s) => s.title === 'YouTubers').queries.some((q) => q.q === 'Ibai'));
+  assert.ok(LS.shelvesFor('MX', '').every((s) => s.queries.length >= 1));
+});

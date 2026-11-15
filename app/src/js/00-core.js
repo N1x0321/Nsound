@@ -35,6 +35,24 @@ var LS = globalThis.LS = globalThis.LS || {};
     { title: 'Humor y entretenimiento', queries: ['monólogo humor', 'programa entretenimiento'] },
   ];
 
+  /**
+   * Estanterías de «Vídeos» según el país: lo de esta semana (week) se pide con el filtro «esta semana» de YouTube, así que se renueva solo.
+   * En España se mantienen los eventos y creadores de siempre; en el resto, búsquedas con el nombre del país.
+   */
+  LS.shelvesFor = function (cc, countryName) {
+    const n = countryName || '', es = String(cc).toUpperCase() === 'ES';
+    return [
+      { title: n ? 'Novedades en ' + n : 'Novedades', queries: [{ q: 'vídeos nuevos ' + n, week: true }, { q: 'lo más visto hoy ' + n, week: true }] },
+      { title: 'Videoclips nuevos', queries: [{ q: 'videoclip oficial nuevo ' + n, week: true }, { q: 'estreno video oficial ' + n, week: true }] },
+      { title: 'Series y tráilers', queries: [{ q: 'tráiler oficial serie estreno', week: true }, { q: 'tráiler oficial película estreno', week: true }] },
+      { title: es ? 'Eventos del año' : 'Eventos y conciertos', queries: es ? [{ q: 'La Velada del Año' }, { q: 'Kings League resumen' }] : [{ q: 'evento en vivo resumen ' + n }, { q: 'concierto completo ' + n }] },
+      { title: 'YouTubers', queries: es ? [{ q: 'Ibai' }, { q: 'AuronPlay' }, { q: 'TheGrefg' }] : [{ q: 'youtubers ' + n + ' vídeo nuevo', week: true }, { q: 'reto youtuber ' + n }] },
+      { title: 'Deporte', queries: [{ q: 'resumen partido goles ' + n, week: true }] },
+      { title: 'Documentales', queries: [{ q: 'documental completo en español ' + n }] },
+      { title: 'Humor y entretenimiento', queries: [{ q: 'humor ' + n + ' vídeo', week: true }, { q: 'programa entretenimiento ' + n }] },
+    ];
+  };
+
   // ---------- Utilidades ----------
   LS.fold = function (s) {
     return String(s).toLowerCase().normalize('NFKD').replace(/[̀-ͯ]/g, '')

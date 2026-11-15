@@ -550,15 +550,21 @@
     v.innerHTML = `<h1>Vídeos</h1><p class="hint">${q ? `Vídeos para «${esc(q)}». Solo vídeos.` : 'Eventos, series, YouTubers y más. Busca para encontrar cualquier vídeo.'}</p>
       <div id="hits">${q ? skeleton() : ''}</div>`;
     if (q) { await showResults('#hits', id, 'videos'); return; }
-    if (S.shelves) { drawShelves(id); return; }
+    const cc = userCc();
+    if (S.shelves && S.shelvesCc === cc) { drawShelves(id); return; }
+    S.shelves = null;
     $('#hits').innerHTML = skeleton(6);
     if (S.shelvesLoading) return;
     S.shelvesLoading = true;
     try {
-      const built = await Promise.all(LS.SHELVES.map(async (sh) => {
-        const results = await Promise.all(sh.queries.map((qq) => ytSearch(qq, { videosOnly: true }).catch((e) => { S.lastError = e.message; return []; })));
-        return { title: sh.title, items: LS.mergeShelf(results, 10).map(ytItem) };
+      // Estanterías del país: lo de «esta semana» se renueva solo; si una no trae suficiente, se repite sin el filtro de fecha
+      const ask = (qq, week) => ytSearch(qq.q, week && qq.week ? { thisWeek: true } : { videosOnly: true }).catch((e) => { S.lastError = e.message; return []; });
+      const built = await Promise.all(LS.shelvesFor(cc, LS.countryName(cc)).map(async (sh) => {
+        let items = LS.mergeShelf(await Promise.all(sh.queries.map((qq) => ask(qq, true))), 10);
+        if (items.length < 4 && sh.queries.some((qq) => qq.week)) items = LS.mergeShelf(await Promise.all(sh.queries.map((qq) => ask(qq, false))), 10);
+        return { title: sh.title, items: items.map(ytItem) };
       }));
+      S.shelvesCc = cc;
       S.shelves = built.filter((s) => s.items.length);
       if (!S.shelves.length) S.shelves = null;   // se reintentará la próxima vez
       built.forEach((s, i) => setList('shelf' + i, s.items));
