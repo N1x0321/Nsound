@@ -588,6 +588,7 @@ test('estanterías de Vídeos por país: renovables, con el país y con lo de si
   assert.ok(es.find((s) => s.title === 'YouTubers').queries.some((q) => q.q === 'Ibai'));
   assert.ok(!co.find((s) => s.title === 'YouTubers').queries.some((q) => q.q === 'Ibai'));
   assert.ok(LS.shelvesFor('MX', '').every((s) => s.queries.length >= 1));
+});
 
 // ---------- Repetir y aleatorio ----------
 const mk = (n) => Array.from({ length: n }, (_, i) => ({ key: 'k' + i }));
