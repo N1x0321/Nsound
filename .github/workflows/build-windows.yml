@@ -50,7 +50,13 @@ jobs:
           $version = if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:GITHUB_REF_NAME.TrimStart('v') } else { "dev-$($env:GITHUB_SHA.Substring(0,7))" }
           if (-not (Test-Path out/Nsound/Nsound.exe)) { Write-Error "No se generó Nsound.exe"; exit 1 }
           $zip = "Nsound-$version-windows-${{ matrix.arch }}.zip"
-          Compress-Archive -Path out/Nsound/* -DestinationPath $zip
+          # Orden del zip: arriba solo «Abrir Nsound» y un LEEME; todo lo demás dentro de app/ (idiomas recortados a español e inglés)
+          Get-ChildItem out/Nsound -Directory | Where-Object { $_.Name -match '^[a-z]{2,3}(-[A-Za-z0-9]+)+$' -and $_.Name -notmatch '^(es|en)-' } | Remove-Item -Recurse -Force
+          New-Item -ItemType Directory -Path out/pkg | Out-Null
+          Move-Item out/Nsound out/pkg/app
+          Set-Content -Path "out/pkg/Abrir Nsound.cmd" -Encoding ascii -Value @('@echo off', 'start "" "%~dp0app\Nsound.exe"')
+          Set-Content -Path "out/pkg/LEEME.txt" -Encoding ascii -Value @('Nsound', '1. Extrae todo el zip (clic derecho > Extraer todo).', '2. Abre "Abrir Nsound" (o app\Nsound.exe).', 'Si Windows avisa de que no reconoce la app: Mas informacion > Ejecutar de todos modos (es una beta sin firmar).')
+          Compress-Archive -Path out/pkg/* -DestinationPath $zip
           (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower() + "  $zip" | Out-File "$zip.sha256" -Encoding ascii
           "zip=$zip" >> $env:GITHUB_OUTPUT
 
