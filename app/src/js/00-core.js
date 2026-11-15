@@ -123,10 +123,146 @@ var LS = globalThis.LS = globalThis.LS || {};
   LS.MUSIC_SEARCH_URL = 'https://music.youtube.com/youtubei/v1/search?prettyPrint=false';
   LS.MUSIC_SONGS_PARAMS = 'EgWKAQIIAWoMEA4QChADEAQQCRAF';   // filtro «Canciones» de YouTube Music
 
-  LS.musicSearchBody = (query) => JSON.stringify({
-    context: { client: { clientName: 'WEB_REMIX', clientVersion: '1.20241106.01.00', hl: 'es', gl: 'ES' } },
-    query: String(query).trim(), params: LS.MUSIC_SONGS_PARAMS,
-  });
+  // Otros filtros de la búsqueda de YouTube Music: álbumes y artistas (para páginas de artista y álbumes completos)
+  LS.MUSIC_ALBUMS_PARAMS = 'EgWKAQIYAWoMEA4QChADEAQQCRAF';
+  LS.MUSIC_ARTISTS_PARAMS = 'EgWKAQIgAWoMEA4QChADEAQQCRAF';
+  LS.MUSIC_BROWSE_URL = 'https://music.youtube.com/youtubei/v1/browse?prettyPrint=false';
+  const ytmContext = { client: { clientName: 'WEB_REMIX', clientVersion: '1.20241106.01.00', hl: 'es', gl: 'ES' } };
+
+  LS.musicSearchBody = (query, params) => JSON.stringify({ context: ytmContext, query: String(query).trim(), params: params || LS.MUSIC_SONGS_PARAMS });
+  /** Una página de YouTube Music: un álbum (MPREb_…), un artista (UC…) o una lista (VL…). */
+  LS.musicBrowseBody = (browseId) => JSON.stringify({ context: ytmContext, browseId: String(browseId) });
+  LS.isBrowseId = (s) => typeof s === 'string' && /^(MPRE[\w-]{4,60}|UC[\w-]{20,30}|VL[\w-]{6,60})$/.test(s);
+
+  // --- Lectura de las respuestas (solo metadatos públicos: títulos, artistas, portadas e identificadores) ---
+  const ytmText = (cell) => {
+    const t = cell && cell.musicResponsiveListItemFlexColumnRenderer && cell.musicResponsiveListItemFlexColumnRenderer.text;
+    return t && Array.isArray(t.runs) ? t.runs.map((r) => (typeof r.text === 'string' ? r.text : '')) : [];
+  };
+  const ytmThumb = (node) => {
+    const th = node && node.thumbnail && node.thumbnail.musicThumbnailRenderer && node.thumbnail.musicThumbnailRenderer.thumbnail && node.thumbnail.musicThumbnailRenderer.thumbnail.thumbnails;
+    const url = Array.isArray(th) && th.length ? th[th.length - 1].url : '';
+    return /^https:\/\//.test(url || '') ? url.replace(/=w\d+-h\d+.*$/, '=w544-h544') : '';
+  };
+  const ytmWalk = (data, fn) => {
+    (function walk(o, depth) {
+      if (depth > 40 || o === null || typeof o !== 'object') return;
+      if (Array.isArray(o)) { for (const x of o) walk(x, depth + 1); return; }
+      for (const k of Object.keys(o)) { if (!fn(k, o[k])) walk(o[k], depth + 1); }
+    })(data, 0);
+  };
+  const ytmParse = (json) => { try { return typeof json === 'string' ? JSON.parse(json) : json; } catch (e) { return null; } };
+  const dot = (t) => !t || /^[\s•·]+$/.test(t);
+
+  /** Búsqueda con filtro «Álbumes» → [{ id: 'MPREb_…', title, kind: 'Álbum'|'EP'|'Single', artist, year, art }] */
+  LS.parseYtmAlbums = function (json) {
+    const data = ytmParse(json), out = [], seen = new Set();
+    if (!data) return out;
+    ytmWalk(data, (k, v) => {
+      if (k !== 'musicResponsiveListItemRenderer') return false;
+      const be = v && v.navigationEndpoint && v.navigationEndpoint.browseEndpoint, id = be && be.browseId;
+      if (!LS.isBrowseId(id) || !/^MPRE/.test(id) || seen.has(id)) return true;
+      const cols = Array.isArray(v.flexColumns) ? v.flexColumns : [];
+      const title = (ytmText(cols[0])[0] || '').trim();
+      const parts = ytmText(cols[1]).map((t) => t.trim()).filter((t) => !dot(t));      // «Álbum • Artista • 2022»
+      if (!title) return true;
+      seen.add(id);
+      const year = parts.find((t) => /^(19|20)\d{2}$/.test(t)) || '';
+      out.push({ id, title, kind: parts[0] || 'Álbum', artist: parts[1] && parts[1] !== year ? parts[1] : '', year, art: ytmThumb(v) });
+      return true;
+    });
+    return out;
+  };
+
+  /** Búsqueda con filtro «Artistas» → [{ id: 'UC…', name, art }] */
+  LS.parseYtmArtists = function (json) {
+    const data = ytmParse(json), out = [], seen = new Set();
+    if (!data) return out;
+    ytmWalk(data, (k, v) => {
+      if (k !== 'musicResponsiveListItemRenderer') return false;
+      const be = v && v.navigationEndpoint && v.navigationEndpoint.browseEndpoint, id = be && be.browseId;
+      if (!LS.isBrowseId(id) || !/^UC/.test(id) || seen.has(id)) return true;
+      const name = ((Array.isArray(v.flexColumns) ? ytmText(v.flexColumns[0]) : [])[0] || '').trim();
+      if (!name) return true;
+      seen.add(id); out.push({ id, name, art: ytmThumb(v) });
+      return true;
+    });
+    return out;
+  };
+
+  /**
+   * Filas de canciones de un álbum, de la lista «todas las canciones» de un artista o de una lista → [{ id, title, channel, album, duration, art }].
+   * ctx = { artist, album, art } rellena lo que la fila no trae (en un álbum todas las canciones comparten portada y a veces no dicen el artista).
+   */
+  LS.parseYtmTracks = function (json, ctx) {
+    const data = ytmParse(json), out = [], seen = new Set(), c = ctx || {};
+    if (!data) return out;
+    ytmWalk(data, (k, v) => {
+      if (k !== 'musicResponsiveListItemRenderer') return false;
+      const cols = Array.isArray(v.flexColumns) ? v.flexColumns : [];
+      let id = v.playlistItemData && v.playlistItemData.videoId;
+      if (!id) { const w = v.overlay && v.overlay.musicItemThumbnailOverlayRenderer && v.overlay.musicItemThumbnailOverlayRenderer.content
+        && v.overlay.musicItemThumbnailOverlayRenderer.content.musicPlayButtonRenderer && v.overlay.musicItemThumbnailOverlayRenderer.content.musicPlayButtonRenderer.playNavigationEndpoint;
+        id = w && w.watchEndpoint && w.watchEndpoint.videoId; }
+      if (!LS.isValidVideoId(id) || seen.has(id) || !cols.length) return true;
+      const title = (ytmText(cols[0])[0] || '').trim();
+      if (!title) return true;
+      const parts = (cols[1] ? ytmText(cols[1]) : []).map((t) => t.trim()).filter((t) => !dot(t));
+      let duration = 0;
+      const fixed = Array.isArray(v.fixedColumns) ? v.fixedColumns : [];
+      const ft = fixed[0] && fixed[0].musicResponsiveListItemFixedColumnRenderer && fixed[0].musicResponsiveListItemFixedColumnRenderer.text;
+      const fts = ft && Array.isArray(ft.runs) && ft.runs[0] && ft.runs[0].text;
+      if (/^\d+(:\d{2})+$/.test(fts || '')) duration = LS.parseLength(fts);
+      else { const last = parts[parts.length - 1] || ''; if (/^\d+(:\d{2})+$/.test(last)) { duration = LS.parseLength(last); parts.pop(); } }
+      // artista: primera parte que no sea la duración ni un contador de reproducciones; si no hay, el del contexto
+      const artist = parts.find((t) => !/reproducciones|plays|views|visualizaciones/i.test(t) && !/^\d+(:\d{2})+$/.test(t)) || c.artist || '';
+      seen.add(id);
+      out.push({ id, title, channel: artist, album: c.album || (parts.length >= 3 ? parts[1] : ''), duration, art: ytmThumb(v) || c.art || '' });
+      return true;
+    });
+    return out;
+  };
+
+  /**
+   * Página de un artista → { songs (las más escuchadas), allSongsId ('VL…' de «todas las canciones»), releases: [{ id, title, kind, year, art }] }.
+   * Los discos salen de los carruseles (álbumes, singles y EP); el tipo se ve en el subtítulo, no en el título del carrusel (que cambia de idioma).
+   */
+  LS.parseYtmArtistPage = function (json, artistName) {
+    const data = ytmParse(json), res = { songs: [], allSongsId: '', releases: [] };
+    if (!data) return res;
+    const seen = new Set();
+    ytmWalk(data, (k, v) => {
+      if (k === 'musicShelfRenderer') {
+        const be = v && v.bottomEndpoint && v.bottomEndpoint.browseEndpoint;
+        if (be && /^VL/.test(be.browseId || '') && !res.allSongsId) res.allSongsId = be.browseId;
+        if (!res.songs.length) res.songs = LS.parseYtmTracks({ shelf: v }, { artist: artistName });
+        return true;
+      }
+      if (k === 'musicTwoRowItemRenderer') {
+        const be = v && v.navigationEndpoint && v.navigationEndpoint.browseEndpoint, id = be && be.browseId;
+        if (!LS.isBrowseId(id) || !/^MPRE/.test(id) || seen.has(id)) return true;
+        const title = v.title && Array.isArray(v.title.runs) && v.title.runs[0] ? String(v.title.runs[0].text || '').trim() : '';
+        const sub = v.subtitle && Array.isArray(v.subtitle.runs) ? v.subtitle.runs.map((r) => String(r.text || '').trim()).filter((t) => !dot(t)) : [];
+        if (!title) return true;
+        seen.add(id);
+        const th = v.thumbnailRenderer && v.thumbnailRenderer.musicThumbnailRenderer && v.thumbnailRenderer.musicThumbnailRenderer.thumbnail && v.thumbnailRenderer.musicThumbnailRenderer.thumbnail.thumbnails;
+        const url = Array.isArray(th) && th.length ? th[th.length - 1].url : '';
+        res.releases.push({ id, title, kind: sub.find((t) => !/^(19|20)\d{2}$/.test(t)) || 'Álbum', year: sub.find((t) => /^(19|20)\d{2}$/.test(t)) || '',
+          art: /^https:\/\//.test(url || '') ? url.replace(/=w\d+-h\d+.*$/, '=w544-h544') : '' });
+        return true;
+      }
+      return false;
+    });
+    return res;
+  };
+
+  /** De varios álbumes encontrados, el que mejor encaja con título (y artista): igual > contiene; el primero si ninguno encaja del todo. */
+  LS.pickAlbum = function (albums, title, artist) {
+    const want = LS.normName(title), who = LS.normName(artist || '');
+    const ok = (a) => !who || !a.artist || LS.normName(a.artist).includes(who) || who.includes(LS.normName(a.artist));
+    const list = (albums || []).filter(ok);
+    return list.find((a) => LS.normName(a.title) === want) || list.find((a) => LS.normName(a.title).includes(want) || want.includes(LS.normName(a.title))) || null;
+  };
 
   /** Búsqueda de YouTube Music por género (las canciones salen mejor con palabras sueltas). */
   LS.genreQuery = function (genre, year) {

@@ -88,6 +88,24 @@
     } finally { release(); }
   }
 
+  // Álbumes y artistas de YouTube Music: se busca con un filtro y luego se lee la página (lista completa de canciones). Solo metadatos públicos.
+  async function ytmPost(url, body, key, parse) {
+    const k = 'ytm|' + key;
+    if (cache.has(k)) return cache.get(k);
+    const saved = persistent.get(k);
+    if (saved) { cache.set(k, saved); return saved; }
+    await slot();
+    try {
+      const r = parse(await Native.postJson(url, body));
+      cache.set(k, r); persistent.set(k, r);
+      return r;
+    } finally { release(); }
+  }
+  const ytmAlbumsFor = (q) => ytmPost(LS.MUSIC_SEARCH_URL, LS.musicSearchBody(q, LS.MUSIC_ALBUMS_PARAMS), 'albums|' + q, LS.parseYtmAlbums);
+  const ytmArtistsFor = (q) => ytmPost(LS.MUSIC_SEARCH_URL, LS.musicSearchBody(q, LS.MUSIC_ARTISTS_PARAMS), 'artists|' + q, LS.parseYtmArtists);
+  const ytmArtistPage = (id, name) => ytmPost(LS.MUSIC_BROWSE_URL, LS.musicBrowseBody(id), 'artista|' + id, (j) => LS.parseYtmArtistPage(j, name));
+  const ytmTracksOf = (id, ctx) => ytmPost(LS.MUSIC_BROWSE_URL, LS.musicBrowseBody(id), 'pista|' + id, (j) => LS.parseYtmTracks(j, ctx));
+
   async function ytSearch(query, opts) {
     const k = JSON.stringify([query, opts || {}]);
     if (cache.has(k)) return cache.get(k);
@@ -268,10 +286,32 @@
       }
       items = setList(listId, items);
       box.innerHTML = items.length ? grid(listId, items, sc === 'track' ? 'track' : 'video') : '<p class="hint">Sin resultados en YouTube.</p>';
+      if (sc === 'track' && q.length > 1) addMusicExtras(box, q, id);
       if (sc === 'track' && q.length > 1) box.insertAdjacentHTML('afterbegin', `<p><button class="chip" data-act="artist" data-name="${esc(q)}">Ver la página de artista «${esc(q)}»</button></p>`);
     } catch (e) {
       if (id === S.renderId) box.innerHTML = `<p class="hint err">No se pudo buscar en YouTube: ${esc(e.message)}</p>`;
     }
+  }
+
+  // Búsquedas en Música: además de las canciones, los artistas y los álbumes que coinciden (un álbum pulsado suena entero)
+  async function addMusicExtras(box, q, renderId) {
+    try {
+      const [artists, albums] = await Promise.all([ytmArtistsFor(q).catch(() => []), ytmAlbumsFor(q).catch(() => [])]);
+      if (renderId !== S.renderId || !box.isConnected) return;
+      // Solo lo relacionado con lo que se buscó: los artistas que coinciden (o el primero) y primero los álbumes de ese artista
+      const want = LS.normName(q);
+      const near = (t) => { const n = LS.normName(t); return !!n && (n.includes(want) || want.includes(n)); };
+      const arts = (artists.filter((x) => near(x.name)).length ? artists.filter((x) => near(x.name)) : artists.slice(0, 1)).slice(0, 3);
+      const rank = (x) => (near(x.artist) ? 0 : near(x.title) ? 1 : 2);
+      const albs = albums.map((x, i) => ({ x, i })).sort((u, v) => rank(u.x) - rank(v.x) || u.i - v.i).map((o) => o.x).filter((x) => rank(x) < 2 || albums.length <= 4).slice(0, 8);
+      if (!arts.length && !albs.length) return;
+      const html = `<div class="extras">${arts.length ? `<p class="hint">Artistas</p><p class="chips">${arts.map((a) => `<button class="chip" data-act="artist" data-name="${esc(a.name)}">${esc(a.name)}</button>`).join('')}</p>` : ''}
+        ${albs.length ? `<p class="hint">Álbumes (se reproducen enteros)</p><div class="shelf">${albs.map((al) => `<button class="card track" data-act="album" data-id="${esc(al.id)}" data-artist="${esc(al.artist)}" data-title="${esc(al.title)}" data-art="${esc(al.art)}">
+          <div class="thumb" style="--h:${hue(al.id)}"><img loading="lazy" alt="" src="${esc(al.art)}" onerror="this.remove()"></div>
+          <div class="t">${esc(al.title)}</div><div class="s">${esc([al.artist, al.year, al.kind].filter(Boolean).join(' · '))}</div></button>`).join('')}</div>` : ''}</div>`;
+      const old = box.querySelector('.extras'); if (old) old.remove();
+      box.insertAdjacentHTML('afterbegin', html);
+    } catch (e) { /* sin artistas ni álbumes: quedan las canciones */ }
   }
 
   // ---------- Anuncio de lanzamientos ----------
@@ -368,7 +408,27 @@
       <div class="row-actions"><button class="primary" data-act="playartist" id="aPlay" hidden>${LS.icon('play')} Reproducir</button></div>
       <section><h2>Canciones</h2><div id="aSongs">${skeleton(6)}</div></section>
       <section id="aAlb" hidden><h2>Discografía</h2><div id="aAlbums"></div></section>`;
+    let ytmReleases = [];
     const songsP = (async () => {
+      try {
+        const want0 = LS.normName(name);
+        const found = (await ytmArtistsFor(name)).find((a) => LS.normName(a.name) === want0) || (await ytmArtistsFor(name))[0];
+        if (found && LS.normName(found.name).includes(want0)) {
+          const page = await ytmArtistPage(found.id, found.name);
+          let songs = page.songs;
+          if (page.allSongsId) { try { const all = await ytmTracksOf(page.allSongsId, { artist: found.name }); if (all.length > songs.length) songs = all; } catch (e) { /* se quedan las más escuchadas */ } }
+          songs = songs.filter((m) => LS.isSong({ title: m.title, duration: m.duration }));
+          ytmReleases = page.releases;
+          if (songs.length) {
+            const items = songs.map(musicItem);
+            if (id !== S.renderId) return;
+            setList('artist', items);
+            $('#aSongs').innerHTML = grid('artist', items, 'track');
+            $('#aPlay').hidden = false; if (items[0].thumb) $('#aAv').style.backgroundImage = `url("${items[0].thumb}")`;
+            return;
+          }
+        }
+      } catch (e) { /* si YouTube Music no da la página del artista, se usa la búsqueda de siempre */ }
       try {
         const want = LS.normName(name);
         const all = (await musicSearch(name)).filter((m) => LS.isSong({ title: m.title, duration: m.duration }));
@@ -381,9 +441,23 @@
       } catch (e) { if (id === S.renderId) $('#aSongs').innerHTML = `<p class="hint err">No se pudo buscar: ${esc(e.message)}</p>`; }
     })();
     const infoP = (async () => {
+      let mb = { a: null, albums: [] };
+      try { mb = await artistInfo(name); } catch (e) { /* sin ficha de MusicBrainz */ }
       try {
-        const { a, albums } = await artistInfo(name);
+        const { a, albums: mbAlbums } = mb;
+        await songsP;                                   // los discos de YouTube Music llegan con la lista de canciones
         if (id !== S.renderId) return;
+        if (ytmReleases.length) {
+          $('#aFacts').textContent = a
+            ? [a.type === 'Group' ? 'Grupo' : a.type === 'Person' ? 'Solista' : a.type, a.country, a.begin ? (a.type === 'Person' ? 'nacido en ' : 'desde ') + a.begin : '', a.tags.join(', ')].filter(Boolean).join(' · ')
+            : 'Canciones y discos de YouTube Music.';
+          $('#aAlb').hidden = false;
+          $('#aAlbums').innerHTML = `<div class="grid track">${ytmReleases.map((al) => `<button class="card track" data-act="album" data-id="${esc(al.id)}" data-artist="${esc(name)}" data-title="${esc(al.title)}" data-art="${esc(al.art)}">
+            <div class="thumb" style="--h:${hue(al.id)}"><img loading="lazy" alt="" src="${esc(al.art)}" onerror="this.remove()"></div>
+            <div class="t">${esc(al.title)}</div><div class="s">${esc([al.year, al.kind].filter(Boolean).join(' · '))}</div></button>`).join('')}</div>`;
+          return;
+        }
+        const albums = mbAlbums;
         $('#aFacts').textContent = a
           ? [a.type === 'Group' ? 'Grupo' : a.type === 'Person' ? 'Solista' : a.type, a.country, a.begin ? (a.type === 'Person' ? 'nacido en ' : 'desde ') + a.begin : '', a.tags.join(', ')].filter(Boolean).join(' · ')
           : 'Sin ficha en MusicBrainz (artista pequeño o nuevo): aquí solo se muestran sus canciones.';
@@ -399,7 +473,24 @@
   }
 
   // Un álbum de la discografía: se buscan sus canciones en YouTube Music y suena la primera
-  async function playAlbum(artist, title) {
+  async function playAlbum(artist, title, albumId, art) {
+    try {
+      // 1.º) álbum de YouTube Music con su lista completa de canciones
+      let id = albumId, cover = art || '';
+      if (!id) {
+        const pick = LS.pickAlbum(await ytmAlbumsFor(artist + ' ' + title), title, artist);
+        if (pick) { id = pick.id; cover = pick.art; }
+      }
+      if (id) {
+        const tracks = (await ytmTracksOf(id, { artist, album: title, art: cover })).filter((m) => m.duration === 0 || LS.isSong({ title: m.title, duration: m.duration }));
+        if (tracks.length) {
+          const items = tracks.map(musicItem);
+          setList('album', items); play(items[0].key, 'album');
+          toast('Álbum «' + title + '»: ' + items.length + ' canciones en la cola.', 3500);
+          return;
+        }
+      }
+    } catch (e) { /* si falla, se usa la búsqueda de siempre */ }
     try {
       const want = LS.normName(title);
       const res = (await musicSearch(artist + ' ' + title)).filter((m) => LS.isSong({ title: m.title, duration: m.duration }));
@@ -1207,7 +1298,7 @@
       case 'artist': go(LS.artistHash(d.name)); break;
       case 'back': if (history.length > 1) history.back(); else go('#/music'); break;
       case 'playartist': { const k = lists.get('artist') || []; if (k.length) play(k[0], 'artist'); break; }
-      case 'album': playAlbum(d.artist, d.title); break;
+      case 'album': playAlbum(d.artist, d.title, d.id, d.art); break;
       case 'playall': { const k = lists.get('lib') || []; if (k.length) play(k[0], 'lib'); break; }
       case 'newlist': newList(false); break;
       case 'qnext': queueIt(d.key, 'next'); $('#qm').hidden = true; break;

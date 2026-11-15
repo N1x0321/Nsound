@@ -477,3 +477,64 @@ test('bgSteps: pasos según el fabricante, con respaldo para los demás', () => 
   assert.equal(LS.bgSteps(undefined, undefined).name, 'Tu móvil');
   for (const m of ['OPPO', 'Xiaomi', 'samsung', 'HUAWEI', 'vivo', 'Motorola']) assert.ok(LS.bgSteps(m, m).steps.length >= 1, m);
 });
+
+// ---------- YouTube Music: artistas y álbumes completos ----------
+const run = (text, extra) => ({ text: { runs: [{ text }, ...(extra || []).flatMap((t) => [{ text: ' • ' }, { text: t }]) ] } });
+const flex = (text, extra) => ({ musicResponsiveListItemFlexColumnRenderer: run(text, extra) });
+const thumb = (url) => ({ musicThumbnailRenderer: { thumbnail: { thumbnails: [{ url: 'https://x/a=w60-h60' }, { url }] } } });
+
+test('parseYtmAlbums: álbumes con identificador, tipo, artista y año (solo los que se pueden abrir)', () => {
+  const json = { r: [
+    { musicResponsiveListItemRenderer: { navigationEndpoint: { browseEndpoint: { browseId: 'MPREb_AAAA1111bbbb' } }, thumbnail: thumb('https://lh3.googleusercontent.com/z=w226-h226'),
+      flexColumns: [{ musicResponsiveListItemFlexColumnRenderer: { text: { runs: [{ text: 'Un Verano Sin Ti' }] } } }, { musicResponsiveListItemFlexColumnRenderer: { text: { runs: [{ text: 'Álbum' }, { text: ' • ' }, { text: 'Bad Bunny' }, { text: ' • ' }, { text: '2022' }] } } }] } },
+    { musicResponsiveListItemRenderer: { navigationEndpoint: { browseEndpoint: { browseId: 'UCnoesunalbum1234567890' } }, flexColumns: [flex('Un artista')] } },
+    { musicResponsiveListItemRenderer: { navigationEndpoint: { browseEndpoint: { browseId: 'MPREb_AAAA1111bbbb' } }, flexColumns: [flex('Repetido')] } },
+  ] };
+  const a = LS.parseYtmAlbums(json);
+  assert.equal(a.length, 1);
+  assert.deepEqual([a[0].id, a[0].title, a[0].kind, a[0].artist, a[0].year], ['MPREb_AAAA1111bbbb', 'Un Verano Sin Ti', 'Álbum', 'Bad Bunny', '2022']);
+  assert.match(a[0].art, /=w544-h544$/);
+  assert.deepEqual(LS.parseYtmAlbums('no es json'), []);
+});
+
+test('parseYtmArtists: solo artistas (UC…)', () => {
+  const json = { r: [
+    { musicResponsiveListItemRenderer: { navigationEndpoint: { browseEndpoint: { browseId: 'UCiY3z8HAGD6BlSNKVn2kSvQ' } }, flexColumns: [flex('Bad Bunny')] } },
+    { musicResponsiveListItemRenderer: { navigationEndpoint: { browseEndpoint: { browseId: 'MPREb_AAAA1111bbbb' } }, flexColumns: [flex('Un álbum')] } },
+  ] };
+  assert.deepEqual(LS.parseYtmArtists(json).map((x) => [x.id, x.name]), [['UCiY3z8HAGD6BlSNKVn2kSvQ', 'Bad Bunny']]);
+});
+
+test('parseYtmTracks: todas las canciones de un álbum, con duración, artista y portada del contexto', () => {
+  const row = (vid, title, dur) => ({ musicResponsiveListItemRenderer: { playlistItemData: { videoId: vid }, flexColumns: [flex(title), flex('Bad Bunny')],
+    fixedColumns: [{ musicResponsiveListItemFixedColumnRenderer: { text: { runs: [{ text: dur }] } } }] } });
+  const json = { shelf: { contents: [row('p38WgakuYDo', 'Moscow Mule', '4:06'), row('a5rlgE6dcBY', 'Después de la Playa', '3:51'), row('p38WgakuYDo', 'Repetida', '1:00'), { musicResponsiveListItemRenderer: { flexColumns: [flex('Sin id')] } }] } };
+  const t = LS.parseYtmTracks(json, { artist: 'Bad Bunny', album: 'Un Verano Sin Ti', art: 'https://lh3/cover' });
+  assert.equal(t.length, 2);
+  assert.deepEqual([t[0].id, t[0].title, t[0].channel, t[0].duration, t[0].album, t[0].art], ['p38WgakuYDo', 'Moscow Mule', 'Bad Bunny', 246, 'Un Verano Sin Ti', 'https://lh3/cover']);
+});
+
+test('parseYtmArtistPage: más escuchadas, «todas las canciones» y discos con su tipo', () => {
+  const song = { musicResponsiveListItemRenderer: { playlistItemData: { videoId: 'Cr8K88UcO0s' }, flexColumns: [flex('Tití Me Preguntó'), flex('Bad Bunny', ['Un Verano Sin Ti'])] } };
+  const two = (id, title, sub) => ({ musicTwoRowItemRenderer: { navigationEndpoint: { browseEndpoint: { browseId: id } }, title: { runs: [{ text: title }] }, subtitle: { runs: sub.flatMap((t, i) => (i ? [{ text: ' • ' }, { text: t }] : [{ text: t }])) }, thumbnailRenderer: thumb('https://lh3/c=w226-h226') } });
+  const json = { page: [
+    { musicShelfRenderer: { contents: [song], bottomEndpoint: { browseEndpoint: { browseId: 'VLOLAK5uy_nWWprd6NhURfcj1M4T7LBIxbeGaYwZ8cY' } } } },
+    { musicCarouselShelfRenderer: { contents: [two('MPREb_AAAA1111bbbb', 'Un Verano Sin Ti', ['2022']), two('MPREb_BBBB2222cccc', 'Soy Peor', ['Single', '2016']), two('UCotroartista1234567890', 'No es un disco', ['Artista'])] } },
+  ] };
+  const p = LS.parseYtmArtistPage(json, 'Bad Bunny');
+  assert.equal(p.songs.length, 1);
+  assert.equal(p.allSongsId, 'VLOLAK5uy_nWWprd6NhURfcj1M4T7LBIxbeGaYwZ8cY');
+  assert.deepEqual(p.releases.map((r) => [r.id, r.kind, r.year]), [['MPREb_AAAA1111bbbb', 'Álbum', '2022'], ['MPREb_BBBB2222cccc', 'Single', '2016']]);
+});
+
+test('pickAlbum: el álbum que coincide con título y artista (no uno de otro artista)', () => {
+  const list = [
+    { id: 'MPREb_1', title: 'Un Verano Sin Ti Piano Version', artist: 'Pollonuel' },
+    { id: 'MPREb_2', title: 'Un Verano Sin Ti', artist: 'Bad Bunny' },
+    { id: 'MPREb_3', title: 'Un Verano Sin Ti', artist: 'Imitador' },
+  ];
+  assert.equal(LS.pickAlbum(list, 'Un Verano Sin Ti', 'Bad Bunny').id, 'MPREb_2');
+  assert.equal(LS.pickAlbum(list, 'Otro disco', 'Bad Bunny'), null);
+  assert.ok(LS.isBrowseId('MPREb_NMmY1n1NJFS') && LS.isBrowseId('UCiY3z8HAGD6BlSNKVn2kSvQ') && !LS.isBrowseId('x'));
+  assert.ok(LS.musicBrowseBody('MPREb_NMmY1n1NJFS').includes('MPREb_NMmY1n1NJFS'));
+});
