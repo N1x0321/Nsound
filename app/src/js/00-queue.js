@@ -33,6 +33,33 @@ var LS = globalThis.LS = globalThis.LS || {};
     return { queue: q, index };
   };
 
+  /** Repetir, como en Spotify: sin repetir → la lista → la canción → sin repetir. */
+  LS.REPEAT_MODES = ['off', 'all', 'one'];
+  LS.nextRepeat = (mode) => (mode === 'all' ? 'one' : mode === 'one' ? 'off' : 'all');   // un valor desconocido cuenta como «apagado»
+
+  /**
+   * Qué canción suena después. o = { repeat: 'off'|'all'|'one', shuffle, seen: [claves ya sonadas en este aleatorio], rand }.
+   * Devuelve { index, seen }; index -1 = se acabó la lista. Aleatorio: no repite hasta haber sonado todas (y entonces, solo si se repite la lista).
+   */
+  LS.pickNextIndex = function (queue, index, o) {
+    const q = Array.isArray(queue) ? queue : [], n = q.length, opt = o || {};
+    if (!n) return { index: -1, seen: [] };
+    const rand = typeof opt.rand === 'function' ? opt.rand : Math.random;
+    let seen = new Set(opt.seen || []);
+    if (valid(q, index)) seen.add(q[index].key);
+    if (opt.shuffle && n > 1) {
+      let cands = q.map((x, i) => i).filter((i) => i !== index && !seen.has(q[i].key));
+      if (!cands.length) {
+        if (opt.repeat !== 'all') return { index: -1, seen: [...seen] };
+        seen = new Set(valid(q, index) ? [q[index].key] : []);
+        cands = q.map((x, i) => i).filter((i) => i !== index);
+      }
+      return { index: cands[Math.min(cands.length - 1, Math.floor(rand() * cands.length))], seen: [...seen] };
+    }
+    if (index + 1 < n) return { index: index + 1, seen: [...seen] };
+    return opt.repeat === 'all' ? { index: 0, seen: [] } : { index: -1, seen: [...seen] };
+  };
+
   /** Vacía lo que viene después de la actual. */
   LS.queueClearUpcoming = function (queue, index) {
     return valid(queue, index) ? { queue: queue.slice(0, index + 1), index } : { queue: [], index: 0 };

@@ -563,3 +563,36 @@ test('país del ranking: por el idioma del sistema, con España de respaldo', ()
   assert.equal(JSON.parse(LS.musicBrowseBody('MPREb_NMmY1n1NJFS')).formData, undefined);
   assert.equal(JSON.parse(LS.musicBrowseBody('MPREb_NMmY1n1NJFS', 'xx')).formData, undefined);
 });
+
+// ---------- Repetir y aleatorio ----------
+const mk = (n) => Array.from({ length: n }, (_, i) => ({ key: 'k' + i }));
+test('repetir: lista → canción → apagado', () => {
+  assert.deepEqual(['off', 'all', 'one'].map(LS.nextRepeat), ['all', 'one', 'off']);
+  assert.equal(LS.nextRepeat(undefined), 'all');
+});
+
+test('siguiente sin aleatorio: avanza, y al final solo repite la lista si está activado', () => {
+  const q = mk(3);
+  assert.equal(LS.pickNextIndex(q, 0, { repeat: 'off' }).index, 1);
+  assert.equal(LS.pickNextIndex(q, 2, { repeat: 'off' }).index, -1);
+  assert.equal(LS.pickNextIndex(q, 2, { repeat: 'all' }).index, 0);
+  assert.equal(LS.pickNextIndex(q, 2, { repeat: 'one' }).index, -1);      // «repetir canción» lo gestiona el final de la canción, no el botón siguiente
+  assert.equal(LS.pickNextIndex([], 0, {}).index, -1);
+});
+
+test('aleatorio: no repite hasta haber sonado todas y respeta repetir la lista', () => {
+  const q = mk(5);
+  let seen = [], idx = 0; const heard = new Set([0]);
+  for (let i = 0; i < 4; i++) {
+    const r = LS.pickNextIndex(q, idx, { shuffle: true, repeat: 'off', seen });
+    assert.ok(r.index >= 0 && !heard.has(r.index), 'no repite ' + r.index);
+    heard.add(r.index); idx = r.index; seen = r.seen;
+  }
+  assert.equal(heard.size, 5);
+  assert.equal(LS.pickNextIndex(q, idx, { shuffle: true, repeat: 'off', seen }).index, -1);        // todas sonadas: se acaba
+  const again = LS.pickNextIndex(q, idx, { shuffle: true, repeat: 'all', seen });
+  assert.ok(again.index >= 0 && again.index !== idx);                                                // con repetir lista, vuelve a empezar
+  assert.deepEqual(again.seen, [q[idx].key]);
+  assert.equal(LS.pickNextIndex(q, 0, { shuffle: true, rand: () => 0.999 }).index, 4);              // el azar elige entre las que faltan
+  assert.equal(LS.pickNextIndex(mk(1), 0, { shuffle: true, repeat: 'all' }).index, 0);               // una sola canción
+});
