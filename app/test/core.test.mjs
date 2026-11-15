@@ -538,3 +538,18 @@ test('pickAlbum: el álbum que coincide con título y artista (no uno de otro ar
   assert.ok(LS.isBrowseId('MPREb_NMmY1n1NJFS') && LS.isBrowseId('UCiY3z8HAGD6BlSNKVn2kSvQ') && !LS.isBrowseId('x'));
   assert.ok(LS.musicBrowseBody('MPREb_NMmY1n1NJFS').includes('MPREb_NMmY1n1NJFS'));
 });
+
+test('parseYtmChartArtists: el ranking de artistas, en orden, sin repetir y con foto', () => {
+  const art = (id, name, url) => ({ musicResponsiveListItemRenderer: { navigationEndpoint: { browseEndpoint: { browseId: id } }, thumbnail: thumb(url), flexColumns: [flex(name)] } });
+  const json = { charts: [
+    art('UCbBaYg2UToDaoOwo-R6xi4g', 'Anuel AA', 'https://lh3/anuel=w226-h226'),
+    art('UCiY3z8HAGD6BlSNKVn2kSvQ', 'Bad Bunny', 'https://lh3/bb=w226-h226'),
+    art('UCiY3z8HAGD6BlSNKVn2kSvQ', 'Bad Bunny (repetido)', 'https://lh3/x'),
+    { musicResponsiveListItemRenderer: { navigationEndpoint: { browseEndpoint: { browseId: 'MPREb_AAAA1111bbbb' } }, flexColumns: [flex('Un álbum')] } },
+  ] };
+  const r = LS.parseYtmChartArtists(json);
+  assert.deepEqual(r.map((x) => x.name), ['Anuel AA', 'Bad Bunny']);
+  assert.match(r[0].art, /=w544-h544$/);
+  assert.deepEqual(LS.parseYtmChartArtists('no es json'), []);
+  assert.equal(LS.CHARTS_BROWSE_ID, 'FEmusic_charts');
+});

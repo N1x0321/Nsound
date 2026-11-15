@@ -256,6 +256,52 @@ var LS = globalThis.LS = globalThis.LS || {};
     return res;
   };
 
+  /** Página de listas de éxitos de YouTube Music («Artistas principales»): se actualiza sola. */
+  LS.CHARTS_BROWSE_ID = 'FEmusic_charts';
+
+  /** Respuesta de las listas de éxitos → artistas del ranking [{ id: 'UC…', name, art }] en el orden del ranking, sin repetir. */
+  LS.parseYtmChartArtists = function (json) {
+    const data = ytmParse(json), out = [], seen = new Set();
+    if (!data) return out;
+    ytmWalk(data, (k, v) => {
+      if (k !== 'musicResponsiveListItemRenderer' && k !== 'musicTwoRowItemRenderer') return false;
+      const be = v && v.navigationEndpoint && v.navigationEndpoint.browseEndpoint, id = be && be.browseId;
+      if (!LS.isBrowseId(id) || !/^UC/.test(id) || seen.has(id)) return true;
+      let name = '';
+      if (k === 'musicTwoRowItemRenderer') name = v.title && Array.isArray(v.title.runs) && v.title.runs[0] ? String(v.title.runs[0].text || '').trim() : '';
+      else name = ((Array.isArray(v.flexColumns) ? ytmText(v.flexColumns[0]) : [])[0] || '').trim();
+      if (!name) return true;
+      let art = ytmThumb(v);
+      if (!art && v.thumbnailRenderer) art = ytmThumb({ thumbnail: v.thumbnailRenderer });
+      seen.add(id); out.push({ id, name, art });
+      return true;
+    });
+    return out;
+  };
+
+  /** Página de listas de éxitos de YouTube Music («Artistas principales»): se actualiza sola. */
+  LS.CHARTS_BROWSE_ID = 'FEmusic_charts';
+
+  /** Respuesta de las listas de éxitos → artistas del ranking [{ id: 'UC…', name, art }] en el orden del ranking, sin repetir. */
+  LS.parseYtmChartArtists = function (json) {
+    const data = ytmParse(json), out = [], seen = new Set();
+    if (!data) return out;
+    ytmWalk(data, (k, v) => {
+      if (k !== 'musicResponsiveListItemRenderer' && k !== 'musicTwoRowItemRenderer') return false;
+      const be = v && v.navigationEndpoint && v.navigationEndpoint.browseEndpoint, id = be && be.browseId;
+      if (!LS.isBrowseId(id) || !/^UC/.test(id) || seen.has(id)) return true;
+      let name = '';
+      if (k === 'musicTwoRowItemRenderer') name = v.title && Array.isArray(v.title.runs) && v.title.runs[0] ? String(v.title.runs[0].text || '').trim() : '';
+      else name = ((Array.isArray(v.flexColumns) ? ytmText(v.flexColumns[0]) : [])[0] || '').trim();
+      if (!name) return true;
+      let art = ytmThumb(v);
+      if (!art && v.thumbnailRenderer) art = ytmThumb({ thumbnail: v.thumbnailRenderer });
+      seen.add(id); out.push({ id, name, art });
+      return true;
+    });
+    return out;
+  };
+
   /** De varios álbumes encontrados, el que mejor encaja con título (y artista): igual > contiene; el primero si ninguno encaja del todo. */
   LS.pickAlbum = function (albums, title, artist) {
     const want = LS.normName(title), who = LS.normName(artist || '');
