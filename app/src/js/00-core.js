@@ -308,6 +308,33 @@ var LS = globalThis.LS = globalThis.LS || {};
     return out;
   };
 
+  const COUNTRIES = { ES: 'España', MX: 'México', AR: 'Argentina', CO: 'Colombia', CL: 'Chile', PE: 'Perú', VE: 'Venezuela', EC: 'Ecuador', UY: 'Uruguay', PY: 'Paraguay',
+    BO: 'Bolivia', DO: 'República Dominicana', PR: 'Puerto Rico', CR: 'Costa Rica', PA: 'Panamá', GT: 'Guatemala', SV: 'El Salvador', HN: 'Honduras', NI: 'Nicaragua',
+    CU: 'Cuba', US: 'Estados Unidos', BR: 'Brasil', PT: 'Portugal', FR: 'Francia', IT: 'Italia', DE: 'Alemania', GB: 'Reino Unido', CA: 'Canadá' };
+  /** Nombre del país en español («CO» → «Colombia»); si no se conoce, el propio código. */
+  LS.countryName = (cc) => COUNTRIES[String(cc || '').toUpperCase()] || String(cc || '');
+
+  /** Listas de éxitos oficiales del país (en la página de listas de YouTube Music) → [{ id: 'VL…', title }] */
+  LS.parseYtmChartLists = function (json) {
+    const data = ytmParse(json), out = [], seen = new Set();
+    if (!data) return out;
+    ytmWalk(data, (k, v) => {
+      if (k !== 'musicTwoRowItemRenderer') return false;
+      const be = v && v.navigationEndpoint && v.navigationEndpoint.browseEndpoint, id = be && be.browseId;
+      if (!LS.isBrowseId(id) || !/^VL/.test(id) || seen.has(id)) return true;
+      const title = v.title && Array.isArray(v.title.runs) ? v.title.runs.map((r) => r.text || '').join('').trim() : '';
+      seen.add(id); out.push({ id, title });
+      return true;
+    });
+    return out;
+  };
+
+  /** De las listas de éxitos, la mejor para «Éxitos»: los 100 más populares, si no el top diario, si no las tendencias. */
+  LS.pickHitsList = function (lists) {
+    const l = lists || [];
+    return l.find((x) => /100|m[aá]s populares|most popular/i.test(x.title)) || l.find((x) => /top diario|daily/i.test(x.title)) || l.find((x) => /tendencias|trending/i.test(x.title)) || l[0] || null;
+  };
+
   /** De varios álbumes encontrados, el que mejor encaja con título (y artista): igual > contiene; el primero si ninguno encaja del todo. */
   LS.pickAlbum = function (albums, title, artist) {
     const want = LS.normName(title), who = LS.normName(artist || '');

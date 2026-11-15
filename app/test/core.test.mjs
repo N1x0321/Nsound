@@ -563,3 +563,17 @@ test('país del ranking: por el idioma del sistema, con España de respaldo', ()
   assert.equal(JSON.parse(LS.musicBrowseBody('MPREb_NMmY1n1NJFS')).formData, undefined);
   assert.equal(JSON.parse(LS.musicBrowseBody('MPREb_NMmY1n1NJFS', 'xx')).formData, undefined);
 });
+
+test('éxitos por país: nombre del país y elección de la lista oficial', () => {
+  assert.equal(LS.countryName('CO'), 'Colombia');
+  assert.equal(LS.countryName('es'), 'España');
+  assert.equal(LS.countryName('ZZ'), 'ZZ');
+  const two = (id, title) => ({ musicTwoRowItemRenderer: { navigationEndpoint: { browseEndpoint: { browseId: id } }, title: { runs: [{ text: title }] } } });
+  const lists = LS.parseYtmChartLists({ x: [two('VLOLAK5uy_kcnWWQfQbentpiyNPEME69IkaOUqsq4Jw', 'Las 20 tendencias en Colombia'), two('VLPL4fGSI1pDJn6J8V3F1Nfgigbyrhd2fhgI', 'Top diario de vídeos musicales en Colombia'),
+    two('VLPL4fGSI1pDJn4ObZYxzctc1AM45GSWm2DC', 'Los 100 vídeos musicales más populares en Colombia'), two('MPREb_AAAA1111bbbb', 'Un álbum')] });
+  assert.equal(lists.length, 3);
+  assert.equal(LS.pickHitsList(lists).title, 'Los 100 vídeos musicales más populares en Colombia');
+  assert.equal(LS.pickHitsList(lists.slice(0, 2)).title, 'Top diario de vídeos musicales en Colombia');
+  assert.equal(LS.pickHitsList(lists.slice(0, 1)).title, 'Las 20 tendencias en Colombia');
+  assert.equal(LS.pickHitsList([]), null);
+});
