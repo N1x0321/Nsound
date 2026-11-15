@@ -177,13 +177,14 @@
     S.page = PAGES.includes(parts[0]) ? parts[0] : 'home';
     S.artist = S.page === 'artist' ? LS.artistFromParts(parts) : '';
     S.sub = S.page === 'library' ? (parts[1] === 'downloads' ? 'downloads' : parts[1] === 'pl' && parts[2] ? 'pl:' + parts[2] : 'saved') : 'saved';
-    $$('#nav [data-page]').forEach((b) => b.classList.toggle('on', b.dataset.page === S.page));
+    $$('#nav [data-page]').forEach((b) => b.classList.toggle('on', b.dataset.page === (S.page === 'artist' ? 'music' : S.page)));   // el artista se ve dentro de Música
     render();
   }
   const go = (hash) => { if (location.hash === hash) route(); else location.hash = hash; };
 
   // El apartado decide qué se muestra: en Música solo música, en Vídeos solo vídeos; en Inicio, el filtro.
-  const scopeNow = () => (S.page === 'music' ? 'track' : S.page === 'videos' ? 'video' : S.scope);
+  // La página de un artista es parte de Música: sus canciones suenan como música (solo sonido), no como vídeo
+  const scopeNow = () => (S.page === 'music' || S.page === 'artist' ? 'track' : S.page === 'videos' ? 'video' : S.scope);
 
   function render() {
     if (videoMode() === 'full' && S.now && !S.audioOnly) setVideoMode('pip');     // navegar minimiza el vídeo en lugar de taparlo todo
