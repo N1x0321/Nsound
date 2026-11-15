@@ -131,7 +131,13 @@ var LS = globalThis.LS = globalThis.LS || {};
 
   LS.musicSearchBody = (query, params) => JSON.stringify({ context: ytmContext, query: String(query).trim(), params: params || LS.MUSIC_SONGS_PARAMS });
   /** Una página de YouTube Music: un álbum (MPREb_…), un artista (UC…) o una lista (VL…). */
-  LS.musicBrowseBody = (browseId) => JSON.stringify({ context: ytmContext, browseId: String(browseId) });
+  LS.musicBrowseBody = (browseId, country) => JSON.stringify(Object.assign({ context: ytmContext, browseId: String(browseId) },
+    /^[A-Z]{2}$/.test(country || '') ? { formData: { selectedValues: [country] } } : {}));   // país: las listas de éxitos cambian según el país
+  /** País del usuario («ES», «MX»…) por el idioma del sistema; si no se sabe, España. */
+  LS.userCountry = function (langs) {
+    for (const l of [].concat(langs || [])) { const m = /[-_]([A-Za-z]{2})$/.exec(String(l || '')); if (m) return m[1].toUpperCase(); }
+    return 'ES';
+  };
   LS.isBrowseId = (s) => typeof s === 'string' && /^(MPRE[\w-]{4,60}|UC[\w-]{20,30}|VL[\w-]{6,60})$/.test(s);
 
   // --- Lectura de las respuestas (solo metadatos públicos: títulos, artistas, portadas e identificadores) ---

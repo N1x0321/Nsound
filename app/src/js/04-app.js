@@ -213,7 +213,10 @@
   // «Artistas de la semana»: el ranking real de YouTube Music («Artistas principales»), que se actualiza solo; si no está disponible, la lista fija
   async function loadTopArtists(renderId) {
     try {
-      const list = await ytmPost(LS.MUSIC_BROWSE_URL, LS.musicBrowseBody(LS.CHARTS_BROWSE_ID), 'ranking|' + new Date().toISOString().slice(0, 13), LS.parseYtmChartArtists);
+      const country = LS.userCountry(navigator.languages && navigator.languages.length ? navigator.languages : [navigator.language]);
+      const chart = (cc) => ytmPost(LS.MUSIC_BROWSE_URL, LS.musicBrowseBody(LS.CHARTS_BROWSE_ID, cc), 'ranking|' + cc + '|' + new Date().toISOString().slice(0, 13), LS.parseYtmChartArtists);
+      let list = await chart(country);
+      if (list.length < 6 && country !== 'ES') list = await chart('ES');     // país sin ranking: el de España
       const row = $('#topArtistsRow');
       if (renderId !== S.renderId || !row || list.length < 6) return;
       row.innerHTML = list.slice(0, 14).map((a, i) => `<button class="aitem" data-act="artist" data-name="${esc(a.name)}"${a.art ? ' data-photo="1"' : ''} aria-label="Puesto ${i + 1}: ${esc(a.name)}">

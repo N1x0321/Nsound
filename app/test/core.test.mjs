@@ -553,3 +553,13 @@ test('parseYtmChartArtists: el ranking de artistas, en orden, sin repetir y con 
   assert.deepEqual(LS.parseYtmChartArtists('no es json'), []);
   assert.equal(LS.CHARTS_BROWSE_ID, 'FEmusic_charts');
 });
+
+test('país del ranking: por el idioma del sistema, con España de respaldo', () => {
+  assert.equal(LS.userCountry(['es-MX', 'en-US']), 'MX');
+  assert.equal(LS.userCountry('es_AR'), 'AR');
+  assert.equal(LS.userCountry(['es', 'en']), 'ES');
+  assert.equal(LS.userCountry(undefined), 'ES');
+  assert.ok(JSON.parse(LS.musicBrowseBody('FEmusic_charts', 'MX')).formData.selectedValues[0] === 'MX');
+  assert.equal(JSON.parse(LS.musicBrowseBody('MPREb_NMmY1n1NJFS')).formData, undefined);
+  assert.equal(JSON.parse(LS.musicBrowseBody('MPREb_NMmY1n1NJFS', 'xx')).formData, undefined);
+});
