@@ -723,7 +723,7 @@
     S.queue = keys.map((k) => reg.get(k)).filter(Boolean);
     S.index = Math.max(0, S.queue.findIndex((i) => i.key === key));
     S.audioOnly = scopeNow() === 'track' && it.src === 'yt';
-    S.skips = 0;
+    S.skips = 0; S.seen = []; S.hist = [];                  // lista nueva: el aleatorio empieza de cero
     start();
   }
 
@@ -739,8 +739,37 @@
     if (!$('#lyrics').hidden) loadLyrics();
   }
 
-  function next() { if (S.index + 1 < S.queue.length) { S.index++; start(); } else Player.pause(); }
-  function prev() { if (S.time > 3 || S.index <= 0) Player.seek(0); else { S.index--; start(); } }
+  // Aleatorio y repetir (como en Spotify): repetir una vez = la lista, dos = la canción, tres = apagado
+  S.repeat = store.settings.get().repeat; S.shuffle = store.settings.get().shuffle; S.seen = []; S.hist = [];
+  function next() {
+    const r = LS.pickNextIndex(S.queue, S.index, { repeat: S.repeat, shuffle: S.shuffle, seen: S.seen });
+    if (r.index < 0) { Player.pause(); return; }
+    if (S.queue[S.index]) S.hist = S.hist.concat(S.queue[S.index].key).slice(-50);
+    S.seen = r.seen; S.index = r.index; start();
+  }
+  function prev() {
+    if (S.time > 3) { Player.seek(0); return; }
+    if (S.shuffle && S.hist.length) {                       // en aleatorio «anterior» vuelve a la que sonó antes
+      const key = S.hist[S.hist.length - 1], i = S.queue.findIndex((x) => x.key === key);
+      S.hist = S.hist.slice(0, -1);
+      if (i >= 0) { S.index = i; start(); return; }
+    }
+    if (S.index <= 0) Player.seek(0); else { S.index--; start(); }
+  }
+  function onEnded() { if (S.repeat === 'one' && S.now) { S.skips = 0; start(); return; } next(); }   // repetir la canción: vuelve a empezar la misma
+  function paintModes() {
+    const rep = S.repeat, label = rep === 'all' ? 'Repetir: la lista' : rep === 'one' ? 'Repetir: la canción' : 'Repetir: desactivado';
+    for (const id of ['#npRepeat', '#repeatBtn']) { const b = $(id); if (!b) continue; LS.setIcon(b, rep === 'one' ? 'repeat1' : 'repeat'); b.classList.toggle('on', rep !== 'off'); b.setAttribute('aria-pressed', String(rep !== 'off')); b.setAttribute('aria-label', label); b.title = label; }
+    for (const id of ['#npShuffle', '#shuffleBtn']) { const b = $(id); if (!b) continue; b.classList.toggle('on', S.shuffle); b.setAttribute('aria-pressed', String(S.shuffle)); b.setAttribute('aria-label', S.shuffle ? 'Aleatorio: activado' : 'Aleatorio: desactivado'); b.title = b.getAttribute('aria-label'); }
+  }
+  function toggleRepeat() {
+    S.repeat = LS.nextRepeat(S.repeat); store.settings.set({ repeat: S.repeat }); paintModes();
+    toast(S.repeat === 'all' ? 'Repetir la lista' : S.repeat === 'one' ? 'Repetir la canción' : 'Repetición desactivada', 2200);
+  }
+  function toggleShuffle() {
+    S.shuffle = !S.shuffle; S.seen = S.now ? [S.now.key] : []; S.hist = []; store.settings.set({ shuffle: S.shuffle }); paintModes();
+    toast(S.shuffle ? 'Aleatorio activado' : 'Aleatorio desactivado', 2200);
+  }
 
   // El vídeo no se oculta con display:none (el navegador suspendería la reproducción): se deja vivo y casi invisible.
   // Tres estados: 'full' (a pantalla completa), 'pip' (ventanita flotante mientras navegas) y 'hidden' (solo suena)
@@ -950,7 +979,7 @@
     syncNp();
     followLyrics();
   });
-  Player.on('ended', next);
+  Player.on('ended', onEnded);
   Player.on('error', (e) => {
     const t = S.now ? S.now.title : '';
     toast(e.code === 101 || e.code === 150 ? `«${t}» no permite reproducirse fuera de youtube.com (lo decide quien lo subió).` : `No se pudo reproducir «${t}» (${e.message || 'error ' + e.code}).`);
@@ -1031,6 +1060,9 @@
 
   $('.now').addEventListener('click', () => { if (document.body.classList.contains('fx')) openNp(); });
   $('#npClose').onclick = closeNp;
+  $('#npShuffle').onclick = toggleShuffle; $('#shuffleBtn').onclick = toggleShuffle;
+  $('#npRepeat').onclick = toggleRepeat; $('#repeatBtn').onclick = toggleRepeat;
+  paintModes();
   $('#npPrev').onclick = prev;
   $('#npNext').onclick = next;
   $('#npPlay').onclick = () => { buzz(); Player.toggle(); };

@@ -144,8 +144,9 @@ body.fx .np.open { transform: none; visibility: visible; transition: transform .
 .np-sub { color: var(--muted); margin-bottom: 8px; text-align: center; }
 .np-times { display: flex; justify-content: space-between; width: min(560px, 100%); font-size: 12px; color: var(--muted); }
 #npProgress { width: min(560px, 100%); }
-.np-ctrl { display: flex; gap: 22px; align-items: center; margin: 8px 0; }
-.np-ctrl button { background: transparent; font-size: 26px; min-width: 52px; min-height: 52px; border-radius: 50%; }
+.np-ctrl { display: flex; gap: 10px; align-items: center; justify-content: center; max-width: 100%; margin: 8px 0; }   /* 5 botones: tienen que caber en un móvil de 360 px */
+.np-ctrl button { background: transparent; font-size: 26px; min-width: 46px; min-height: 52px; border-radius: 50%; padding-left: 0; padding-right: 0; }
+.np-ctrl button.mode { min-width: 40px; font-size: 22px; }
 #npPlay { width: 72px; height: 72px; font-size: 28px; padding: 0; background: linear-gradient(135deg, var(--accent), var(--accent2)); color: var(--on); box-shadow: 0 16px 36px -10px rgba(var(--ar), .9); }
 .np-extra { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
 .np-extra button { background: rgba(var(--w), .07); min-height: 46px; min-width: 52px; border-radius: 14px; }
@@ -186,3 +187,8 @@ body.fx[data-theme="claro"] .hero, body.fx[data-theme="claro"] .np-art { box-sha
 
 /* Muestras de color en Ajustes */
 .dot { display: inline-block; width: 12px; height: 12px; border-radius: 50%; margin-right: 8px; vertical-align: -1px; border: 1px solid rgba(128, 128, 128, .5); }
+
+/* Aleatorio y repetir: apagados en gris, activos con el color del estilo */
+button.mode { opacity: .55; }
+button.mode.on { opacity: 1; color: var(--accent); }
+@media (max-width: 720px) { #bar .barmode { display: none; } }
