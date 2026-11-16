@@ -35,6 +35,24 @@ var LS = globalThis.LS = globalThis.LS || {};
     { title: 'Humor y entretenimiento', queries: ['monólogo humor', 'programa entretenimiento'] },
   ];
 
+  /**
+   * Estanterías de «Vídeos» según el país: lo de esta semana (week) se pide con el filtro «esta semana» de YouTube, así que se renueva solo.
+   * En España se mantienen los eventos y creadores de siempre; en el resto, búsquedas con el nombre del país.
+   */
+  LS.shelvesFor = function (cc, countryName) {
+    const n = countryName || '', es = String(cc).toUpperCase() === 'ES';
+    return [
+      { title: n ? 'Novedades en ' + n : 'Novedades', queries: [{ q: 'vídeos nuevos ' + n, week: true }, { q: 'lo más visto hoy ' + n, week: true }] },
+      { title: 'Videoclips nuevos', queries: [{ q: 'videoclip oficial nuevo ' + n, week: true }, { q: 'estreno video oficial ' + n, week: true }] },
+      { title: 'Series y tráilers', queries: [{ q: 'tráiler oficial serie estreno', week: true }, { q: 'tráiler oficial película estreno', week: true }] },
+      { title: es ? 'Eventos del año' : 'Eventos y conciertos', queries: es ? [{ q: 'La Velada del Año' }, { q: 'Kings League resumen' }] : [{ q: 'evento en vivo resumen ' + n }, { q: 'concierto completo ' + n }] },
+      { title: 'YouTubers', queries: es ? [{ q: 'Ibai' }, { q: 'AuronPlay' }, { q: 'TheGrefg' }] : [{ q: 'youtubers ' + n + ' vídeo nuevo', week: true }, { q: 'reto youtuber ' + n }] },
+      { title: 'Deporte', queries: [{ q: 'resumen partido goles ' + n, week: true }] },
+      { title: 'Documentales', queries: [{ q: 'documental completo en español ' + n }] },
+      { title: 'Humor y entretenimiento', queries: [{ q: 'humor ' + n + ' vídeo', week: true }, { q: 'programa entretenimiento ' + n }] },
+    ];
+  };
+
   // ---------- Utilidades ----------
   LS.fold = function (s) {
     return String(s).toLowerCase().normalize('NFKD').replace(/[̀-ͯ]/g, '')
@@ -306,6 +324,33 @@ var LS = globalThis.LS = globalThis.LS || {};
       return true;
     });
     return out;
+  };
+
+  const COUNTRIES = { ES: 'España', MX: 'México', AR: 'Argentina', CO: 'Colombia', CL: 'Chile', PE: 'Perú', VE: 'Venezuela', EC: 'Ecuador', UY: 'Uruguay', PY: 'Paraguay',
+    BO: 'Bolivia', DO: 'República Dominicana', PR: 'Puerto Rico', CR: 'Costa Rica', PA: 'Panamá', GT: 'Guatemala', SV: 'El Salvador', HN: 'Honduras', NI: 'Nicaragua',
+    CU: 'Cuba', US: 'Estados Unidos', BR: 'Brasil', PT: 'Portugal', FR: 'Francia', IT: 'Italia', DE: 'Alemania', GB: 'Reino Unido', CA: 'Canadá' };
+  /** Nombre del país en español («CO» → «Colombia»); si no se conoce, el propio código. */
+  LS.countryName = (cc) => COUNTRIES[String(cc || '').toUpperCase()] || String(cc || '');
+
+  /** Listas de éxitos oficiales del país (en la página de listas de YouTube Music) → [{ id: 'VL…', title }] */
+  LS.parseYtmChartLists = function (json) {
+    const data = ytmParse(json), out = [], seen = new Set();
+    if (!data) return out;
+    ytmWalk(data, (k, v) => {
+      if (k !== 'musicTwoRowItemRenderer') return false;
+      const be = v && v.navigationEndpoint && v.navigationEndpoint.browseEndpoint, id = be && be.browseId;
+      if (!LS.isBrowseId(id) || !/^VL/.test(id) || seen.has(id)) return true;
+      const title = v.title && Array.isArray(v.title.runs) ? v.title.runs.map((r) => r.text || '').join('').trim() : '';
+      seen.add(id); out.push({ id, title });
+      return true;
+    });
+    return out;
+  };
+
+  /** De las listas de éxitos, la mejor para «Éxitos»: los 100 más populares, si no el top diario, si no las tendencias. */
+  LS.pickHitsList = function (lists) {
+    const l = lists || [];
+    return l.find((x) => /100|m[aá]s populares|most popular/i.test(x.title)) || l.find((x) => /top diario|daily/i.test(x.title)) || l.find((x) => /tendencias|trending/i.test(x.title)) || l[0] || null;
   };
 
   /** De varios álbumes encontrados, el que mejor encaja con título (y artista): igual > contiene; el primero si ninguno encaja del todo. */

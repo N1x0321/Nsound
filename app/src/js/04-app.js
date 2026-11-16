@@ -177,13 +177,14 @@
     S.page = PAGES.includes(parts[0]) ? parts[0] : 'home';
     S.artist = S.page === 'artist' ? LS.artistFromParts(parts) : '';
     S.sub = S.page === 'library' ? (parts[1] === 'downloads' ? 'downloads' : parts[1] === 'pl' && parts[2] ? 'pl:' + parts[2] : 'saved') : 'saved';
-    $$('#nav [data-page]').forEach((b) => b.classList.toggle('on', b.dataset.page === S.page));
+    $$('#nav [data-page]').forEach((b) => b.classList.toggle('on', b.dataset.page === (S.page === 'artist' ? 'music' : S.page)));   // el artista se ve dentro de Música
     render();
   }
   const go = (hash) => { if (location.hash === hash) route(); else location.hash = hash; };
 
   // El apartado decide qué se muestra: en Música solo música, en Vídeos solo vídeos; en Inicio, el filtro.
-  const scopeNow = () => (S.page === 'music' ? 'track' : S.page === 'videos' ? 'video' : S.scope);
+  // La página de un artista es parte de Música: sus canciones suenan como música (solo sonido), no como vídeo
+  const scopeNow = () => (S.page === 'music' || S.page === 'artist' ? 'track' : S.page === 'videos' ? 'video' : S.scope);
 
   function render() {
     if (videoMode() === 'full' && S.now && !S.audioOnly) setVideoMode('pip');     // navegar minimiza el vídeo en lugar de taparlo todo
@@ -210,10 +211,24 @@
     'Daddy Yankee', 'Ariana Grande', 'Myke Towers', 'Imagine Dragons', 'Maluma', 'Harry Styles', 'Aitana', 'Lola Índigo', 'Morad', 'Eminem'];
   // Portada de un disco de cada artista de la lista, ya resuelta (MusicBrainz) para que salga al instante; los que faltan se buscan después
   const ARTIST_COVER = { "Bad Bunny": 'b3073a10-2d7c-484c-b387-e49ae629da3d', "Taylor Swift": '9ae7e7e9-ac40-4874-bd43-d77a9bb9b617', "Karol G": '2928f830-b86c-457f-9684-95f5bc7f4c04', "The Weeknd": '14f83b04-2b9e-4974-9169-476f26475be3', "Shakira": 'f04254be-6a7b-4137-bffa-a2236ab8433e', "Feid": '3a1a8d6e-85d3-4f75-8d73-827dc590a9b4', "Drake": '34009a25-def9-4e37-b3be-803b154902c0', "Rosalía": 'bb3ec118-57df-4eb9-a8fe-a26a70a7dbe0', "Peso Pluma": 'fc474abc-71f9-487b-a3b5-7162b1136a26', "Dua Lipa": 'c358634d-b58d-4635-aca3-246cee2577f0', "Billie Eilish": '02a544b3-0459-42c7-bd9c-047162e7b67a', "Quevedo": '87635467-6804-404a-b95f-a862a07a5d27', "Ed Sheeran": '2068661d-b968-402f-adc9-bc42dda441a9', "Bruno Mars": 'a868464a-2e60-484b-bacd-aaeaee71284e', "Anuel AA": 'ddbbc5f3-5393-4e1d-b513-e7c6f3b8271d', "Coldplay": '3988c875-b35f-4c3e-b143-ccb484d45347', "Mora": '130d3966-a94b-437f-b921-1706e0ffafff', "Olivia Rodrigo": '4c4eee61-da1e-4115-8eb9-07e5b671fefe', "J Balvin": '9cd0edd6-f719-4d83-86cb-a01594885b4f', "Daddy Yankee": '45fbc014-1184-43ad-a907-94b73af33374', "Ariana Grande": '2b8f453f-ffd6-4860-8742-7cff1c2feae3', "Myke Towers": 'e3b39cf3-52c0-4e7a-8e78-830f75ff7fc5', "Maluma": '7a4f6e7c-f016-4513-89d6-2bd692fdeb2b', "Harry Styles": '8676b232-108c-4229-be09-f1b09b0ec5f6', "Aitana": '9b76aa9f-d6cb-4f4c-a037-ed7dcbeeafa3', "Lola Índigo": 'cbba1116-d884-4654-b0ca-232e4d4b57ba', "Morad": 'dcb511dc-e78a-4677-8d2d-1262cef381d8', "Eminem": '2133f99e-22e7-48c9-a818-914265089e51', "Rauw Alejandro": '786f5aec-d59c-491c-aee6-baaff09a81c8' };
+  // País del usuario (idioma del sistema; ?pais=XX lo fuerza en pruebas)
+  function userCc() {
+    const forced = ((new URLSearchParams(location.search)).get('pais') || '').toUpperCase();
+    return /^[A-Z]{2}$/.test(forced) ? forced : LS.userCountry(navigator.languages && navigator.languages.length ? navigator.languages : [navigator.language]);
+  }
+
+  // Éxitos del país: las listas oficiales de YouTube («Los 100 vídeos musicales más populares en …»), que se actualizan solas
+  async function countryHits(cc) {
+    const lists = await ytmPost(LS.MUSIC_BROWSE_URL, LS.musicBrowseBody(LS.CHARTS_BROWSE_ID, cc), 'listas|' + cc + '|' + new Date().toISOString().slice(0, 13), LS.parseYtmChartLists);
+    const pick = LS.pickHitsList(lists);
+    if (!pick) return [];
+    return ytmTracksOf(pick.id, {});
+  }
+
   // «Artistas de la semana»: el ranking real de YouTube Music («Artistas principales»), que se actualiza solo; si no está disponible, la lista fija
   async function loadTopArtists(renderId) {
     try {
-      const country = LS.userCountry(navigator.languages && navigator.languages.length ? navigator.languages : [navigator.language]);
+      const country = userCc();
       const chart = (cc) => ytmPost(LS.MUSIC_BROWSE_URL, LS.musicBrowseBody(LS.CHARTS_BROWSE_ID, cc), 'ranking|' + cc + '|' + new Date().toISOString().slice(0, 13), LS.parseYtmChartArtists);
       let list = await chart(country);
       if (list.length < 6 && country !== 'ES') list = await chart('ES');     // país sin ranking: el de España
@@ -276,15 +291,29 @@
     try {
       let list, items;
       if (q.length === 1) { box.innerHTML = '<p class="hint">Escribe al menos dos letras.</p>'; return; }
-      // Sin búsqueda: primero lo publicado esta semana del género (se actualiza solo), después el fondo de catálogo
+      // Sin búsqueda, «Éxitos»: el top oficial del país (YouTube). Los demás géneros se buscan con el nombre del país para que salga lo de allí.
+      const cc = userCc(), cName = LS.countryName(cc), genre = S.page === 'music' ? S.genre : LS.GENRES[0];
+      if (!q && genre === LS.GENRES[0] && !(S.page === 'music' && S.genre !== LS.GENRES[0])) {
+        let hits = [];
+        try { hits = await countryHits(cc); } catch (e) { hits = []; }
+        hits = hits.filter((m) => m.duration === 0 || LS.isSong({ title: m.title, duration: m.duration }));
+        if (hits.length >= 10) {
+          if (id !== S.renderId) return;
+          const mk = sc === 'track' ? musicItem : (m) => ytItem({ id: m.id, title: m.title, channel: m.channel, duration: m.duration, published: '' });
+          const its = setList(listId, hits.slice(0, 60).map(mk));
+          box.innerHTML = grid(listId, its, sc === 'track' ? 'track' : 'video');
+          const h = $('#hitsTitle'); if (h) h.textContent = 'Éxitos del momento en ' + cName;
+          return;
+        }
+      }
       let recent = [];
       if (!q) {
-        try { recent = (await ytSearch(LS.recentQuery(S.page === 'music' ? S.genre : LS.GENRES[0], new Date().getFullYear()), { thisWeek: true })).filter((v) => LS.isSong(v) && !LS.isLive(v) && v.duration <= 480).slice(0, 8); } catch (e) { recent = []; }
+        try { recent = (await ytSearch(LS.recentQuery(S.page === 'music' ? S.genre : LS.GENRES[0], new Date().getFullYear()) + ' ' + cName, { thisWeek: true })).filter((v) => LS.isSong(v) && !LS.isLive(v) && v.duration <= 480).slice(0, 8); } catch (e) { recent = []; }
       }
       const withRecent = (arr, mk) => { const ids = new Set(recent.map((v) => v.id)); return recent.map(mk).concat(arr.filter((x) => !ids.has(x.id))); };
       if (sc === 'track') {
         try {
-          const songs = await musicSearch(q || LS.genreQuery(S.page === 'music' ? S.genre : LS.GENRES[0], new Date().getFullYear()));
+          const songs = await musicSearch(q || (LS.genreQuery(S.page === 'music' ? S.genre : LS.GENRES[0], new Date().getFullYear()) + ' ' + cName));
           items = songs.filter((m) => LS.isSong({ title: m.title, duration: m.duration })).map(musicItem);
           if (!items.length) items = null;
         } catch (e) { items = null; }   // si YouTube Music falla, se usa la búsqueda normal
@@ -334,8 +363,8 @@
     if (S.releases.length) return;
     try {
       const [latin, world] = await Promise.all([
-        ytSearch('nuevo lanzamiento oficial video musical', { thisWeek: true }),
-        ytSearch('new music official video', { thisWeek: true }),
+        ytSearch('nuevo lanzamiento oficial video musical ' + LS.countryName(userCc()), { thisWeek: true }),
+        ytSearch('estreno música oficial video ' + LS.countryName(userCc()), { thisWeek: true }),
       ]);
       const mixed = [];
       for (let i = 0; i < Math.max(latin.length, world.length); i++) { if (world[i]) mixed.push(world[i]); if (latin[i]) mixed.push(latin[i]); }
@@ -522,15 +551,21 @@
     v.innerHTML = `<h1>Vídeos</h1><p class="hint">${q ? `Vídeos para «${esc(q)}». Solo vídeos.` : 'Eventos, series, YouTubers y más. Busca para encontrar cualquier vídeo.'}</p>
       <div id="hits">${q ? skeleton() : ''}</div>`;
     if (q) { await showResults('#hits', id, 'videos'); return; }
-    if (S.shelves) { drawShelves(id); return; }
+    const cc = userCc();
+    if (S.shelves && S.shelvesCc === cc) { drawShelves(id); return; }
+    S.shelves = null;
     $('#hits').innerHTML = skeleton(6);
     if (S.shelvesLoading) return;
     S.shelvesLoading = true;
     try {
-      const built = await Promise.all(LS.SHELVES.map(async (sh) => {
-        const results = await Promise.all(sh.queries.map((qq) => ytSearch(qq, { videosOnly: true }).catch((e) => { S.lastError = e.message; return []; })));
-        return { title: sh.title, items: LS.mergeShelf(results, 10).map(ytItem) };
+      // Estanterías del país: lo de «esta semana» se renueva solo; si una no trae suficiente, se repite sin el filtro de fecha
+      const ask = (qq, week) => ytSearch(qq.q, week && qq.week ? { thisWeek: true } : { videosOnly: true }).catch((e) => { S.lastError = e.message; return []; });
+      const built = await Promise.all(LS.shelvesFor(cc, LS.countryName(cc)).map(async (sh) => {
+        let items = LS.mergeShelf(await Promise.all(sh.queries.map((qq) => ask(qq, true))), 10);
+        if (items.length < 4 && sh.queries.some((qq) => qq.week)) items = LS.mergeShelf(await Promise.all(sh.queries.map((qq) => ask(qq, false))), 10);
+        return { title: sh.title, items: items.map(ytItem) };
       }));
+      S.shelvesCc = cc;
       S.shelves = built.filter((s) => s.items.length);
       if (!S.shelves.length) S.shelves = null;   // se reintentará la próxima vez
       built.forEach((s, i) => setList('shelf' + i, s.items));
@@ -688,7 +723,7 @@
     S.queue = keys.map((k) => reg.get(k)).filter(Boolean);
     S.index = Math.max(0, S.queue.findIndex((i) => i.key === key));
     S.audioOnly = scopeNow() === 'track' && it.src === 'yt';
-    S.skips = 0;
+    S.skips = 0; S.seen = []; S.hist = [];                  // lista nueva: el aleatorio empieza de cero
     start();
   }
 
@@ -704,8 +739,37 @@
     if (!$('#lyrics').hidden) loadLyrics();
   }
 
-  function next() { if (S.index + 1 < S.queue.length) { S.index++; start(); } else Player.pause(); }
-  function prev() { if (S.time > 3 || S.index <= 0) Player.seek(0); else { S.index--; start(); } }
+  // Aleatorio y repetir (como en Spotify): repetir una vez = la lista, dos = la canción, tres = apagado
+  S.repeat = store.settings.get().repeat; S.shuffle = store.settings.get().shuffle; S.seen = []; S.hist = [];
+  function next() {
+    const r = LS.pickNextIndex(S.queue, S.index, { repeat: S.repeat, shuffle: S.shuffle, seen: S.seen });
+    if (r.index < 0) { Player.pause(); return; }
+    if (S.queue[S.index]) S.hist = S.hist.concat(S.queue[S.index].key).slice(-50);
+    S.seen = r.seen; S.index = r.index; start();
+  }
+  function prev() {
+    if (S.time > 3) { Player.seek(0); return; }
+    if (S.shuffle && S.hist.length) {                       // en aleatorio «anterior» vuelve a la que sonó antes
+      const key = S.hist[S.hist.length - 1], i = S.queue.findIndex((x) => x.key === key);
+      S.hist = S.hist.slice(0, -1);
+      if (i >= 0) { S.index = i; start(); return; }
+    }
+    if (S.index <= 0) Player.seek(0); else { S.index--; start(); }
+  }
+  function onEnded() { if (S.repeat === 'one' && S.now) { S.skips = 0; start(); return; } next(); }   // repetir la canción: vuelve a empezar la misma
+  function paintModes() {
+    const rep = S.repeat, label = rep === 'all' ? 'Repetir: la lista' : rep === 'one' ? 'Repetir: la canción' : 'Repetir: desactivado';
+    for (const id of ['#npRepeat', '#repeatBtn']) { const b = $(id); if (!b) continue; LS.setIcon(b, rep === 'one' ? 'repeat1' : 'repeat'); b.classList.toggle('on', rep !== 'off'); b.setAttribute('aria-pressed', String(rep !== 'off')); b.setAttribute('aria-label', label); b.title = label; }
+    for (const id of ['#npShuffle', '#shuffleBtn']) { const b = $(id); if (!b) continue; b.classList.toggle('on', S.shuffle); b.setAttribute('aria-pressed', String(S.shuffle)); b.setAttribute('aria-label', S.shuffle ? 'Aleatorio: activado' : 'Aleatorio: desactivado'); b.title = b.getAttribute('aria-label'); }
+  }
+  function toggleRepeat() {
+    S.repeat = LS.nextRepeat(S.repeat); store.settings.set({ repeat: S.repeat }); paintModes();
+    toast(S.repeat === 'all' ? 'Repetir la lista' : S.repeat === 'one' ? 'Repetir la canción' : 'Repetición desactivada', 2200);
+  }
+  function toggleShuffle() {
+    S.shuffle = !S.shuffle; S.seen = S.now ? [S.now.key] : []; S.hist = []; store.settings.set({ shuffle: S.shuffle }); paintModes();
+    toast(S.shuffle ? 'Aleatorio activado' : 'Aleatorio desactivado', 2200);
+  }
 
   // El vídeo no se oculta con display:none (el navegador suspendería la reproducción): se deja vivo y casi invisible.
   // Tres estados: 'full' (a pantalla completa), 'pip' (ventanita flotante mientras navegas) y 'hidden' (solo suena)
@@ -915,7 +979,7 @@
     syncNp();
     followLyrics();
   });
-  Player.on('ended', next);
+  Player.on('ended', onEnded);
   Player.on('error', (e) => {
     const t = S.now ? S.now.title : '';
     toast(e.code === 101 || e.code === 150 ? `«${t}» no permite reproducirse fuera de youtube.com (lo decide quien lo subió).` : `No se pudo reproducir «${t}» (${e.message || 'error ' + e.code}).`);
@@ -996,6 +1060,9 @@
 
   $('.now').addEventListener('click', () => { if (document.body.classList.contains('fx')) openNp(); });
   $('#npClose').onclick = closeNp;
+  $('#npShuffle').onclick = toggleShuffle; $('#shuffleBtn').onclick = toggleShuffle;
+  $('#npRepeat').onclick = toggleRepeat; $('#repeatBtn').onclick = toggleRepeat;
+  paintModes();
   $('#npPrev').onclick = prev;
   $('#npNext').onclick = next;
   $('#npPlay').onclick = () => { buzz(); Player.toggle(); };
