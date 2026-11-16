@@ -133,6 +133,27 @@
   window.addEventListener('message', (e) => {
     const d = e.data;
     if (!d || typeof d !== 'object') return;
+    if (d.lsPip) {
+      const out = [], v = document.querySelector('video');
+      const say = (t) => { out.push(t); };
+      if (!v) say('sin elemento de vídeo');
+      else {
+        try { v.disablePictureInPicture = false; say('PiP no bloqueado'); } catch (err) { say('no se pudo desbloquear'); }
+        try { if ('autoPictureInPicture' in v || true) { v.autoPictureInPicture = true; say('PiP automático pedido'); } } catch (err) { say('sin PiP automático'); }
+        say('API estándar: ' + (document.pictureInPictureEnabled === true ? 'sí' : 'no') + ' · iOS: ' + (typeof v.webkitSupportsPresentationMode === 'function' && v.webkitSupportsPresentationMode('picture-in-picture') ? 'sí' : 'no'));
+        const done = () => { try { e.source && e.source.postMessage({ lsPipResult: out.join(' · ') }, '*'); } catch (err) { /* sin página padre */ } };
+        let p = null;
+        try { if (typeof v.requestPictureInPicture === 'function') p = v.requestPictureInPicture(); } catch (err) { say('petición estándar: ' + err.name); }
+        if (p && p.then) p.then(() => { say('PiP ACTIVADO'); done(); }, (err) => { say('petición estándar rechazada: ' + err.name); tryWebkit(); });
+        else tryWebkit();
+        function tryWebkit() {
+          try { if (typeof v.webkitSetPresentationMode === 'function') { v.webkitSetPresentationMode('picture-in-picture'); say('modo iOS pedido (' + v.webkitPresentationMode + ')'); } } catch (err) { say('modo iOS: ' + err.name); }
+          done();
+        }
+        return;
+      }
+      try { e.source && e.source.postMessage({ lsPipResult: out.join(' · ') }, '*'); } catch (err) { /* nada */ }
+    }
     if (d.lsEq) window.__lsEq(d.lsEq.gains, d.lsEq.on);
     if (d.lsEqStatusReq && e.source) e.source.postMessage({ lsEqStatus: JSON.parse(window.__lsEqStatus()) }, '*');
   });

@@ -788,6 +788,7 @@
   const msFrame = (msg) => { const f = document.querySelector('iframe#yt, #videoLayer iframe'); if (f && f.contentWindow) { try { f.contentWindow.postMessage(msg, '*'); } catch (e) { /* marco no listo */ } } };
   window.addEventListener('message', (e) => {
     const d = e.data, f = document.querySelector('iframe#yt, #videoLayer iframe');
+    if (d && typeof d.lsPipResult === 'string' && f && e.source === f.contentWindow) { toast('PiP: ' + d.lsPipResult, 12000); return; }
     if (d && d.lsMsDiag) return;   // diagnóstico del marco de YouTube: ya no se muestra
     if (d && f && e.source === f.contentWindow && (d.lsMsAck || d.lsMsHello)) {
       // Hello: el marco acaba de cargarse y puede haber perdido lo enviado antes. Ack: ya tiene los datos y botones de Nsound.
@@ -1063,6 +1064,7 @@
   $('#npShuffle').onclick = toggleShuffle; $('#shuffleBtn').onclick = toggleShuffle;
   $('#npRepeat').onclick = toggleRepeat; $('#repeatBtn').onclick = toggleRepeat;
   paintModes();
+  $('#npPip').onclick = () => { showVideo(true); setTimeout(() => msFrame({ lsPip: true }), 400); };   // prueba: pide imagen en imagen y avisa del resultado
   $('#npPrev').onclick = prev;
   $('#npNext').onclick = next;
   $('#npPlay').onclick = () => { buzz(); Player.toggle(); };
