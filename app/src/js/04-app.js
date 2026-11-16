@@ -734,6 +734,7 @@
     keepAlive.on();
     S.now = it; S.time = 0; S.duration = it.duration || 0; S.lyrics = null; S.lyricsFor = ''; S.lyricIndex = -1;
     Player.load(resolveLocal(it), { audioOnly: S.audioOnly });
+    msFrame({ lsUserPause: false });
     if (S.audioOnly) showVideo(false); else setVideoMode(videoMode() === 'pip' ? 'pip' : 'full');
     updateBar();
     if (!$('#lyrics').hidden) loadLyrics();
@@ -805,6 +806,7 @@
   function msResend() {
     if (!S.now) return;
     S.msLast = Date.now();
+    msFrame({ lsUserPause: !!S.userPause });
     msFrame({ lsMedia: LS.mediaMeta(S.now) });
     msFrame({ lsMsState: S.playing ? 'playing' : 'paused' });
     const pos = LS.mediaPosition(S.time, S.duration);
@@ -940,8 +942,8 @@
 
   // Si el sistema pausa la música al bloquear el móvil (sin que el usuario haya pausado), se reanuda sola (hasta 3 veces por canción)
   const rawPause = Player.pause.bind(Player), rawPlay = Player.play.bind(Player);
-  Player.pause = () => { S.userPause = true; S.wantPlay = false; keepAlive.off(); rawPause(); };
-  Player.play = () => { S.userPause = false; S.wantPlay = true; keepAlive.on(); rawPlay(); };
+  Player.pause = () => { S.userPause = true; S.wantPlay = false; keepAlive.off(); msFrame({ lsUserPause: true }); rawPause(); };
+  Player.play = () => { S.userPause = false; S.wantPlay = true; keepAlive.on(); msFrame({ lsUserPause: false }); rawPlay(); };
   document.addEventListener('visibilitychange', () => { if (document.hidden) S.hiddenAt = Date.now(); });
   function autoResume(st) {
     if (st.playing) { if (st.time > 6) S.resumeTries = 0; return; }

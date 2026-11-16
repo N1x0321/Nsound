@@ -55,6 +55,25 @@
       }
     } catch (e) { /* si no se puede, queda como antes */ }
   }
+  if (!window.__lsInstantResume) {
+    window.__lsInstantResume = true;
+    let userPaused = true;                 // hasta que la página diga que suena, no se fuerza nada
+    let tries = [];                        // máximo 4 reanudaciones cada 5 s: si el sistema insiste (llamada, otra app), no se pelea
+    window.addEventListener('message', (e) => { const d = e.data; if (d && typeof d === 'object' && 'lsUserPause' in d) userPaused = !!d.lsUserPause; });
+    const hook = (v) => {
+      if (v.__lsHooked) return;
+      v.__lsHooked = true;
+      v.addEventListener('pause', () => {
+        if (userPaused || v.ended || (v.duration && v.currentTime >= v.duration - 1)) return;
+        const now = Date.now();
+        tries = tries.filter((t) => now - t < 5000);
+        if (tries.length >= 4) return;
+        tries.push(now);
+        try { const p = v.play(); if (p && p.catch) p.catch(() => {}); } catch (err) { /* sin permiso */ }
+      }, true);
+    };
+    setInterval(() => { const v = document.querySelector('video'); if (v) hook(v); }, 400);
+  }
   if (!window.__lsKeepAlive) {
     window.__lsKeepAlive = true;
     try {
