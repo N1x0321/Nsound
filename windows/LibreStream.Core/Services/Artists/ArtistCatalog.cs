@@ -138,7 +138,7 @@ public static class ArtistCatalog
         for (var attempt = 0; ; attempt++)
         {
             using var req = new HttpRequestMessage(HttpMethod.Get, url);
-            req.Headers.UserAgent.ParseAdd("Nsound/0.8 (https://github.com/vhkp259r94-cmyk/spotios)");
+            req.Headers.UserAgent.ParseAdd("Nsound/0.8 (https://github.com/N1x0321/Nsound)");
             using var res = await http.SendAsync(req, ct);
             if ((int)res.StatusCode is 503 or 429 && attempt < 2) { await Task.Delay(1500, ct); continue; }
             res.EnsureSuccessStatusCode();

@@ -3,8 +3,8 @@
   "identifier": "org.librestream.source",
   "subtitle": "Reproductor personal de música y vídeo",
   "description": "Fuente de Nsound (beta). Proyecto personal y sin ánimo de lucro; no está afiliado a YouTube ni a ningún servicio de música.",
-  "iconURL": "https://vhkp259r94-cmyk.github.io/spotios/logo.png",
-  "website": "https://vhkp259r94-cmyk.github.io/spotios/",
+  "iconURL": "https://n1x0321.github.io/Nsound/logo.png",
+  "website": "https://n1x0321.github.io/Nsound/",
   "tintColor": "ff4d62",
   "apps": [
     {
@@ -13,16 +13,16 @@
       "developerName": "Nsound",
       "subtitle": "Música y vídeo sin cuentas ni suscripciones",
       "localizedDescription": "Busca, guarda tus listas, importa desde otros servicios, mira la letra sincronizada y sigue escuchando con la pantalla apagada. Beta: puede tener fallos.",
-      "iconURL": "https://vhkp259r94-cmyk.github.io/spotios/logo.png",
+      "iconURL": "https://n1x0321.github.io/Nsound/logo.png",
       "tintColor": "ff4d62",
       "screenshotURLs": [
-        "https://vhkp259r94-cmyk.github.io/spotios/img/nsound/inicio.jpg",
-        "https://vhkp259r94-cmyk.github.io/spotios/img/nsound/musica.jpg",
-        "https://vhkp259r94-cmyk.github.io/spotios/img/nsound/reproduciendo.jpg"
+        "https://n1x0321.github.io/Nsound/img/nsound/inicio.jpg",
+        "https://n1x0321.github.io/Nsound/img/nsound/musica.jpg",
+        "https://n1x0321.github.io/Nsound/img/nsound/reproduciendo.jpg"
       ],
       "version": "0.8.0",
       "versionDate": "2026-11-15",
-      "downloadURL": "https://github.com/vhkp259r94-cmyk/spotios/releases/download/v0.8.0-beta.8/Nsound-0.8.0-beta.8-unsigned.ipa",
+      "downloadURL": "https://github.com/N1x0321/Nsound/releases/download/v0.8.0-beta.8/Nsound-0.8.0-beta.8-unsigned.ipa",
       "size": 1195215,
       "versions": [
         {
@@ -30,7 +30,7 @@
           "buildVersion": "63",
           "date": "2026-11-15",
           "localizedDescription": "Nsound v0.8.0-beta.8",
-          "downloadURL": "https://github.com/vhkp259r94-cmyk/spotios/releases/download/v0.8.0-beta.8/Nsound-0.8.0-beta.8-unsigned.ipa",
+          "downloadURL": "https://github.com/N1x0321/Nsound/releases/download/v0.8.0-beta.8/Nsound-0.8.0-beta.8-unsigned.ipa",
           "size": 1195215,
           "minOSVersion": "16.0",
           "sha256": "99356e54c97ade33ed049e69b550b709d93cf9db95b571a735855427035dac23"

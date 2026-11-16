@@ -31,7 +31,7 @@ targets:
         UILaunchScreen: {}
         UIBackgroundModes: [audio]
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
-        LSCatalogURL: https://vhkp259r94-cmyk.github.io/spotios/catalog.json
+        LSCatalogURL: https://n1x0321.github.io/Nsound/catalog.json
   LibreStreamTests:
     type: bundle.unit-test
     platform: iOS

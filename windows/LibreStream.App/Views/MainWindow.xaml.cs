@@ -16,7 +16,7 @@ namespace LibreStream.App;
 
 public sealed partial class MainWindow : Window
 {
-    private const string CatalogUrl = "https://vhkp259r94-cmyk.github.io/spotios/catalog.json";
+    private const string CatalogUrl = "https://n1x0321.github.io/Nsound/catalog.json";
     private const string PlayerHost = "app.librestream";
 
     private enum Mode { None, Native, YouTube }

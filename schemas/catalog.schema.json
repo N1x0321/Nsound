@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://vhkp259r94-cmyk.github.io/spotios/schemas/catalog.schema.json",
+  "$id": "https://n1x0321.github.io/Nsound/schemas/catalog.schema.json",
   "title": "LibreStream Hub Catalog",
   "type": "object",
   "required": ["schemaVersion", "generatedAt", "items"],

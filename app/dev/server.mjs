@@ -10,7 +10,7 @@ const dist = join(dirname(fileURLToPath(import.meta.url)), '..', 'dist');
 const port = Number(process.env.PORT) || Number(process.argv[2]) || 5173;
 const host = process.env.LS_HOST || (process.env.PORT ? '0.0.0.0' : '127.0.0.1');
 const TOKEN = process.env.LS_TOKEN || '';                     // vacío = sin clave (solo en local)
-const ALLOWED = ['www.youtube.com', 'lrclib.net', 'vhkp259r94-cmyk.github.io', 'open.spotify.com', 'api.deezer.com', 'music.apple.com', 'soundcloud.com'];
+const ALLOWED = ['www.youtube.com', 'lrclib.net', 'n1x0321.github.io', 'open.spotify.com', 'api.deezer.com', 'music.apple.com', 'soundcloud.com'];
 const POST_ALLOWED = ['music.youtube.com'];
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36';
 const TYPES = { '.js': 'text/javascript; charset=utf-8', '.json': 'application/json', '.png': 'image/png', '.jpg': 'image/jpeg', '.html': 'text/html; charset=utf-8' };

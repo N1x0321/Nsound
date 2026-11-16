@@ -11,11 +11,11 @@ import datetime
 import json
 import os
 
-SITE = 'https://vhkp259r94-cmyk.github.io/spotios'
+SITE = 'https://n1x0321.github.io/Nsound'
 
 
 def build(a):
-    repo = os.environ.get('GITHUB_REPOSITORY', 'vhkp259r94-cmyk/spotios')
+    repo = os.environ.get('GITHUB_REPOSITORY', 'N1x0321/Nsound')
     url = f'https://github.com/{repo}/releases/download/{a.tag}/{a.ipa}'
     date = a.date or datetime.date.today().isoformat()
     version = {

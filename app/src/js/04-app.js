@@ -3,7 +3,7 @@
   'use strict';
   const { Player, Native } = LS;
 
-  const CATALOG_URL = 'https://vhkp259r94-cmyk.github.io/spotios/catalog.json';
+  const CATALOG_URL = 'https://n1x0321.github.io/Nsound/catalog.json';
   const $ = (sel, root) => (root || document).querySelector(sel);
   const $$ = (sel, root) => Array.from((root || document).querySelectorAll(sel));
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
