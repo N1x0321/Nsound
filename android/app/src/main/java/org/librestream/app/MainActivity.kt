@@ -321,6 +321,24 @@ class MainActivity : Activity() {
         }
     }
 
+    // ---------- Imagen en imagen del sistema (Android 8+): el vídeo sigue en una ventanita al salir de la app ----------
+    @Volatile var pipWanted = false          // la interfaz avisa de si hay un vídeo a la vista
+
+    fun enterPip(): Boolean {
+        if (Build.VERSION.SDK_INT < 26) return false
+        return try {
+            enterPictureInPictureMode(android.app.PictureInPictureParams.Builder().setAspectRatio(android.util.Rational(16, 9)).build())
+            BgLog.add("pip", "entra en imagen en imagen"); true
+        } catch (e: Exception) { BgLog.add("pip", "no pudo entrar: ${e.javaClass.simpleName}"); false }
+    }
+
+    override fun onUserLeaveHint() { super.onUserLeaveHint(); if (pipWanted) enterPip() }
+
+    override fun onPictureInPictureModeChanged(isInPictureInPictureMode: Boolean, newConfig: android.content.res.Configuration) {
+        super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
+        if (::web.isInitialized) web.evaluateJavascript("document.body.classList.toggle('sys-pip',$isInPictureInPictureMode)", null)
+    }
+
     override fun onPause() { super.onPause(); BgLog.add("actividad", "onPause"); resumeSoon() }
 
     override fun onStop() {

@@ -776,6 +776,7 @@
   function setVideoMode(mode) {
     const l = $('#videoLayer');
     l.classList.toggle('mini', mode === 'hidden'); l.classList.toggle('pip', mode === 'pip'); l.dataset.mode = mode;
+    if (Native.platform === 'android') Native.call('pipWanted', { on: mode === 'full' || mode === 'pip' }).catch(() => {});   // con el vídeo a la vista, al salir de la app pasa a imagen en imagen
   }
   const videoMode = () => $('#videoLayer').dataset.mode || 'hidden';
   function showVideo(show) { setVideoMode(show ? 'full' : 'hidden'); }
@@ -1064,7 +1065,11 @@
   $('#npShuffle').onclick = toggleShuffle; $('#shuffleBtn').onclick = toggleShuffle;
   $('#npRepeat').onclick = toggleRepeat; $('#repeatBtn').onclick = toggleRepeat;
   paintModes();
-  $('#npPip').onclick = () => { showVideo(true); setTimeout(() => msFrame({ lsPip: true }), 400); };   // prueba: pide imagen en imagen y avisa del resultado
+  $('#npPip').onclick = () => {
+    showVideo(true);
+    if (Native.platform === 'android') setTimeout(() => Native.call('pipEnter', {}).catch(() => {}), 350);     // Android: imagen en imagen del sistema
+    else setTimeout(() => msFrame({ lsPip: true }), 400);                                                   // iPhone: prueba con diagnóstico
+  };   // prueba: pide imagen en imagen y avisa del resultado
   $('#npPrev').onclick = prev;
   $('#npNext').onclick = next;
   $('#npPlay').onclick = () => { buzz(); Player.toggle(); };

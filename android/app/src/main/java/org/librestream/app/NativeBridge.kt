@@ -54,6 +54,8 @@ class NativeBridge(private val activity: MainActivity, private val web: WebView)
                     "bgLog" -> { BgLog.add("página", p.optString("msg").take(160)); resolve(id, true, "\"ok\"") }
                     "bgReport" -> resolve(id, true, JSONObject.quote(activity.bgReport()))
                     "bgClear" -> { BgLog.clear(); resolve(id, true, "\"ok\"") }
+                    "pipWanted" -> { activity.pipWanted = p.optBoolean("on", false); resolve(id, true, "\"ok\"") }
+                    "pipEnter" -> { activity.runOnUiThread { activity.enterPip() }; resolve(id, true, "\"ok\"") }
                     "batteryInfo" -> resolve(id, true, activity.batteryInfo().toString())
                     "batteryRequest" -> resolve(id, true, JSONObject.quote(activity.openBatterySettings()))
                     "appSettings" -> resolve(id, true, JSONObject.quote(activity.openAppSettings()))

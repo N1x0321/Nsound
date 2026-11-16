@@ -122,3 +122,7 @@ body.fx .np { background:
 @media (prefers-reduced-motion: reduce) { .np-glow { display: none; } }
 
 .np > * { flex-shrink: 0; }
+
+/* Imagen en imagen del sistema (Android): el vídeo ocupa toda la ventanita y no se ve nada más */
+body.sys-pip #videoLayer, body.sys-pip #videoLayer.mini, body.sys-pip #videoLayer.pip { left: 0 !important; top: 0 !important; right: 0 !important; bottom: 0 !important; width: auto !important; height: auto !important; opacity: 1 !important; z-index: 9999 !important; pointer-events: none; }
+body.sys-pip #closeVideo, body.sys-pip #pipHit { display: none !important; }
