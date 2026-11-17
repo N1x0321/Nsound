@@ -130,7 +130,7 @@ public sealed class LoopbackAnalyzer : IDisposable
         if (h.Count < 3) return "";
         var parts = new List<string>();
         var key = h[^1];
-        if (h.All(r => r.KeyRoot == key.KeyRoot && r.Minor == key.Minor)) parts.Add(key.KeyName);
+        if (h.All(r => r.KeyRoot == key.KeyRoot && r.Minor == key.Minor && r.KeyConfidence >= 0.2)) parts.Add(key.KeyName);   // con poca seguridad no se muestra
         double b = h[^1].Bpm;
         bool Near(double x) => b > 0 && x > 0 && (Math.Abs(x / b - 1) < 0.03 || Math.Abs(x * 2 / b - 1) < 0.03 || Math.Abs(x / 2 / b - 1) < 0.03);
         if (h.All(r => Near(r.Bpm))) parts.Add($"{Math.Round(b)} BPM");
