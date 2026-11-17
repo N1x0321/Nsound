@@ -31,6 +31,7 @@ public sealed class MiniPlayerWindow : Window
     private readonly Rectangle _tint = new() { Opacity = 0.55 };
     private readonly Border _scrim = new() { Opacity = 0, Background = new SolidColorBrush(Windows.UI.Color.FromArgb(0x66, 0, 0, 0)) };
     private readonly TextBlock _title = new() { FontSize = 24, FontWeight = Microsoft.UI.Text.FontWeights.Bold, TextTrimming = TextTrimming.CharacterEllipsis, MaxLines = 1 };
+    private readonly TextBlock _keyBpm = new() { FontSize = 12, Opacity = 0.6, TextTrimming = TextTrimming.CharacterEllipsis, MaxLines = 1 };
     private readonly TextBlock _artist = new() { FontSize = 13, Opacity = 0.75, TextTrimming = TextTrimming.CharacterEllipsis, MaxLines = 1 };
     private readonly Slider _slider = new() { Minimum = 0, Maximum = 1, IsThumbToolTipEnabled = false, Height = 28 };
     private readonly TextBlock _elapsed = new() { FontSize = 12, Opacity = 0.75, Text = "0:00" };
@@ -139,7 +140,7 @@ public sealed class MiniPlayerWindow : Window
         sub.Children.Add(new FontIcon { Glyph = "", FontSize = 13, Opacity = 0.75, VerticalAlignment = VerticalAlignment.Center });
         sub.Children.Add(_artist);
         var texts = new StackPanel { Spacing = 4, VerticalAlignment = VerticalAlignment.Center };
-        texts.Children.Add(_title); texts.Children.Add(sub);
+        texts.Children.Add(_title); texts.Children.Add(sub); texts.Children.Add(_keyBpm);
         info.Children.Add(texts);
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(_save, "Guardar en Mi biblioteca");
         ToolTipService.SetToolTip(_save, "Guardar en Mi biblioteca");
@@ -182,6 +183,9 @@ public sealed class MiniPlayerWindow : Window
         _tint.Fill = tile;
         SetPlaying(playing);
     }
+
+    /// <summary>Tono y BPM detectados («La menor · 128 BPM»); vacío si aún no hay dato fiable.</summary>
+    public void SetKeyBpm(string text) => _keyBpm.Text = text;
 
     public void SetPlaying(bool playing) => _playIcon.Glyph = playing ? "" : "";
 

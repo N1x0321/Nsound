@@ -109,6 +109,9 @@ public sealed partial class MainWindow : Window
         Video.SetMediaPlayer(_player.Player);
         _player.Volume = Volume.Value / 100;
         _player.StateChanged += () => DispatcherQueue.TryEnqueue(OnNativeStateChanged);
+        _analyzer.Updated += text => DispatcherQueue.TryEnqueue(() => { _keyBpm = text; ShowKeyBpm(); });
+        _analyzer.Start();
+        Closed += (_, _) => _analyzer.Dispose();
 
         _timer.Tick += (_, _) => Safe("Reloj", () =>
         {
@@ -814,6 +817,18 @@ public sealed partial class MainWindow : Window
         _mini.Activate();
     }
 
+    private readonly LoopbackAnalyzer _analyzer = new();
+    private string _keyBpm = "";
+    private string? _analyzedId;
+
+    /// <summary>Pone «La menor · 128 BPM» en la barra y en la tarjeta mini.</summary>
+    private void ShowKeyBpm()
+    {
+        if (_now is not null)
+            NowArtist.Text = (_now.YouTubeId is null ? _now.Subtitle : $"{_now.Subtitle} · YouTube") + (_keyBpm.Length > 0 ? " · " + _keyBpm : "");
+        _mini?.SetKeyBpm(_keyBpm);
+    }
+
     private void SyncMini()
     {
         if (_mini is null) return;
@@ -837,8 +852,10 @@ public sealed partial class MainWindow : Window
         _thumb?.Update(IsPlaying, _now is not null, _now is not null && _library.Contains(_now.Source, _now.Id));
         SyncMini();
         if (_now is null) return;
+        if (_analyzedId != _now.Id) { _analyzedId = _now.Id; _keyBpm = ""; _analyzer.Reset(); }
         NowTitle.Text = _now.Title;
         NowArtist.Text = _now.YouTubeId is null ? _now.Subtitle : $"{_now.Subtitle} · YouTube";
+        ShowKeyBpm();
         NowTile.Background = _now.Tile;
         NowImage.Source = _now.Artwork;
         SaveIcon.Glyph = _library.Contains(_now.Source, _now.Id) ? "" : "";
