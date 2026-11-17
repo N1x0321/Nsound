@@ -403,6 +403,9 @@
                 <Button Click="ShowVideo_Click" Background="Transparent" BorderThickness="0" ToolTipService.ToolTip="Mostrar u ocultar el vídeo" AutomationProperties.Name="Mostrar vídeo">
                     <SymbolIcon Symbol="SlideShow" />
                 </Button>
+                <Button Click="Mini_Click" Background="Transparent" BorderThickness="0" ToolTipService.ToolTip="Mini reproductor (siempre visible)" AutomationProperties.Name="Mini reproductor">
+                    <FontIcon Glyph="&#xE8A7;" FontSize="16" />
+                </Button>
                 <SymbolIcon Symbol="Volume" />
                 <Slider x:Name="Volume" Width="130" Minimum="0" Maximum="100" Value="80" ValueChanged="Volume_ValueChanged" />
             </StackPanel>

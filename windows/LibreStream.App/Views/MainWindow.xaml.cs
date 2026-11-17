@@ -129,7 +129,7 @@ public sealed partial class MainWindow : Window
         _colorDelay.Tick += (_, _) => Safe("Color", ApplyPendingAccent);
         _searchDelay.Tick += (_, _) => { _searchDelay.Stop(); _ = SearchYouTubeAsync(Search.Text); };
         _saveTimer.Tick += (_, _) => { _saveTimer.Stop(); Safe("Guardar ajustes", _settings.Save); };
-        Closed += (_, _) => Safe("Cierre", () => { _settings.Save(); _timer.Stop(); _heroTimer.Stop(); _thumb?.Dispose(); });
+        Closed += (_, _) => Safe("Cierre", () => { _settings.Save(); _timer.Stop(); _heroTimer.Stop(); _thumb?.Dispose(); _mini?.Close(); });
 
         ShowYouTubeLayer(false);
         RebuildPlaylistNav();
@@ -793,12 +793,46 @@ public sealed partial class MainWindow : Window
 
     private ThumbBar? _thumb;
 
+    // ===================== Mini reproductor =====================
+
+    private MiniPlayerWindow? _mini;
+
+    private void Mini_Click(object sender, RoutedEventArgs e)
+    {
+        if (_mini is not null) { _mini.Activate(); return; }
+        _mini = new MiniPlayerWindow(
+            () => Safe("Mini: anterior", Previous),
+            () => Safe("Mini: reproducir", () => Play_Click(this, null!)),
+            () => Safe("Mini: siguiente", Next),
+            () => Safe("Mini: volver", ShowMainFromMini),
+            Root.RequestedTheme);
+        _mini.Closed += (_, _) => _mini = null;
+        SyncMini();
+        _mini.SetProgress(TimeSpan.FromSeconds(Math.Max(0, Progress.Value)), TimeSpan.FromSeconds(Math.Max(1, Progress.Maximum)));
+        _mini.Activate();
+    }
+
+    private void SyncMini()
+    {
+        if (_mini is null) return;
+        _mini.SetTrack(_now?.Title ?? "", _now is null ? "" : _now.YouTubeId is null ? _now.Subtitle : $"{_now.Subtitle} · YouTube", _now?.Artwork, _now?.Tile, IsPlaying);
+    }
+
+    /// <summary>«Volver a Nsound» desde el mini reproductor: restaura la ventana principal y cierra la pequeña.</summary>
+    private void ShowMainFromMini()
+    {
+        (AppWindow.Presenter as Microsoft.UI.Windowing.OverlappedPresenter)?.Restore();
+        Activate();
+        _mini?.Close();
+    }
+
     private bool IsPlaying => _mode == Mode.YouTube ? _ytPlaying : _player.IsPlaying;
 
     private void UpdateNowPlayingBar()
     {
         PlayIcon.Symbol = IsPlaying ? Symbol.Pause : Symbol.Play;
         _thumb?.Update(IsPlaying, _now is not null, _now is not null && _library.Contains(_now.Source, _now.Id));
+        SyncMini();
         if (_now is null) return;
         NowTitle.Text = _now.Title;
         NowArtist.Text = _now.YouTubeId is null ? _now.Subtitle : $"{_now.Subtitle} · YouTube";
@@ -1002,6 +1036,7 @@ public sealed partial class MainWindow : Window
 
         FollowLyrics(pos.TotalSeconds);
         SyncSheetAndBars(pos, total);
+        _mini?.SetProgress(pos, total);
         Elapsed.Text = MediaCard.Format(pos);
         Total.Text = MediaCard.Format(total);
 
@@ -1107,6 +1142,7 @@ public sealed partial class MainWindow : Window
                     var d = root.GetProperty("duration").GetDouble();
                     if (d > 0) _ytDuration = d;
                     PlayIcon.Symbol = _ytPlaying ? Symbol.Pause : Symbol.Play;
+                    _mini?.SetPlaying(_ytPlaying);
                     if (_ytPlaying && _ytTime > 1) _errorStreak = 0;   // ya suena: se acaba la racha de errores
                     break;
                 case "ended" when _mode == Mode.YouTube:
@@ -1456,6 +1492,7 @@ public sealed partial class MainWindow : Window
         var wanted = t.Dark ? ElementTheme.Dark : ElementTheme.Light;
         Root.RequestedTheme = wanted == ElementTheme.Dark ? ElementTheme.Light : ElementTheme.Dark;
         Root.RequestedTheme = wanted;
+        _mini?.SetTheme(wanted);
         SetBrush("AccentFillColorDefaultBrush", Hex(t.Accent));
         SetBrush("AccentFillColorSecondaryBrush", Hex(t.Accent, 0xE6));
         SetBrush("AccentFillColorTertiaryBrush", Hex(t.Accent, 0xCC));
