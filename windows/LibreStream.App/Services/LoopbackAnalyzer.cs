@@ -17,6 +17,7 @@ public sealed class LoopbackAnalyzer : IDisposable
     private float[] _ring = Array.Empty<float>();
     private int _pos, _filled, _rate, _sinceAnalysis;
     private volatile bool _busy, _logged;
+    private readonly List<KeyBpmResult> _hist = new();   // últimos resultados de esta canción
 
     /// <summary>Texto listo para mostrar ("La menor · 128 BPM"), o "" si aún no hay nada fiable. Se lanza desde un hilo de fondo.</summary>
     public event Action<string>? Updated;
@@ -41,7 +42,7 @@ public sealed class LoopbackAnalyzer : IDisposable
     /// <summary>Vacía el búfer (al cambiar de canción) para no mezclar dos temas.</summary>
     public void Reset()
     {
-        lock (_lock) { _pos = _filled = _sinceAnalysis = 0; }
+        lock (_lock) { _pos = _filled = _sinceAnalysis = 0; _hist.Clear(); }
         Updated?.Invoke("");
     }
 
@@ -99,11 +100,33 @@ public sealed class LoopbackAnalyzer : IDisposable
                 }
                 var res = KeyBpmAnalyzer.Analyze(copy, rate);
                 try { File.AppendAllText(Path.Combine(Path.GetTempPath(), "nsound-keybpm.log"), $"{DateTime.Now:HH:mm:ss} rate={rate} n={copy.Length} -> {(res is null ? "sin resultado (silencio/poco audio)" : $"{res.KeyName} c={res.KeyConfidence:0.00} · {res.Bpm:0} BPM c={res.BpmConfidence:0.00}")}\n"); } catch { }
-                Updated?.Invoke(res?.Label ?? "");
+                Updated?.Invoke(Stable(res));
             }
             catch { /* un análisis fallido no molesta */ }
             finally { _busy = false; }
         });
+    }
+
+    /// <summary>
+    /// Con música real cada análisis suelto baila; solo se muestra lo que se repite en los últimos 3 análisis
+    /// (mismo tono, o BPM dentro de ±3 %, contando también la mitad y el doble). Así no se enseña un dato inventado.
+    /// </summary>
+    private string Stable(KeyBpmResult? res)
+    {
+        List<KeyBpmResult> h;
+        lock (_lock)
+        {
+            if (res is not null) { _hist.Add(res); if (_hist.Count > 3) _hist.RemoveAt(0); }
+            h = _hist.ToList();
+        }
+        if (h.Count < 3) return "";
+        var parts = new List<string>();
+        var key = h[^1];
+        if (h.All(r => r.KeyRoot == key.KeyRoot && r.Minor == key.Minor)) parts.Add(key.KeyName);
+        double b = h[^1].Bpm;
+        bool Near(double x) => b > 0 && x > 0 && (Math.Abs(x / b - 1) < 0.03 || Math.Abs(x * 2 / b - 1) < 0.03 || Math.Abs(x / 2 / b - 1) < 0.03);
+        if (h.All(r => Near(r.Bpm))) parts.Add($"{Math.Round(b)} BPM");
+        return string.Join(" · ", parts);
     }
 
     public void Dispose() => Stop();
