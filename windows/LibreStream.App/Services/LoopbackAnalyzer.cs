@@ -17,6 +17,7 @@ public sealed class LoopbackAnalyzer : IDisposable
     private float[] _ring = Array.Empty<float>();
     private int _pos, _filled, _rate, _sinceAnalysis;
     private volatile bool _busy, _logged;
+    private readonly SKeyDetector? _skey = SKeyDetector.TryLoad();   // red neuronal S-KEY; si falta, se usa el método propio
     private readonly List<KeyBpmResult> _hist = new();   // últimos resultados de esta canción
 
     /// <summary>Texto listo para mostrar ("La menor · 128 BPM"), o "" si aún no hay nada fiable. Se lanza desde un hilo de fondo.</summary>
@@ -90,6 +91,7 @@ public sealed class LoopbackAnalyzer : IDisposable
                     int start = (_pos - _filled + _ring.Length) % _ring.Length;
                     for (int i = 0; i < _filled; i++) copy[i] = _ring[(start + i) % _ring.Length];
                 }
+                var full = copy; int fullRate = rate;
                 // se baja a ~12 kHz para que el análisis sea ligero
                 int f = Math.Max(1, rate / 12000);
                 if (f > 1)
@@ -99,7 +101,13 @@ public sealed class LoopbackAnalyzer : IDisposable
                     copy = d; rate /= f;
                 }
                 var res = KeyBpmAnalyzer.Analyze(copy, rate);
-                try { File.AppendAllText(Path.Combine(Path.GetTempPath(), "nsound-keybpm.log"), $"{DateTime.Now:HH:mm:ss} rate={rate} n={copy.Length} -> {(res is null ? "sin resultado (silencio/poco audio)" : $"{res.KeyName} c={res.KeyConfidence:0.00} · {res.Bpm:0} BPM c={res.BpmConfidence:0.00}")}\n"); } catch { }
+                string motor = "propio";
+                if (res is not null && _skey is not null && _skey.Detect(SKeyDetector.Resample(full, fullRate)) is { } k)
+                {
+                    res = res with { KeyRoot = k.root, Minor = k.minor, KeyConfidence = k.confidence };
+                    motor = "S-KEY";
+                }
+                try { File.AppendAllText(Path.Combine(Path.GetTempPath(), "nsound-keybpm.log"), $"{DateTime.Now:HH:mm:ss} [{motor}] rate={rate} n={copy.Length} -> {(res is null ? "sin resultado (silencio/poco audio)" : $"{res.KeyName} c={res.KeyConfidence:0.00} · {res.Bpm:0} BPM c={res.BpmConfidence:0.00}")}\n"); } catch { }
                 Updated?.Invoke(Stable(res));
             }
             catch { /* un análisis fallido no molesta */ }
@@ -129,5 +137,5 @@ public sealed class LoopbackAnalyzer : IDisposable
         return string.Join(" · ", parts);
     }
 
-    public void Dispose() => Stop();
+    public void Dispose() { Stop(); _skey?.Dispose(); }
 }
