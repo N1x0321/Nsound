@@ -52,6 +52,21 @@
                     </StackPanel>
                 </Button>
             </DataTemplate>
+
+            <!-- Tarjeta de álbum o artista de YouTube Music -->
+            <DataTemplate x:Key="EntryCard" x:DataType="local:MusicEntry">
+                <Button Style="{StaticResource CardButton}" Tag="{x:Bind}" Click="Entry_Click">
+                    <StackPanel Width="160" Spacing="6">
+                        <Grid Height="160" Width="160" CornerRadius="{x:Bind Corner}" Background="{x:Bind Tile}">
+                            <TextBlock Text="{x:Bind Initials}" FontSize="44" FontWeight="Bold" Opacity="0.9"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            <Image Source="{x:Bind Artwork}" Stretch="UniformToFill" />
+                        </Grid>
+                        <TextBlock Text="{x:Bind Title}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                        <TextBlock Text="{x:Bind Subtitle}" FontSize="12" Opacity="0.65" TextTrimming="CharacterEllipsis" />
+                    </StackPanel>
+                </Button>
+            </DataTemplate>
         </Grid.Resources>
 
         <Grid.RowDefinitions>
@@ -163,6 +178,23 @@
                         </StackPanel>
                         <StackPanel x:Name="ScopeChips" Orientation="Horizontal" Spacing="8" Margin="8,0,0,0" Visibility="Collapsed" />
                         <StackPanel x:Name="Genres" Orientation="Horizontal" Spacing="8" Margin="8,0,0,0" Visibility="Collapsed" />
+                        <StackPanel x:Name="MusicChips" Orientation="Horizontal" Spacing="8" Margin="8,0,0,0" Visibility="Collapsed" />
+
+                        <!-- Cabecera de la página de un artista -->
+                        <StackPanel x:Name="ArtistHeader" Orientation="Horizontal" Spacing="8" Margin="8,0,0,0" Visibility="Collapsed">
+                            <Button Click="ArtistBack_Click" AutomationProperties.Name="Volver a los resultados">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <FontIcon Glyph="&#xE72B;" FontSize="14" />
+                                    <TextBlock Text="Volver" />
+                                </StackPanel>
+                            </Button>
+                            <Button x:Name="ArtistPlay" Style="{StaticResource AccentButtonStyle}" Click="ArtistPlay_Click" AutomationProperties.Name="Reproducir las canciones del artista" Visibility="Collapsed">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <SymbolIcon Symbol="Play" />
+                                    <TextBlock Text="Reproducir" FontWeight="SemiBold" />
+                                </StackPanel>
+                            </Button>
+                        </StackPanel>
 
                         <!-- Destacado -->
                         <Grid x:Name="Hero" Height="300" CornerRadius="26" Visibility="Collapsed">
@@ -217,6 +249,19 @@
                             </StackPanel>
                             <TextBlock x:Name="YouTubeInfo" Opacity="0.7" Margin="8,0,0,0" />
                             <ItemsRepeater x:Name="YouTubeRepeater" ItemTemplate="{StaticResource VideoCard}">
+                                <ItemsRepeater.Layout>
+                                    <UniformGridLayout MinColumnSpacing="4" MinRowSpacing="8" />
+                                </ItemsRepeater.Layout>
+                            </ItemsRepeater>
+                        </StackPanel>
+
+                        <StackPanel x:Name="EntriesSection" Spacing="6" Visibility="Collapsed">
+                            <StackPanel Orientation="Horizontal" Spacing="10" Margin="8,8,0,0">
+                                <TextBlock x:Name="EntriesTitle" Text="Álbumes" Style="{StaticResource SubtitleTextBlockStyle}" />
+                                <ProgressRing x:Name="EntriesBusy" IsActive="False" Width="18" Height="18" />
+                            </StackPanel>
+                            <TextBlock x:Name="EntriesInfo" Opacity="0.7" Margin="8,0,0,0" TextWrapping="Wrap" />
+                            <ItemsRepeater x:Name="EntriesRepeater" ItemTemplate="{StaticResource EntryCard}">
                                 <ItemsRepeater.Layout>
                                     <UniformGridLayout MinColumnSpacing="4" MinRowSpacing="8" />
                                 </ItemsRepeater.Layout>
