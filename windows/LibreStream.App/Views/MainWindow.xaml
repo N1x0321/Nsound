@@ -284,6 +284,10 @@
                             </StackPanel>
                             <StackPanel Spacing="8">
                                 <TextBlock Text="Ecualizador" Style="{StaticResource SubtitleTextBlockStyle}" />
+                                <TextBlock Opacity="0.7" TextWrapping="Wrap" Text="En mantenimiento: se retiró temporalmente mientras se arregla un fallo. Volverá en una próxima versión." />
+                            </StackPanel>
+                            <StackPanel Spacing="8" Visibility="Collapsed">
+                                <TextBlock Text="Ecualizador" Style="{StaticResource SubtitleTextBlockStyle}" />
                                 <ToggleSwitch x:Name="EqToggle" Header="Activar ecualizador" OnContent="Activado" OffContent="Desactivado" Toggled="EqToggle_Toggled" />
                                 <ComboBox x:Name="EqPresetBox" Header="Ajuste" Width="220" SelectionChanged="EqPreset_Changed" />
                                 <StackPanel x:Name="EqBandsHost" Orientation="Horizontal" Spacing="16" Margin="0,8,0,0" />

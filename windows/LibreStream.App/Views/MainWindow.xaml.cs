@@ -1272,7 +1272,8 @@ public sealed partial class MainWindow : Window
     private void PushEq()
     {
         var s = _settings.Current;
-        var script = $"window.__lsEq && window.__lsEq({JsonSerializer.Serialize(s.EqBands)}, {(s.EqEnabled ? "true" : "false")})";
+        const bool EqEnMantenimiento = true;   // retirado hasta arreglar su fallo (calentaba el equipo)
+        var script = $"window.__lsEq && window.__lsEq({JsonSerializer.Serialize(s.EqBands)}, {(s.EqEnabled && !EqEnMantenimiento ? "true" : "false")})";
         foreach (var frame in _ytFrames.ToList())
         {
             try { _ = frame.ExecuteScriptAsync(script); }

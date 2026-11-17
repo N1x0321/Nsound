@@ -16,7 +16,7 @@ public sealed class LoopbackAnalyzer : IDisposable
     private WasapiLoopbackCapture? _cap;
     private float[] _ring = Array.Empty<float>();
     private int _pos, _filled, _rate, _sinceAnalysis;
-    private volatile bool _busy;
+    private volatile bool _busy, _logged;
 
     /// <summary>Texto listo para mostrar ("La menor · 128 BPM"), o "" si aún no hay nada fiable. Se lanza desde un hilo de fondo.</summary>
     public event Action<string>? Updated;
@@ -55,7 +55,7 @@ public sealed class LoopbackAnalyzer : IDisposable
     private void OnData(object? sender, WaveInEventArgs e)
     {
         var fmt = (sender as WasapiLoopbackCapture)?.WaveFormat;
-        if (fmt is null || fmt.Encoding != WaveFormatEncoding.IeeeFloat && fmt.BitsPerSample != 32) return;
+        if (fmt is null || fmt.Encoding != WaveFormatEncoding.IeeeFloat && fmt.BitsPerSample != 32) { if (!_logged) { _logged = true; try { File.AppendAllText(Path.Combine(Path.GetTempPath(), "nsound-keybpm.log"), $"formato no admitido: {fmt}\n"); } catch { } } return; }
         int ch = Math.Max(1, fmt.Channels), frames = e.BytesRecorded / (4 * ch);
         bool run = false;
         lock (_lock)
@@ -97,7 +97,9 @@ public sealed class LoopbackAnalyzer : IDisposable
                     for (int i = 0; i < d.Length; i++) { float s = 0; for (int j = 0; j < f; j++) s += copy[i * f + j]; d[i] = s / f; }
                     copy = d; rate /= f;
                 }
-                Updated?.Invoke(KeyBpmAnalyzer.Analyze(copy, rate)?.Label ?? "");
+                var res = KeyBpmAnalyzer.Analyze(copy, rate);
+                try { File.AppendAllText(Path.Combine(Path.GetTempPath(), "nsound-keybpm.log"), $"{DateTime.Now:HH:mm:ss} rate={rate} n={copy.Length} -> {(res is null ? "sin resultado (silencio/poco audio)" : $"{res.KeyName} c={res.KeyConfidence:0.00} · {res.Bpm:0} BPM c={res.BpmConfidence:0.00}")}\n"); } catch { }
+                Updated?.Invoke(res?.Label ?? "");
             }
             catch { /* un análisis fallido no molesta */ }
             finally { _busy = false; }
