@@ -353,6 +353,21 @@ var LS = globalThis.LS = globalThis.LS || {};
     return l.find((x) => /100|m[aá]s populares|most popular/i.test(x.title)) || l.find((x) => /top diario|daily/i.test(x.title)) || l.find((x) => /tendencias|trending/i.test(x.title)) || l[0] || null;
   };
 
+  // ---------- BPM (Deezer, sin clave): solo hay dato en parte de las canciones ----------
+  /** Quita lo que estorba al buscar: (Official Video), [Lyrics], «- Remix»… */
+  LS.cleanForSearch = (s) => String(s || '').replace(/\s*[\(\[][^\)\]]*[\)\]]/g, '').replace(/\s+[-–|].*$/, '').replace(/\s+/g, ' ').trim();
+  LS.deezerSearchUrl = (artist, title) => 'https://api.deezer.com/search?q=' + encodeURIComponent((LS.cleanForSearch(artist) + ' ' + LS.cleanForSearch(title)).trim()) + '&limit=5';
+  /** De la búsqueda de Deezer, la pista que de verdad es esa canción (título parecido y artista parecido), o null. */
+  LS.pickDeezerTrack = function (json, title, artist) {
+    const list = json && Array.isArray(json.data) ? json.data : [];
+    const wt = LS.normName(LS.cleanForSearch(title)), wa = LS.normName(LS.cleanForSearch(artist));
+    if (!wt) return null;
+    const near = (a, b) => !!a && !!b && (a.includes(b) || b.includes(a));
+    return list.find((t) => t && t.id && near(LS.normName(t.title || ''), wt) && (!wa || near(LS.normName((t.artist && t.artist.name) || ''), wa))) || null;
+  };
+  /** Ficha de una pista de Deezer → BPM (número) o 0 si no hay dato. */
+  LS.deezerBpm = (json) => { const v = Number(json && json.bpm); return Number.isFinite(v) && v >= 40 && v <= 250 ? v : 0; };
+
   /** De varios álbumes encontrados, el que mejor encaja con título (y artista): igual > contiene; el primero si ninguno encaja del todo. */
   LS.pickAlbum = function (albums, title, artist) {
     const want = LS.normName(title), who = LS.normName(artist || '');

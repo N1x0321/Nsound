@@ -192,3 +192,5 @@ body.fx[data-theme="claro"] .hero, body.fx[data-theme="claro"] .np-art { box-sha
 button.mode { opacity: .55; }
 button.mode.on { opacity: 1; color: var(--accent); }
 @media (max-width: 720px) { #bar .barmode { display: none; } }
+
+.np-bpm { font-size: 13px; opacity: .7; margin-top: 2px; text-align: center; min-height: 18px; }

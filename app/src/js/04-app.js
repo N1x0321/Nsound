@@ -809,8 +809,29 @@
     const pos = LS.mediaPosition(S.time, S.duration);
     if (pos) msFrame({ lsMsPos: pos });
   }
+  // BPM de la canción (prueba): Deezer lo da solo en parte de las canciones; si no hay dato se dice. Se guarda 30 días en el propio móvil.
+  async function bpmFor(it) {
+    const k = 'ls.bpm:' + it.id;
+    try { const c = JSON.parse(mbStore.getItem(k) || 'null'); if (c && Date.now() - c.t < 30 * 864e5) return c.v; } catch (e) { /* sin caché */ }
+    let v = 0;
+    try {
+      const t = LS.pickDeezerTrack(JSON.parse(await Native.fetchText(LS.deezerSearchUrl(it.artist || '', it.title))), it.title, it.artist || '');
+      if (t) v = LS.deezerBpm(JSON.parse(await Native.fetchText('https://api.deezer.com/track/' + t.id)));
+    } catch (e) { return null; }                 // sin red o error: no se guarda ni se muestra nada
+    try { mbStore.setItem(k, JSON.stringify({ t: Date.now(), v })); } catch (e) { /* sin espacio */ }
+    return v;
+  }
+  async function bpmLoad(it) {
+    const el = $('#npBpm'); if (!el) return;
+    el.textContent = '';
+    if (!it || it.src !== 'yt' || it.kind === 'video') return;
+    const v = await bpmFor(it);
+    if (v === null || !S.now || S.now.id !== it.id) return;
+    el.textContent = v > 0 ? Math.round(v) + ' BPM' : 'BPM: sin dato';
+  }
   function mediaSessionSet(it) {
     const m = LS.mediaMeta(it);
+    bpmLoad(it);
     S.msAck = false; S.msLast = Date.now();
     S.msSent = it.key; msFrame({ lsMedia: m });
     if (msOk) {

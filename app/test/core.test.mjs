@@ -622,3 +622,17 @@ test('aleatorio: no repite hasta haber sonado todas y respeta repetir la lista',
   assert.equal(LS.pickNextIndex(q, 0, { shuffle: true, rand: () => 0.999 }).index, 4);              // el azar elige entre las que faltan
   assert.equal(LS.pickNextIndex(mk(1), 0, { shuffle: true, repeat: 'all' }).index, 0);               // una sola canción
 });
+
+test('BPM de Deezer: limpieza, elección de la pista y rango válido', () => {
+  assert.equal(LS.cleanForSearch('Levitating (Official Video) [4K]'), 'Levitating');
+  assert.equal(LS.cleanForSearch('Dai Dai - Remix'), 'Dai Dai');
+  assert.match(LS.deezerSearchUrl('Dua Lipa', 'Levitating (Official Video)'), /q=Dua%20Lipa%20Levitating&limit=5$/);
+  const json = { data: [{ id: 1, title: 'Levitating (Remix)', artist: { name: 'Otro Artista' } }, { id: 2, title: 'Levitating', artist: { name: 'Dua Lipa' } }] };
+  assert.equal(LS.pickDeezerTrack(json, 'Levitating (Official Video)', 'Dua Lipa').id, 2);
+  assert.equal(LS.pickDeezerTrack(json, 'Otra canción', 'Dua Lipa'), null);
+  assert.equal(LS.pickDeezerTrack({}, 'x', 'y'), null);
+  assert.equal(LS.deezerBpm({ bpm: 126.8 }), 126.8);
+  assert.equal(LS.deezerBpm({ bpm: 0 }), 0);
+  assert.equal(LS.deezerBpm({ bpm: 900 }), 0);
+  assert.equal(LS.deezerBpm(null), 0);
+});
