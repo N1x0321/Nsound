@@ -47,6 +47,11 @@ public sealed partial class MainWindow : Window
     private MediaCard? _featured;
     private int _heroIndex;
     private string _kind = "all";
+    private string _musicFilter = "songs";    // filtro de la búsqueda de Música: songs | albums | artists
+    private MusicArtist? _artist;               // página de artista abierta (sus canciones y su discografía)
+    private List<MusicEntry> _entries = [];
+    private string _entriesKey = "";
+    private CancellationTokenSource? _entriesCts;
     private string _scope = "all";            // filtro de Inicio: all | track | video
     private string _youtubeQuery = "";
     private CancellationTokenSource? _searchCts;
@@ -109,6 +114,9 @@ public sealed partial class MainWindow : Window
         Video.SetMediaPlayer(_player.Player);
         _player.Volume = Volume.Value / 100;
         _player.StateChanged += () => DispatcherQueue.TryEnqueue(OnNativeStateChanged);
+        _analyzer.Updated += text => DispatcherQueue.TryEnqueue(() => { _keyBpm = text; ShowKeyBpm(); });
+        _analyzer.Start();
+        Closed += (_, _) => _analyzer.Dispose();
 
         _timer.Tick += (_, _) => Safe("Reloj", () =>
         {
@@ -129,12 +137,13 @@ public sealed partial class MainWindow : Window
         _colorDelay.Tick += (_, _) => Safe("Color", ApplyPendingAccent);
         _searchDelay.Tick += (_, _) => { _searchDelay.Stop(); _ = SearchYouTubeAsync(Search.Text); };
         _saveTimer.Tick += (_, _) => { _saveTimer.Stop(); Safe("Guardar ajustes", _settings.Save); };
-        Closed += (_, _) => Safe("Cierre", () => { _settings.Save(); _timer.Stop(); _heroTimer.Stop(); _thumb?.Dispose(); });
+        Closed += (_, _) => Safe("Cierre", () => { _settings.Save(); _timer.Stop(); _heroTimer.Stop(); _thumb?.Dispose(); _mini?.Close(); });
 
         ShowYouTubeLayer(false);
         RebuildPlaylistNav();
         BuildChips(Genres, GenreNames, Genre_Click);
         BuildChips(ScopeChips, ["Todo", "Música", "Vídeos"], Scope_Click, ["all", "track", "video"]);
+        BuildChips(MusicChips, ["Canciones", "Álbumes", "Artistas"], MusicFilter_Click, ["songs", "albums", "artists"]);
         BuildEqUi();
         LookBox.ItemsSource = Themes.Names;
         ApplyLook(_settings.Current.Look);
@@ -214,6 +223,12 @@ public sealed partial class MainWindow : Window
         Highlight(ScopeChips, _scope);
         Highlight(Genres, _genre);
         Genres.Visibility = Vis(_kind == "track" && q.Length == 0);
+        var artistView = _kind == "track" && _artist is not null;
+        var entriesMode = _kind == "track" && q.Length > 1 && _musicFilter != "songs" && !artistView;
+        MusicChips.Visibility = Vis(_kind == "track" && q.Length > 1 && !artistView);
+        Highlight(MusicChips, _musicFilter);
+        ArtistHeader.Visibility = Vis(artistView);
+        ArtistPlay.Visibility = Vis(artistView && _youtube.Count > 0);
         PlaylistActions.Visibility = Vis(playlist is not null);
         LibraryActions.Visibility = Vis(_kind == "library");
         ShelvesHost.Visibility = Vis(_kind == "video" && q.Length == 0);
@@ -233,6 +248,8 @@ public sealed partial class MainWindow : Window
             PageTitle.Text = playlist.Name;
             hint = playlist.Items.Count == 1 ? "Lista · 1 elemento" : $"Lista · {playlist.Items.Count} elementos";
         }
+        if (artistView) { PageTitle.Text = _artist!.Name; hint = "Canciones y discografía de YouTube Music."; }
+        else if (entriesMode) hint = _musicFilter == "albums" ? $"Álbumes para «{raw}». Pulsa uno y suena entero." : $"Artistas para «{raw}». Pulsa uno para ver sus canciones y discos.";
         PageHint.Text = hint;
         PageHint.Visibility = Vis(hint.Length > 0);
 
@@ -240,7 +257,7 @@ public sealed partial class MainWindow : Window
         {
             SavedSection.Visibility = YouTubeSection.Visibility = Visibility.Collapsed;
             SavedEmpty.Visibility = Visibility.Collapsed;
-            ArtistsSection.Visibility = AlbumsSection.Visibility = Visibility.Collapsed;
+            ArtistsSection.Visibility = AlbumsSection.Visibility = EntriesSection.Visibility = Visibility.Collapsed;
             Hero.Visibility = Visibility.Collapsed;
             _featured = null;
             if (_kind == "downloads") BuildDownloads(); else RefreshSettingsUi();
@@ -259,7 +276,7 @@ public sealed partial class MainWindow : Window
                 .Select(x => new MediaCard(x, _catalog.Items.FirstOrDefault(i => i.Id == x.Id)))
                 .Where(c => c.IsPlayable).ToList();
 
-        var showYouTube = !library && (q.Length > 0 || _kind is "track" or "all");
+        var showYouTube = !library && (q.Length > 0 || _kind is "track" or "all") && !entriesMode;
         if (!showYouTube || !_youtubeQuery.StartsWith($"{_kind}|{scope}|", StringComparison.Ordinal)) { _youtube = []; _youtubeQuery = ""; }
 
         YouTubeTitle.Text = (_kind, q.Length > 0) switch
@@ -269,6 +286,7 @@ public sealed partial class MainWindow : Window
             ("all", false) => scope switch { "track" => "Canciones del momento", "video" => "Videoclips del momento", _ => "Éxitos del momento" },
             _ => scope == "track" ? "Música en YouTube" : scope == "video" ? "Vídeos de YouTube" : "Resultados en YouTube",
         };
+        if (artistView) YouTubeTitle.Text = "Canciones";
         SavedTitle.Text = playlist is not null ? "En esta lista" : library ? (q.Length > 0 ? "Resultados" : "Guardado") : "De tu biblioteca";
         var template = (DataTemplate)Root.Resources[scope == "track" ? "TrackCard" : "VideoCard"];
         if (!ReferenceEquals(YouTubeRepeater.ItemTemplate, template)) YouTubeRepeater.ItemTemplate = template;
@@ -283,7 +301,10 @@ public sealed partial class MainWindow : Window
         YouTubeSection.Visibility = Vis(showYouTube);
         ArtistsSection.Visibility = Vis(home);
         if (home) BuildArtistsRow();
-        AlbumsSection.Visibility = Vis(AlbumsVisible(raw) || (_kind == "track" && _albumsArtist.Length > 0 && ArtistCatalog.Fold(raw).StartsWith(_albumsArtist, StringComparison.Ordinal) && AlbumsInfo.Text.Length > 0));
+        EntriesTitle.Text = artistView ? "Discografía" : _musicFilter == "albums" ? "Álbumes" : "Artistas";
+        EntriesRepeater.ItemsSource = _entries;
+        EntriesSection.Visibility = Vis(entriesMode || (artistView && _entries.Count > 0));
+        AlbumsSection.Visibility = Vis(!entriesMode && !artistView && (AlbumsVisible(raw) || (_kind == "track" && _albumsArtist.Length > 0 && ArtistCatalog.Fold(raw).StartsWith(_albumsArtist, StringComparison.Ordinal) && AlbumsInfo.Text.Length > 0)));
 
         // Anuncio de lanzamientos nuevos: solo en Inicio y sin búsqueda
         _featured = home && _releases.Count > 0 ? _releases[_heroIndex % _releases.Count] : null;
@@ -346,6 +367,8 @@ public sealed partial class MainWindow : Window
         var scope = Scope;
         if (kind is "library" or "settings" or "downloads" || kind.StartsWith("pl:", StringComparison.Ordinal) || typed.Length == 1) return;
         if (kind == "video" && typed.Length == 0) { _ = LoadShelvesAsync(); return; }
+        if (kind == "track" && _artist is not null) return;   // página de artista abierta: sus canciones ya están
+        if (kind == "track" && typed.Length > 1 && _musicFilter != "songs") { _ = LoadEntriesAsync(typed); return; }
         if (kind == "track" && typed.Length > 1) _ = LoadDiscographyAsync(typed);
         else if (kind == "track" && typed.Length == 0) { _albumsArtist = ""; AlbumsRow.Children.Clear(); AlbumsSection.Visibility = Visibility.Collapsed; }
 
@@ -404,6 +427,135 @@ public sealed partial class MainWindow : Window
         {
             if (_searchCts == cts) YouTubeBusy.IsActive = false;
         }
+    }
+
+    // ===================== Álbumes y artistas de YouTube Music =====================
+
+    /// <summary>Cierra la página de artista (si estaba abierta) y deja que la búsqueda vuelva a llenar los resultados.</summary>
+    private void CloseArtist()
+    {
+        if (_artist is null) return;
+        _artist = null;
+        _entries = [];
+        _entriesKey = "";
+        _youtube = [];
+        _youtubeQuery = "";
+    }
+
+    private async Task LoadEntriesAsync(string typed)
+    {
+        var filter = _musicFilter;
+        var key = $"{filter}|{typed}";
+        if (key == _entriesKey) return;
+        _entriesCts?.Cancel();
+        var cts = _entriesCts = new CancellationTokenSource();
+        _entries = [];
+        EntriesRepeater.ItemsSource = _entries;
+        EntriesInfo.Text = "";
+        EntriesBusy.IsActive = true;
+        try
+        {
+            var list = filter == "albums"
+                ? (await YouTubeMusic.SearchAlbumsAsync(_http, typed, cts.Token)).Select(a => new MusicEntry(a)).ToList()
+                : (await YouTubeMusic.SearchArtistsAsync(_http, typed, cts.Token)).Select(a => new MusicEntry(a)).ToList();
+            if (cts.IsCancellationRequested || filter != _musicFilter || _kind != "track" || _artist is not null) return;
+            _entriesKey = key;
+            _entries = list;
+            EntriesRepeater.ItemsSource = _entries;
+            EntriesInfo.Text = list.Count == 0 ? "Sin resultados en YouTube Music." : "";
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex)
+        {
+            App.LogOnce("Álbumes y artistas", ex);
+            if (_entriesCts == cts) EntriesInfo.Text = $"No se pudo buscar en YouTube Music: {ex.Message}";
+        }
+        finally
+        {
+            if (_entriesCts == cts) EntriesBusy.IsActive = false;
+        }
+    }
+
+    private void Entry_Click(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.Tag is not MusicEntry entry) return;
+        if (entry.Album is { } album) _ = PlayAlbumAsync(album, _artist?.Name ?? "");
+        else if (entry.Artist is { } artist) _ = OpenArtistAsync(artist);
+    }
+
+    /// <summary>Un álbum suena entero: todas sus canciones quedan en la cola.</summary>
+    private async Task PlayAlbumAsync(MusicAlbum album, string artist)
+    {
+        try
+        {
+            ShowStatus(null);
+            var who = album.Artist.Length > 0 ? album.Artist : artist;
+            var tracks = (await YouTubeMusic.BrowseTracksAsync(_http, album.Id, who, album.Title, album.Art))
+                .Where(v => v.DurationSec == 0 || ContentFilter.IsSong(v)).ToList();
+            if (tracks.Count == 0) { ShowStatus($"No se encontraron canciones de «{album.Title}»."); return; }
+            var cards = tracks.Select(v => new MediaCard(v)).ToList();
+            Play(cards[0], cards);
+        }
+        catch (Exception ex)
+        {
+            App.LogOnce("Álbum", ex);
+            ShowStatus($"No se pudo abrir el álbum: {ex.Message}");
+        }
+    }
+
+    /// <summary>La página de un artista: sus canciones (todas, si YouTube Music las ofrece) y su discografía.</summary>
+    private async Task OpenArtistAsync(MusicArtist artist)
+    {
+        _entriesCts?.Cancel();
+        _artist = artist;
+        _entries = [];
+        _youtube = [];
+        _youtubeQuery = $"track|track|artist:{artist.Id}";
+        EntriesInfo.Text = "";
+        YouTubeInfo.Text = "";
+        YouTubeBusy.IsActive = true;
+        ApplyFilter();
+        Browse.ChangeView(null, 0, null, true);
+        try
+        {
+            var page = await YouTubeMusic.BrowseArtistAsync(_http, artist.Id, artist.Name);
+            var songs = page.Songs;
+            if (page.AllSongsId.Length > 0)
+            {
+                try
+                {
+                    var all = await YouTubeMusic.BrowseTracksAsync(_http, page.AllSongsId, artist.Name);
+                    if (all.Count > songs.Count) songs = all;
+                }
+                catch (Exception ex) { App.LogOnce("Todas las canciones del artista", ex); }   // se quedan las más escuchadas
+            }
+            if (_artist != artist) return;
+            _youtube = songs.Where(ContentFilter.IsSong).Select(v => new MediaCard(v)).ToList();
+            _entries = page.Releases.Select(r => new MusicEntry(r, artist.Name)).ToList();
+            YouTubeInfo.Text = _youtube.Count == 0 ? "Sin canciones en YouTube Music." : "";
+            ApplyFilter();
+        }
+        catch (Exception ex)
+        {
+            App.LogOnce("Artista", ex);
+            if (_artist == artist) YouTubeInfo.Text = $"No se pudo abrir la página del artista: {ex.Message}";
+        }
+        finally
+        {
+            if (_artist == artist) YouTubeBusy.IsActive = false;
+        }
+    }
+
+    private void ArtistBack_Click(object sender, RoutedEventArgs e)
+    {
+        CloseArtist();
+        ApplyFilter();
+        _ = SearchYouTubeAsync(Search.Text);
+    }
+
+    private void ArtistPlay_Click(object sender, RoutedEventArgs e)
+    {
+        if (_youtube.Count > 0) Play(_youtube[0], _youtube);
     }
 
     // ===================== Artistas de la semana y discografía =====================
@@ -547,7 +699,7 @@ public sealed partial class MainWindow : Window
                 AlbumsRow.Children.Add(button);
             }
             AlbumsInfo.Text = albums.Count == 0 ? "Sin ficha en MusicBrainz (artista pequeño o nuevo): aquí solo se muestran sus canciones." : "";
-            AlbumsSection.Visibility = Vis(AlbumsVisible(Search.Text ?? "") || albums.Count == 0 && _kind == "track");
+            AlbumsSection.Visibility = Vis(_musicFilter == "songs" && _artist is null && (AlbumsVisible(Search.Text ?? "") || albums.Count == 0 && _kind == "track"));
         }
         catch (OperationCanceledException) { }
         catch (Exception ex)
@@ -793,15 +945,66 @@ public sealed partial class MainWindow : Window
 
     private ThumbBar? _thumb;
 
+    // ===================== Mini reproductor =====================
+
+    private MiniPlayerWindow? _mini;
+
+    private void Mini_Click(object sender, RoutedEventArgs e)
+    {
+        if (_mini is not null) { _mini.Activate(); return; }
+        _mini = new MiniPlayerWindow(
+            () => Safe("Mini: anterior", Previous),
+            () => Safe("Mini: reproducir", () => Play_Click(this, null!)),
+            () => Safe("Mini: siguiente", Next),
+            () => Safe("Mini: volver", ShowMainFromMini),
+            seconds => Safe("Mini: saltar", () => Progress.Value = Math.Clamp(seconds, 0, Progress.Maximum)),   // reutiliza el salto de la barra principal
+            () => Safe("Mini: guardar", () => Save_Click(this, null!)),
+            Root.RequestedTheme);
+        _mini.Closed += (_, _) => _mini = null;
+        SyncMini();
+        _mini.SetProgress(TimeSpan.FromSeconds(Math.Max(0, Progress.Value)), TimeSpan.FromSeconds(Math.Max(1, Progress.Maximum)));
+        _mini.Activate();
+    }
+
+    private readonly LoopbackAnalyzer _analyzer = new();
+    private string _keyBpm = "";
+    private string? _analyzedId;
+
+    /// <summary>Pone «La menor · 128 BPM» en la barra y en la tarjeta mini.</summary>
+    private void ShowKeyBpm()
+    {
+        if (_now is not null)
+            NowArtist.Text = (_now.YouTubeId is null ? _now.Subtitle : $"{_now.Subtitle} · YouTube") + (_keyBpm.Length > 0 ? " · " + _keyBpm : "");
+        _mini?.SetKeyBpm(_keyBpm);
+    }
+
+    private void SyncMini()
+    {
+        if (_mini is null) return;
+        _mini.SetTrack(_now?.Title ?? "", _now is null ? "" : _now.YouTubeId is null ? _now.Subtitle : $"{_now.Subtitle} · YouTube", _now?.Artwork, _now?.Tile, IsPlaying);
+        _mini.SetSaved(_now is not null && _library.Contains(_now.Source, _now.Id));
+    }
+
+    /// <summary>«Volver a Nsound» desde el mini reproductor: restaura la ventana principal y cierra la pequeña.</summary>
+    private void ShowMainFromMini()
+    {
+        (AppWindow.Presenter as Microsoft.UI.Windowing.OverlappedPresenter)?.Restore();
+        Activate();
+        _mini?.Close();
+    }
+
     private bool IsPlaying => _mode == Mode.YouTube ? _ytPlaying : _player.IsPlaying;
 
     private void UpdateNowPlayingBar()
     {
         PlayIcon.Symbol = IsPlaying ? Symbol.Pause : Symbol.Play;
         _thumb?.Update(IsPlaying, _now is not null, _now is not null && _library.Contains(_now.Source, _now.Id));
+        SyncMini();
         if (_now is null) return;
+        if (_analyzedId != _now.Id) { _analyzedId = _now.Id; _keyBpm = ""; _analyzer.Reset(); }
         NowTitle.Text = _now.Title;
         NowArtist.Text = _now.YouTubeId is null ? _now.Subtitle : $"{_now.Subtitle} · YouTube";
+        ShowKeyBpm();
         NowTile.Background = _now.Tile;
         NowImage.Source = _now.Artwork;
         SaveIcon.Glyph = _library.Contains(_now.Source, _now.Id) ? "" : "";
@@ -960,7 +1163,15 @@ public sealed partial class MainWindow : Window
 
     private void Genre_Click(object sender, RoutedEventArgs e)
     {
+        CloseArtist();
         _genre = (string)((Button)sender).Tag;
+        ApplyFilter();
+        _ = SearchYouTubeAsync(Search.Text);
+    }
+
+    private void MusicFilter_Click(object sender, RoutedEventArgs e)
+    {
+        _musicFilter = (string)((Button)sender).Tag;
         ApplyFilter();
         _ = SearchYouTubeAsync(Search.Text);
     }
@@ -1002,6 +1213,7 @@ public sealed partial class MainWindow : Window
 
         FollowLyrics(pos.TotalSeconds);
         SyncSheetAndBars(pos, total);
+        _mini?.SetProgress(pos, total);
         Elapsed.Text = MediaCard.Format(pos);
         Total.Text = MediaCard.Format(total);
 
@@ -1107,6 +1319,7 @@ public sealed partial class MainWindow : Window
                     var d = root.GetProperty("duration").GetDouble();
                     if (d > 0) _ytDuration = d;
                     PlayIcon.Symbol = _ytPlaying ? Symbol.Pause : Symbol.Play;
+                    _mini?.SetPlaying(_ytPlaying);
                     if (_ytPlaying && _ytTime > 1) _errorStreak = 0;   // ya suena: se acaba la racha de errores
                     break;
                 case "ended" when _mode == Mode.YouTube:
@@ -1216,7 +1429,8 @@ public sealed partial class MainWindow : Window
     private void PushEq()
     {
         var s = _settings.Current;
-        var script = $"window.__lsEq && window.__lsEq({JsonSerializer.Serialize(s.EqBands)}, {(s.EqEnabled ? "true" : "false")})";
+        const bool EqEnMantenimiento = true;   // retirado hasta arreglar su fallo (calentaba el equipo)
+        var script = $"window.__lsEq && window.__lsEq({JsonSerializer.Serialize(s.EqBands)}, {(s.EqEnabled && !EqEnMantenimiento ? "true" : "false")})";
         foreach (var frame in _ytFrames.ToList())
         {
             try { _ = frame.ExecuteScriptAsync(script); }
@@ -1456,6 +1670,7 @@ public sealed partial class MainWindow : Window
         var wanted = t.Dark ? ElementTheme.Dark : ElementTheme.Light;
         Root.RequestedTheme = wanted == ElementTheme.Dark ? ElementTheme.Light : ElementTheme.Dark;
         Root.RequestedTheme = wanted;
+        _mini?.SetTheme(wanted);
         SetBrush("AccentFillColorDefaultBrush", Hex(t.Accent));
         SetBrush("AccentFillColorSecondaryBrush", Hex(t.Accent, 0xE6));
         SetBrush("AccentFillColorTertiaryBrush", Hex(t.Accent, 0xCC));
@@ -1834,6 +2049,7 @@ public sealed partial class MainWindow : Window
     private void Nav_SelectionChanged(NavigationView sender, NavigationViewSelectionChangedEventArgs e)
     {
         _kind = (e.SelectedItem as NavigationViewItem)?.Tag as string ?? "all";
+        CloseArtist();
         VideoLayer.Visibility = Visibility.Collapsed;
         ShowYouTubeLayer(false);
         FadeIn();
@@ -1845,6 +2061,7 @@ public sealed partial class MainWindow : Window
 
     private void Search_TextChanged(AutoSuggestBox s, AutoSuggestBoxTextChangedEventArgs e)
     {
+        CloseArtist();
         VideoLayer.Visibility = Visibility.Collapsed;
         ShowYouTubeLayer(false);
         ApplyFilter();
