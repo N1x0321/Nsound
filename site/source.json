@@ -21,19 +21,19 @@
         "https://n1x0321.github.io/Nsound/img/nsound/reproduciendo.jpg"
       ],
       "version": "0.8.0",
-      "versionDate": "2026-11-16",
-      "downloadURL": "https://github.com/N1x0321/Nsound/releases/download/v0.8.0-beta.9/Nsound-0.8.0-beta.9-unsigned.ipa",
-      "size": 1198590,
+      "versionDate": "2026-11-17",
+      "downloadURL": "https://github.com/N1x0321/Nsound/releases/download/v0.8.0-beta.10/Nsound-0.8.0-beta.10-unsigned.ipa",
+      "size": 1198588,
       "versions": [
         {
           "version": "0.8.0",
-          "buildVersion": "66",
-          "date": "2026-11-16",
-          "localizedDescription": "Nsound v0.8.0-beta.9",
-          "downloadURL": "https://github.com/N1x0321/Nsound/releases/download/v0.8.0-beta.9/Nsound-0.8.0-beta.9-unsigned.ipa",
-          "size": 1198590,
+          "buildVersion": "71",
+          "date": "2026-11-17",
+          "localizedDescription": "Nsound v0.8.0-beta.10",
+          "downloadURL": "https://github.com/N1x0321/Nsound/releases/download/v0.8.0-beta.10/Nsound-0.8.0-beta.10-unsigned.ipa",
+          "size": 1198588,
           "minOSVersion": "16.0",
-          "sha256": "fe962b9a9c25f6619e509d26f26b6f1ad60893137ca74642041d8a1dfde05287"
+          "sha256": "d85c67cdf1e0c4bfa5c487ac8207ff4d7f8eed0c4b4f0ab9b1310445b0ed08c5"
         }
       ],
       "appPermissions": {
