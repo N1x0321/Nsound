@@ -19,6 +19,11 @@ public sealed class MiniPlayerWindow : Window
 {
     [DllImport("user32.dll")] private static extern uint GetDpiForWindow(IntPtr hWnd);
     [DllImport("user32.dll")] private static extern bool ReleaseCapture();
+    [DllImport("user32.dll")] private static extern bool GetCursorPos(out CursorPoint p);
+    [StructLayout(LayoutKind.Sequential)] private struct CursorPoint { public int X, Y; }
+    private const double DesignW = 360, DesignH = 430;   // tamaño de diseño: todo lo demás se escala a partir de él
+    private double _scale = 1;
+    private bool _small;
     [DllImport("user32.dll")] private static extern IntPtr SendMessage(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
 
     private readonly Image _art = new() { Stretch = Stretch.UniformToFill };
@@ -38,6 +43,7 @@ public sealed class MiniPlayerWindow : Window
     public MiniPlayerWindow(Action previous, Action playPause, Action next, Action expand, Action<double> seek, Action save, ElementTheme theme)
     {
         Title = "Nsound";
+        _root.Width = DesignW; _root.Height = DesignH;
 
         // Sin barra de título ni borde, siempre encima, tamaño fijo
         if (AppWindow.Presenter is OverlappedPresenter p)
@@ -50,7 +56,9 @@ public sealed class MiniPlayerWindow : Window
         }
         var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
         var scale = Math.Max(1.0, GetDpiForWindow(hwnd) / 96.0);
-        AppWindow.ResizeClient(new Windows.Graphics.SizeInt32((int)(360 * scale), (int)(430 * scale)));   // puntos de interfaz × escala de la pantalla
+        _scale = scale;
+        void SetWidth(double dips) => AppWindow.ResizeClient(new Windows.Graphics.SizeInt32((int)(dips * scale), (int)(dips * DesignH / DesignW * scale)));   // puntos × escala de la pantalla, siempre con la misma proporción
+        SetWidth(300);
         try { AppWindow.SetIcon(System.IO.Path.Combine(AppContext.BaseDirectory, "Assets", "icon.ico")); } catch { /* sin icono: se queda el predeterminado */ }
 
         var bgColor = ((SolidColorBrush)Application.Current.Resources["NsBgBrush"]).Color;
@@ -104,6 +112,7 @@ public sealed class MiniPlayerWindow : Window
         var top = new Grid { Height = 44, VerticalAlignment = VerticalAlignment.Top, Background = new SolidColorBrush(Colors.Transparent) };
         top.Children.Add(new Rectangle { Width = 38, Height = 4, RadiusX = 2, RadiusY = 2, Fill = White(110), VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, 9, 0, 0) });
         top.PointerPressed += (_, _) => { ReleaseCapture(); SendMessage(hwnd, 0xA1, (IntPtr)2, IntPtr.Zero); };   // arrastrar la ventana como si fuera la barra de título
+        top.DoubleTapped += (_, _) => { _small = !_small; SetWidth(_small ? 230 : 360); };                         // doble clic en la franja: pequeña ↔ grande
         var expandBtn = Icon("", expand, "Volver a Nsound", 15, 34); expandBtn.HorizontalAlignment = HorizontalAlignment.Left; expandBtn.Margin = new Thickness(8, 4, 0, 0);
         var closeBtn = Icon("", () => Close(), "Cerrar el mini reproductor", 14, 34); closeBtn.HorizontalAlignment = HorizontalAlignment.Right; closeBtn.Margin = new Thickness(0, 4, 8, 0);
         top.Children.Add(expandBtn); top.Children.Add(closeBtn);
@@ -140,7 +149,27 @@ public sealed class MiniPlayerWindow : Window
         SetSaved(false);
 
         _root.RequestedTheme = theme;
-        Content = _root;
+
+        // Tirador de la esquina de abajo a la derecha: arrastrando con el ratón se cambia el tamaño (mínimo 200, máximo 640 puntos de ancho)
+        var grip = new Border { Width = 30, Height = 30, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Bottom, Background = new SolidColorBrush(Colors.Transparent) };
+        grip.Child = new TextBlock { Text = "◢", FontSize = 13, Opacity = 0.55, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Bottom, Margin = new Thickness(0, 0, 6, 4) };
+        ToolTipService.SetToolTip(grip, "Arrastra para cambiar el tamaño · doble clic arriba: pequeña o grande");
+        CursorPoint start = default; int startW = 0;
+        grip.PointerPressed += (_, e) => { grip.CapturePointer(e.Pointer); GetCursorPos(out start); startW = AppWindow.ClientSize.Width; };
+        grip.PointerMoved += (_, e) =>
+        {
+            if (!e.GetCurrentPoint(grip).Properties.IsLeftButtonPressed) return;
+            GetCursorPos(out var now);
+            var w = Math.Clamp(startW + (now.X - start.X), (int)(200 * scale), (int)(640 * scale));
+            AppWindow.ResizeClient(new Windows.Graphics.SizeInt32(w, (int)(w * DesignH / DesignW)));
+        };
+        grip.PointerReleased += (_, e) => grip.ReleasePointerCapture(e.Pointer);
+
+        // Todo el contenido se escala con la ventana (ancho y alto a la vez)
+        var host = new Grid();
+        host.Children.Add(new Viewbox { Stretch = Stretch.Uniform, Child = _root });
+        host.Children.Add(grip);
+        Content = host;
     }
 
     /// <summary>Lo que suena ahora (título, artista, portada) y si está sonando.</summary>
