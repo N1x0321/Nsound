@@ -805,6 +805,8 @@ public sealed partial class MainWindow : Window
             () => Safe("Mini: reproducir", () => Play_Click(this, null!)),
             () => Safe("Mini: siguiente", Next),
             () => Safe("Mini: volver", ShowMainFromMini),
+            seconds => Safe("Mini: saltar", () => Progress.Value = Math.Clamp(seconds, 0, Progress.Maximum)),   // reutiliza el salto de la barra principal
+            () => Safe("Mini: guardar", () => Save_Click(this, null!)),
             Root.RequestedTheme);
         _mini.Closed += (_, _) => _mini = null;
         SyncMini();
@@ -816,6 +818,7 @@ public sealed partial class MainWindow : Window
     {
         if (_mini is null) return;
         _mini.SetTrack(_now?.Title ?? "", _now is null ? "" : _now.YouTubeId is null ? _now.Subtitle : $"{_now.Subtitle} · YouTube", _now?.Artwork, _now?.Tile, IsPlaying);
+        _mini.SetSaved(_now is not null && _library.Contains(_now.Source, _now.Id));
     }
 
     /// <summary>«Volver a Nsound» desde el mini reproductor: restaura la ventana principal y cierra la pequeña.</summary>

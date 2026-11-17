@@ -1,105 +1,144 @@
+using System.Runtime.InteropServices;
 using Microsoft.UI;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
+using Microsoft.UI.Xaml.Shapes;
 
 namespace LibreStream.App;
 
 /// <summary>
-/// Mini reproductor: una ventana pequeña que siempre queda por encima de las demás, con la portada, el título, el artista, la barra de
-/// progreso y los botones Anterior / Reproducir-Pausa / Siguiente. No reproduce nada: la ventana principal le manda lo que suena
-/// y recibe sus pulsaciones. Está hecha solo con código (sin XAML) para que sea una pieza pequeña y fácil de mantener.
+/// Mini reproductor en forma de tarjeta: sin barra de título, siempre encima, con la portada grande sobre un fondo teñido con su color.
+/// Al pasar el ratón por la portada aparecen Anterior / Reproducir-Pausa / Siguiente; la barra de progreso se puede pinchar para saltar;
+/// debajo van el título, el artista y la marca de guardado. Se arrastra desde la franja de arriba. No reproduce nada: la ventana
+/// principal le manda lo que suena y recibe sus pulsaciones. Hecha solo con código (sin XAML).
 /// </summary>
 public sealed class MiniPlayerWindow : Window
 {
-    private readonly Image _art = new() { Width = 84, Height = 84, Stretch = Stretch.UniformToFill };
-    private readonly Border _artTile = new() { Width = 84, Height = 84, CornerRadius = new CornerRadius(12) };
-    private readonly TextBlock _title = new() { FontSize = 15, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis, MaxLines = 1 };
-    private readonly TextBlock _artist = new() { FontSize = 12, Opacity = 0.7, TextTrimming = TextTrimming.CharacterEllipsis, MaxLines = 1 };
-    private readonly ProgressBar _progress = new() { Minimum = 0, Maximum = 1, Height = 4, MinHeight = 4 };
-    private readonly TextBlock _elapsed = new() { FontSize = 11, Opacity = 0.65, Text = "0:00" };
-    private readonly TextBlock _total = new() { FontSize = 11, Opacity = 0.65, Text = "0:00", HorizontalAlignment = HorizontalAlignment.Right };
-    private readonly FontIcon _playIcon = new() { Glyph = "", FontSize = 18 };   // E768 = reproducir, E769 = pausa
+    [DllImport("user32.dll")] private static extern uint GetDpiForWindow(IntPtr hWnd);
+    [DllImport("user32.dll")] private static extern bool ReleaseCapture();
+    [DllImport("user32.dll")] private static extern IntPtr SendMessage(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
+
+    private readonly Image _art = new() { Stretch = Stretch.UniformToFill };
+    private readonly Border _artTile = new() { Width = 236, Height = 236, CornerRadius = new CornerRadius(16), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 18, 0, 0) };
+    private readonly Rectangle _tint = new() { Opacity = 0.55 };
+    private readonly Border _scrim = new() { Opacity = 0, Background = new SolidColorBrush(Windows.UI.Color.FromArgb(0x66, 0, 0, 0)) };
+    private readonly TextBlock _title = new() { FontSize = 24, FontWeight = Microsoft.UI.Text.FontWeights.Bold, TextTrimming = TextTrimming.CharacterEllipsis, MaxLines = 1 };
+    private readonly TextBlock _artist = new() { FontSize = 13, Opacity = 0.75, TextTrimming = TextTrimming.CharacterEllipsis, MaxLines = 1 };
+    private readonly Slider _slider = new() { Minimum = 0, Maximum = 1, IsThumbToolTipEnabled = false, Height = 28 };
+    private readonly TextBlock _elapsed = new() { FontSize = 12, Opacity = 0.75, Text = "0:00" };
+    private readonly TextBlock _total = new() { FontSize = 12, Opacity = 0.75, Text = "0:00", HorizontalAlignment = HorizontalAlignment.Right };
+    private readonly FontIcon _playIcon = new() { Glyph = "", FontSize = 26 };   // E768 = reproducir, E769 = pausa
+    private readonly Button _save = new() { Width = 38, Height = 38, Padding = new Thickness(0), CornerRadius = new CornerRadius(19), VerticalAlignment = VerticalAlignment.Center };
     private readonly Grid _root = new();
+    private bool _setting, _scrubbing;
 
-    [System.Runtime.InteropServices.DllImport("user32.dll")]
-    private static extern uint GetDpiForWindow(IntPtr hWnd);
-
-    public MiniPlayerWindow(Action previous, Action playPause, Action next, Action expand, ElementTheme theme)
+    public MiniPlayerWindow(Action previous, Action playPause, Action next, Action expand, Action<double> seek, Action save, ElementTheme theme)
     {
         Title = "Nsound";
 
-        // Siempre encima, sin maximizar ni redimensionar, con un tamaño fijo y cómodo
+        // Sin barra de título ni borde, siempre encima, tamaño fijo
         if (AppWindow.Presenter is OverlappedPresenter p)
         {
+            p.SetBorderAndTitleBar(false, false);
             p.IsAlwaysOnTop = true;
             p.IsMaximizable = false;
+            p.IsMinimizable = false;
             p.IsResizable = false;
         }
-        // Tamaño del área de contenido en puntos de la interfaz (420 × 150), pasado a píxeles con la escala de la pantalla: así no se corta nada con el 125 % o el 150 %
         var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
         var scale = Math.Max(1.0, GetDpiForWindow(hwnd) / 96.0);
-        AppWindow.ResizeClient(new Windows.Graphics.SizeInt32((int)(420 * scale), (int)(150 * scale)));
+        AppWindow.ResizeClient(new Windows.Graphics.SizeInt32((int)(360 * scale), (int)(430 * scale)));   // puntos de interfaz × escala de la pantalla
         try { AppWindow.SetIcon(System.IO.Path.Combine(AppContext.BaseDirectory, "Assets", "icon.ico")); } catch { /* sin icono: se queda el predeterminado */ }
 
-        _artTile.Child = _art;
-        Button Make(string glyph, Action click, string name, double size = 18, bool main = false)
+        var bgColor = ((SolidColorBrush)Application.Current.Resources["NsBgBrush"]).Color;
+        static Brush White(byte a = 255) => new SolidColorBrush(Windows.UI.Color.FromArgb(a, 255, 255, 255));
+
+        Button Icon(string glyph, Action click, string name, double size = 18, double box = 40)
         {
-            var icon = glyph == "play" ? _playIcon : new FontIcon { Glyph = glyph, FontSize = size };
-            var b = new Button
-            {
-                Content = icon, Width = main ? 52 : 44, Height = main ? 52 : 44, Padding = new Thickness(0), CornerRadius = new CornerRadius(main ? 26 : 22),
-                Background = main ? (Brush)Application.Current.Resources["NsAccentBrush"] : new SolidColorBrush(Colors.Transparent), BorderThickness = new Thickness(0),
-            };
-            if (main) b.Foreground = new SolidColorBrush(Colors.White);
+            var b = new Button { Content = new FontIcon { Glyph = glyph, FontSize = size, Foreground = White() }, Width = box, Height = box, Padding = new Thickness(0),
+                CornerRadius = new CornerRadius(box / 2), Background = new SolidColorBrush(Colors.Transparent), BorderThickness = new Thickness(0) };
             Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(b, name);
             ToolTipService.SetToolTip(b, name);
             b.Click += (_, _) => click();
             return b;
         }
 
-        var controls = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, HorizontalAlignment = HorizontalAlignment.Left };
-        controls.Children.Add(Make("", previous, "Anterior"));
-        controls.Children.Add(Make("play", playPause, "Reproducir o pausar", 20, main: true));
-        controls.Children.Add(Make("", next, "Siguiente"));
+        // Fondo: el color de la portada, que se apaga hacia abajo hasta el color de la app
+        var fade = new Rectangle { Fill = new LinearGradientBrush
+        {
+            StartPoint = new Windows.Foundation.Point(0, 0), EndPoint = new Windows.Foundation.Point(0, 1),
+            GradientStops = { new GradientStop { Color = Windows.UI.Color.FromArgb(0, bgColor.R, bgColor.G, bgColor.B), Offset = 0.30 }, new GradientStop { Color = bgColor, Offset = 0.78 } },
+        } };
+        _root.Background = new SolidColorBrush(bgColor);
+        _root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(278) });
+        _root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        _root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        foreach (var r in new[] { _tint, fade }) { Grid.SetRowSpan(r, 3); _root.Children.Add(r); }
 
-        var expandBtn = Make("", expand, "Volver a Nsound", 15);   // E740 = pantalla completa
-        expandBtn.HorizontalAlignment = HorizontalAlignment.Right;
-        expandBtn.VerticalAlignment = VerticalAlignment.Top;
-        expandBtn.Width = expandBtn.Height = 32;
+        // Portada con los controles encima (aparecen al pasar el ratón)
+        var cover = new Grid { Background = new SolidColorBrush(Colors.Transparent) };
+        _artTile.Child = _art;
+        cover.Children.Add(_artTile);
 
-        var times = new Grid { ColumnSpacing = 8 };
-        times.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        times.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        times.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        times.Children.Add(_elapsed);
-        Grid.SetColumn(_progress, 1); _progress.VerticalAlignment = VerticalAlignment.Center; times.Children.Add(_progress);
-        Grid.SetColumn(_total, 2); times.Children.Add(_total);
+        _scrim.OpacityTransition = new ScalarTransition();
+        _scrim.CornerRadius = new CornerRadius(16);
+        _scrim.Width = _artTile.Width; _scrim.Height = _artTile.Height;
+        _scrim.HorizontalAlignment = HorizontalAlignment.Center; _scrim.VerticalAlignment = VerticalAlignment.Center; _scrim.Margin = _artTile.Margin;
+        var playBtn = new Button { Content = _playIcon, Width = 64, Height = 64, Padding = new Thickness(0), CornerRadius = new CornerRadius(32), Background = White(), BorderThickness = new Thickness(0) };
+        _playIcon.Foreground = new SolidColorBrush(Colors.Black);
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(playBtn, "Reproducir o pausar");
+        playBtn.Click += (_, _) => playPause();
+        var controls = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 12, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
+        controls.Children.Add(Icon("", previous, "Anterior", 22, 48));
+        controls.Children.Add(playBtn);
+        controls.Children.Add(Icon("", next, "Siguiente", 22, 48));
+        _scrim.Child = controls;
+        cover.Children.Add(_scrim);
+        cover.PointerEntered += (_, _) => _scrim.Opacity = 1;
+        cover.PointerExited += (_, _) => _scrim.Opacity = 0;
 
-        var text = new StackPanel { Spacing = 2, VerticalAlignment = VerticalAlignment.Center };
-        text.Children.Add(_title);
-        text.Children.Add(_artist);
+        // Franja de arriba: asa para arrastrar, volver a Nsound y cerrar
+        var top = new Grid { Height = 44, VerticalAlignment = VerticalAlignment.Top, Background = new SolidColorBrush(Colors.Transparent) };
+        top.Children.Add(new Rectangle { Width = 38, Height = 4, RadiusX = 2, RadiusY = 2, Fill = White(110), VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, 9, 0, 0) });
+        top.PointerPressed += (_, _) => { ReleaseCapture(); SendMessage(hwnd, 0xA1, (IntPtr)2, IntPtr.Zero); };   // arrastrar la ventana como si fuera la barra de título
+        var expandBtn = Icon("", expand, "Volver a Nsound", 15, 34); expandBtn.HorizontalAlignment = HorizontalAlignment.Left; expandBtn.Margin = new Thickness(8, 4, 0, 0);
+        var closeBtn = Icon("", () => Close(), "Cerrar el mini reproductor", 14, 34); closeBtn.HorizontalAlignment = HorizontalAlignment.Right; closeBtn.Margin = new Thickness(0, 4, 8, 0);
+        top.Children.Add(expandBtn); top.Children.Add(closeBtn);
+        cover.Children.Add(top);
+        _root.Children.Add(cover);
 
-        var right = new Grid { RowSpacing = 6, VerticalAlignment = VerticalAlignment.Center };
-        right.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        right.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        right.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        right.Children.Add(text);
-        Grid.SetRow(times, 1); right.Children.Add(times);
-        Grid.SetRow(controls, 2); right.Children.Add(controls);
+        // Progreso (se puede pinchar o arrastrar) y tiempos
+        var progress = new StackPanel { Margin = new Thickness(22, 0, 22, 0), Spacing = 0 };
+        _slider.ValueChanged += (_, e) => { if (!_setting) seek(e.NewValue); };
+        _slider.AddHandler(UIElement.PointerPressedEvent, new PointerEventHandler((_, _) => _scrubbing = true), true);
+        _slider.AddHandler(UIElement.PointerReleasedEvent, new PointerEventHandler((_, _) => _scrubbing = false), true);
+        _slider.AddHandler(UIElement.PointerCanceledEvent, new PointerEventHandler((_, _) => _scrubbing = false), true);
+        _slider.AddHandler(UIElement.PointerCaptureLostEvent, new PointerEventHandler((_, _) => _scrubbing = false), true);
+        var times = new Grid { Margin = new Thickness(0, -4, 0, 0) };
+        times.Children.Add(_elapsed); times.Children.Add(_total);
+        progress.Children.Add(_slider); progress.Children.Add(times);
+        Grid.SetRow(progress, 1); _root.Children.Add(progress);
 
-        _root.Padding = new Thickness(14, 12, 14, 12);
-        _root.ColumnSpacing = 14;
-        _root.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        _root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        var artHost = new Grid { VerticalAlignment = VerticalAlignment.Top };
-        artHost.Children.Add(_artTile);
-        _root.Children.Add(artHost);
-        Grid.SetColumn(right, 1); _root.Children.Add(right);
-        Grid.SetColumn(expandBtn, 1); _root.Children.Add(expandBtn);
+        // Título, artista y marca de guardado
+        var info = new Grid { Margin = new Thickness(22, 12, 22, 16), ColumnSpacing = 12 };
+        info.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        info.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        var sub = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+        sub.Children.Add(new FontIcon { Glyph = "", FontSize = 13, Opacity = 0.75, VerticalAlignment = VerticalAlignment.Center });
+        sub.Children.Add(_artist);
+        var texts = new StackPanel { Spacing = 4, VerticalAlignment = VerticalAlignment.Center };
+        texts.Children.Add(_title); texts.Children.Add(sub);
+        info.Children.Add(texts);
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(_save, "Guardar en Mi biblioteca");
+        ToolTipService.SetToolTip(_save, "Guardar en Mi biblioteca");
+        _save.Click += (_, _) => save();
+        Grid.SetColumn(_save, 1); info.Children.Add(_save);
+        Grid.SetRow(info, 2); _root.Children.Add(info);
+        SetSaved(false);
 
-        _root.Background = (Brush)Application.Current.Resources["NsBgBrush"];   // el mismo color de fondo que la ventana principal
         _root.RequestedTheme = theme;
         Content = _root;
     }
@@ -111,17 +150,31 @@ public sealed class MiniPlayerWindow : Window
         _artist.Text = artist;
         _art.Source = art;
         _artTile.Background = tile;
+        _tint.Fill = tile;
         SetPlaying(playing);
     }
 
     public void SetPlaying(bool playing) => _playIcon.Glyph = playing ? "" : "";
 
+    /// <summary>Guardado: círculo del color de la app con una marca; sin guardar: círculo con borde y un +.</summary>
+    public void SetSaved(bool saved)
+    {
+        var accent = (Brush)Application.Current.Resources["NsAccentBrush"];
+        _save.Content = new FontIcon { Glyph = saved ? "" : "", FontSize = 17, Foreground = new SolidColorBrush(Colors.White) };
+        _save.Background = saved ? accent : new SolidColorBrush(Colors.Transparent);
+        _save.BorderBrush = new SolidColorBrush(Windows.UI.Color.FromArgb(150, 255, 255, 255));
+        _save.BorderThickness = new Thickness(saved ? 0 : 1.5);
+    }
+
     public void SetProgress(TimeSpan position, TimeSpan total)
     {
-        _progress.Maximum = Math.Max(1, total.TotalSeconds);
-        _progress.Value = Math.Min(position.TotalSeconds, _progress.Maximum);
         _elapsed.Text = MediaCard.Format(position);
         _total.Text = MediaCard.Format(total);
+        if (_scrubbing) return;                 // mientras el usuario arrastra, no se le mueve la barra
+        _setting = true;
+        _slider.Maximum = Math.Max(1, total.TotalSeconds);
+        _slider.Value = Math.Min(position.TotalSeconds, _slider.Maximum);
+        _setting = false;
     }
 
     public void SetTheme(ElementTheme theme) => _root.RequestedTheme = theme;
