@@ -64,6 +64,10 @@ public sealed partial class MainWindow : Window
     private bool _updatingProgress;
     private bool _audioOnly;
     private bool _ytLayerShown;
+    private string _repeat = QueueOps.RepeatOff;   // repetir: off | all (la lista) | one (la canción)
+    private bool _shuffle;
+    private List<string> _seen = [];                // aleatorio: canciones ya sonadas
+    private readonly List<string> _hist = [];       // aleatorio: para que «anterior» vuelva a la que sonó antes
 
     // Géneros (apartado Música) y letra
     private static readonly string[] GenreNames = ["Éxitos", "Reggaetón", "Pop", "Rock", "Electrónica", "Hip hop", "Latino", "Lo-fi"];
@@ -113,6 +117,8 @@ public sealed partial class MainWindow : Window
         Volume.Value = _settings.Current.Volume;
         Video.SetMediaPlayer(_player.Player);
         _player.Volume = Volume.Value / 100;
+        _repeat = _settings.Current.Repeat; _shuffle = _settings.Current.Shuffle;
+        _player.QueueEnded += () => DispatcherQueue.TryEnqueue(() => Safe("Fin de la cola", OnNativeQueueEnded));
         _player.StateChanged += () => DispatcherQueue.TryEnqueue(OnNativeStateChanged);
         _analyzer.Updated += text => DispatcherQueue.TryEnqueue(() => { _keyBpm = text; ShowKeyBpm(); });
         _analyzer.Start();
@@ -145,6 +151,7 @@ public sealed partial class MainWindow : Window
         BuildChips(ScopeChips, ["Todo", "Música", "Vídeos"], Scope_Click, ["all", "track", "video"]);
         BuildChips(MusicChips, ["Canciones", "Álbumes", "Artistas"], MusicFilter_Click, ["songs", "albums", "artists"]);
         BuildEqUi();
+        PaintModes();
         LookBox.ItemsSource = Themes.Names;
         ApplyLook(_settings.Current.Look);
         StartKenBurns();
@@ -281,9 +288,9 @@ public sealed partial class MainWindow : Window
 
         YouTubeTitle.Text = (_kind, q.Length > 0) switch
         {
-            ("track", false) => _genre,
+            ("track", false) => _genre == GenreNames[0] ? $"Éxitos del momento en {CountryLabel}" : _genre,
             ("track", true) => "Música en YouTube",
-            ("all", false) => scope switch { "track" => "Canciones del momento", "video" => "Videoclips del momento", _ => "Éxitos del momento" },
+            ("all", false) => scope switch { "track" => "Canciones del momento", "video" => "Videoclips del momento", _ => $"Éxitos del momento en {CountryLabel}" },
             _ => scope == "track" ? "Música en YouTube" : scope == "video" ? "Vídeos de YouTube" : "Resultados en YouTube",
         };
         if (artistView) YouTubeTitle.Text = "Canciones";
@@ -358,6 +365,28 @@ public sealed partial class MainWindow : Window
             });
     }
 
+    // ===================== País, éxitos y artistas del país =====================
+
+    private string? _country;
+    private readonly Dictionary<string, List<YouTubeVideo>> _hitsCache = [];
+
+    /// <summary>País del usuario por el idioma/región de Windows («es-MX» → MX); España si no se sabe. NSOUND_PAIS=XX lo fuerza en pruebas.</summary>
+    private string Country => _country ??= System.Text.RegularExpressions.Regex.IsMatch(Environment.GetEnvironmentVariable("NSOUND_PAIS") ?? "", "^[A-Za-z]{2}$")
+        ? Environment.GetEnvironmentVariable("NSOUND_PAIS")!.ToUpperInvariant()
+        : YouTubeMusic.UserCountry([CultureInfo.CurrentCulture.Name, CultureInfo.CurrentUICulture.Name]);
+
+    private string CountryLabel => YouTubeMusic.CountryName(Country);
+
+    /// <summary>Lista oficial de éxitos del país (YouTube Music), con caché de una hora.</summary>
+    private async Task<List<YouTubeVideo>> CountryHitsAsync(CancellationToken ct)
+    {
+        var key = $"{Country}|{DateTime.UtcNow:yyyyMMddHH}";
+        if (_hitsCache.TryGetValue(key, out var cached)) return cached;
+        var hits = await YouTubeMusic.CountryHitsAsync(_http, Country, ct);
+        if (hits.Count > 0) _hitsCache[key] = hits;
+        return hits;
+    }
+
     // ===================== Búsqueda en YouTube =====================
 
     private async Task SearchYouTubeAsync(string? text)
@@ -387,10 +416,23 @@ public sealed partial class MainWindow : Window
         try
         {
             List<YouTubeVideo>? results = null;
+            // Sin búsqueda, «Éxitos»: el top oficial del país (YouTube Music). Los demás géneros se buscan con el nombre del país.
+            var fromHits = false;
+            if (typed.Length == 0 && (kind == "track" ? _genre == GenreNames[0] : kind == "all"))
+            {
+                try
+                {
+                    var hitsList = (await CountryHitsAsync(cts.Token)).Where(v => v.DurationSec == 0 || ContentFilter.IsSong(v)).ToList();
+                    if (hitsList.Count >= 10) { results = hitsList.Take(60).ToList(); fromHits = true; }
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException) { App.LogOnce("Éxitos del país", ex); }
+            }
+            if (!fromHits)
+            {
             if (scope == "track")
             {
                 // Música: solo canciones de YouTube Music (versiones de audio: sin intros ni charla)
-                var musicQuery = typed.Length > 0 ? typed : YouTubeMusic.GenreQuery(kind == "track" ? _genre : "Éxitos", DateTime.Now.Year);
+                var musicQuery = typed.Length > 0 ? typed : $"{YouTubeMusic.GenreQuery(kind == "track" ? _genre : "Éxitos", DateTime.Now.Year)} {CountryLabel}";
                 try { results = (await YouTubeMusic.SearchSongsAsync(_http, musicQuery, cts.Token)).Where(ContentFilter.IsSong).ToList(); }
                 catch (Exception ex) when (ex is not OperationCanceledException) { App.LogOnce("YouTube Music", ex); }
                 if (results is { Count: 0 }) results = null;   // si YouTube Music no da nada, se usa la búsqueda normal
@@ -401,15 +443,18 @@ public sealed partial class MainWindow : Window
                 // Sin búsqueda: primero lo publicado esta semana del género (se actualiza solo), después el fondo de catálogo
                 try
                 {
-                    var fresh = (await YouTubeSearch.SearchAsync(_http, YouTubeMusic.RecentQuery(kind == "track" ? _genre : "Éxitos", DateTime.Now.Year), cts.Token, thisWeek: true))
+                    var fresh = (await YouTubeSearch.SearchAsync(_http, $"{YouTubeMusic.RecentQuery(kind == "track" ? _genre : "Éxitos", DateTime.Now.Year)} {CountryLabel}", cts.Token, thisWeek: true))
                         .Where(v => ContentFilter.IsSong(v) && !v.IsLive && v.DurationSec <= 480).Take(8).ToList();
                     var seen = fresh.Select(v => v.Id).ToHashSet();
                     results = fresh.Concat(results.Where(v => !seen.Contains(v.Id))).ToList();
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException) { App.LogOnce("Novedades del género", ex); }
             }
+            }
+            results ??= [];
             if (cts.IsCancellationRequested || kind != _kind || scope != Scope) return;
-            results = scope == "track" ? results.Where(ContentFilter.IsSong).ToList()
+            results = fromHits ? results
+                : scope == "track" ? results.Where(ContentFilter.IsSong).ToList()
                 : scope == "video" ? results.Where(ContentFilter.IsVideo).ToList()
                 : typed.Length == 0 ? results.Where(ContentFilter.IsSong).ToList()
                 : results.Where(v => !v.IsLive).ToList();
@@ -577,22 +622,7 @@ public sealed partial class MainWindow : Window
         var circles = new Dictionary<string, Border>();
         foreach (var name in ArtistCatalog.WeeklyArtists(DateTime.UtcNow))
         {
-            var h = Math.Abs(name.Aggregate(17, (a, c) => a * 31 + c)) % 360;
-            var circle = new Border
-            {
-                Width = 84, Height = 84, CornerRadius = new CornerRadius(42),
-                Background = new SolidColorBrush(HsvToColor(h, 0.62, 0.78)),
-                Child = new TextBlock { Text = name[..1], FontSize = 32, FontWeight = Microsoft.UI.Text.FontWeights.Bold, Foreground = new SolidColorBrush(Microsoft.UI.Colors.White), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center },
-            };
-            var label = new TextBlock { Text = name, TextAlignment = TextAlignment.Center, TextWrapping = TextWrapping.Wrap, MaxWidth = 96, FontSize = 12, HorizontalAlignment = HorizontalAlignment.Center };
-            var button = new Button
-            {
-                Tag = name, Padding = new Thickness(6), Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent), BorderThickness = new Thickness(0),
-                Content = new StackPanel { Spacing = 6, Children = { circle, label } },
-            };
-            Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(button, $"Artista {name}: ver canciones y discografía");
-            button.Click += Artist_Click;
-            ArtistsRow.Children.Add(button);
+            var circle = AddArtistButton(name, null, null);
             if (ArtistCatalog.KnownCovers.TryGetValue(name, out var rg))
             {
                 circle.Background = new ImageBrush { ImageSource = new BitmapImage(new Uri(ArtistCatalog.CoverUrl(rg))), Stretch = Stretch.UniformToFill };
@@ -601,6 +631,49 @@ public sealed partial class MainWindow : Window
             else circles[name] = circle;   // los que no están resueltos se buscan después
         }
         _ = LoadArtistCoversAsync(circles);
+        _ = LoadTopArtistsAsync();
+    }
+
+    /// <summary>Un artista de la fila: círculo con su foto (o la inicial) y su nombre; pulsarlo abre sus canciones y discos.</summary>
+    private Border AddArtistButton(string name, string? photo, int? rank)
+    {
+        var h = Math.Abs(name.Aggregate(17, (a, c) => a * 31 + c)) % 360;
+        var circle = new Border
+        {
+            Width = 84, Height = 84, CornerRadius = new CornerRadius(42),
+            Background = new SolidColorBrush(HsvToColor(h, 0.62, 0.78)),
+            Child = new TextBlock { Text = name[..1], FontSize = 32, FontWeight = Microsoft.UI.Text.FontWeights.Bold, Foreground = new SolidColorBrush(Microsoft.UI.Colors.White), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center },
+        };
+        if (photo is not null)
+        {
+            circle.Background = new ImageBrush { ImageSource = new BitmapImage(new Uri(photo)), Stretch = Stretch.UniformToFill };
+            circle.Child = null;
+        }
+        var label = new TextBlock { Text = name, TextAlignment = TextAlignment.Center, TextWrapping = TextWrapping.Wrap, MaxWidth = 96, FontSize = 12, HorizontalAlignment = HorizontalAlignment.Center };
+        var button = new Button
+        {
+            Tag = name, Padding = new Thickness(6), Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent), BorderThickness = new Thickness(0),
+            Content = new StackPanel { Spacing = 6, Children = { circle, label } },
+        };
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(button, (rank is { } r ? $"Puesto {r}: " : "Artista ") + $"{name}: ver canciones y discografía");
+        button.Click += Artist_Click;
+        ArtistsRow.Children.Add(button);
+        return circle;
+    }
+
+    /// <summary>«Artistas más escuchados»: el ranking real de YouTube Music del país (se actualiza solo). Si no está disponible se queda la lista de la semana.</summary>
+    private async Task LoadTopArtistsAsync()
+    {
+        try
+        {
+            var list = await YouTubeMusic.ChartArtistsAsync(_http, Country);
+            if (list.Count < 6) return;
+            ArtistsRow.Children.Clear();
+            var rank = 0;
+            foreach (var a in list.Take(14)) AddArtistButton(a.Name, a.Art, ++rank);
+            ArtistsTitle.Text = "Artistas más escuchados";
+        }
+        catch (Exception ex) { App.LogOnce("Ranking de artistas", ex); }   // sin ranking: se queda la lista de la semana
     }
 
     /// <summary>La foto de cada artista es la portada de uno de sus discos; mientras llega se ve la inicial.</summary>
@@ -721,15 +794,15 @@ public sealed partial class MainWindow : Window
         try
         {
             using var gate = new SemaphoreSlim(3); // como mucho 3 búsquedas a la vez
-            async Task<IReadOnlyList<YouTubeVideo>> One(string query)
+            async Task<IReadOnlyList<YouTubeVideo>> One(ShelfQuery query)
             {
                 await gate.WaitAsync();
-                try { return await YouTubeSearch.SearchAsync(_http, query, default, videosOnly: true); }
-                catch (Exception ex) { App.LogOnce("Estantería " + query, ex); return []; }
+                try { return await YouTubeSearch.SearchAsync(_http, query.Q.Trim(), default, videosOnly: true, thisWeek: query.Week); }
+                catch (Exception ex) { App.LogOnce("Estantería " + query.Q, ex); return []; }
                 finally { gate.Release(); }
             }
 
-            var built = await Task.WhenAll(VideoShelves.Default.Select(async shelf =>
+            var built = await Task.WhenAll(YouTubeMusic.ShelvesFor(Country, CountryLabel).Select(async shelf =>
             {
                 var results = await Task.WhenAll(shelf.Queries.Select(One));
                 return new Shelf(shelf.Title, VideoShelves.Merge(results, 10).Select(v => new MediaCard(v)).ToList());
@@ -874,6 +947,7 @@ public sealed partial class MainWindow : Window
         _queue = list.Where(c => c.IsPlayable).ToList();
         _index = _queue.FindIndex(c => c.Source == card.Source && c.Id == card.Id);
         if (_index < 0) { _queue = [card]; _index = 0; }
+        _seen = []; _hist.Clear();
         StartCurrent();
     }
 
@@ -904,30 +978,96 @@ public sealed partial class MainWindow : Window
             _mode = Mode.Native;
             RunPlayerScript("cmd('stop')");
             ShowYouTubeLayer(false);
-            var natives = _queue.Where(c => c.Item is not null).ToList();
+            // Cola solo de archivos: MediaPlaybackList repite y mezcla. Si hay vídeos de YouTube en la cola, decide la app y el reproductor nativo toca de uno en uno.
+            var natives = AppDriven ? [card] : _queue.Where(c => c.Item is not null).ToList();
+            ApplyNativeModes();
             _player.Play(natives.Select(c => Resolve(c.Item!)), Math.Max(0, natives.IndexOf(card)));
         }
         UpdateNowPlayingBar();
     }
 
+    private static string Key(MediaCard c) => $"{c.Source}:{c.Id}";
+
+    /// <summary>Cola con algún vídeo de YouTube: la siguiente canción la elige la app (repetir/aleatorio con QueueOps) en vez del reproductor nativo.</summary>
+    private bool AppDriven => _mode == Mode.YouTube || _queue.Any(c => c.YouTubeId is not null);
+
+    private void ApplyNativeModes() => _player.SetModes(AppDriven ? QueueOps.RepeatOff : _repeat, !AppDriven && _shuffle);
+
+    /// <summary>Pasa a la siguiente canción según repetir/aleatorio; false si se acabó la lista.</summary>
+    private bool AdvanceAuto()
+    {
+        var r = QueueOps.PickNextIndex(_queue, _index, _repeat, _shuffle, _seen, Key);
+        if (r.Index < 0) return false;
+        if (_index >= 0 && _index < _queue.Count) { _hist.Add(Key(_queue[_index])); if (_hist.Count > 50) _hist.RemoveAt(0); }
+        _seen = r.Seen; _index = r.Index;
+        StartCurrent();
+        return true;
+    }
+
     private void Next()
     {
-        if (_mode == Mode.YouTube || _queue.Any(c => c.YouTubeId is not null))
-        {
-            if (_index + 1 < _queue.Count) { _index++; StartCurrent(); }
-            else if (_mode == Mode.YouTube) RunPlayerScript("cmd('pause')");
-        }
-        else _player.Next();
+        if (!AppDriven) { _player.Next(); return; }
+        if (!AdvanceAuto() && _mode == Mode.YouTube) RunPlayerScript("cmd('pause')");
     }
 
     private void Previous()
     {
-        if (_mode == Mode.YouTube)
+        if (!AppDriven) { _player.Previous(); return; }
+        var time = _mode == Mode.YouTube ? _ytTime : _player.Position.TotalSeconds;
+        void Restart() { if (_mode == Mode.YouTube) RunPlayerScript("cmd('seek', 0)"); else _player.Seek(TimeSpan.Zero); }
+        if (time > 3) { Restart(); return; }
+        if (_shuffle && _hist.Count > 0)     // en aleatorio «anterior» vuelve a la que sonó antes
         {
-            if (_ytTime > 3 || _index <= 0) RunPlayerScript("cmd('seek', 0)");
-            else { _index--; StartCurrent(); }
+            var key = _hist[^1];
+            _hist.RemoveAt(_hist.Count - 1);
+            var i = _queue.FindIndex(c => Key(c) == key);
+            if (i >= 0) { _index = i; StartCurrent(); return; }
         }
-        else _player.Previous();
+        if (_index <= 0) Restart(); else { _index--; StartCurrent(); }
+    }
+
+    /// <summary>Acaba una canción (YouTube, o nativa en una cola mixta): repetir la canción vuelve a empezar la misma.</summary>
+    private void OnEnded()
+    {
+        if (_repeat == QueueOps.RepeatOne && _now is not null) { StartCurrent(); return; }
+        Next();
+    }
+
+    private void OnNativeQueueEnded()
+    {
+        if (_mode == Mode.Native && AppDriven) OnEnded();
+    }
+
+    private static readonly string[] RepeatLabels = ["Repetir: desactivado", "Repetir: la lista", "Repetir: la canción"];
+
+    private void PaintModes()
+    {
+        var idx = _repeat == QueueOps.RepeatAll ? 1 : _repeat == QueueOps.RepeatOne ? 2 : 0;
+        var shuffleLabel = _shuffle ? "Aleatorio: activado" : "Aleatorio: desactivado";
+        void Mark(Button b, bool on, string label)
+        {
+            if (b.Content is FontIcon fi) { if (on) fi.Foreground = (Brush)Application.Current.Resources["NsAccentBrush"]; else fi.ClearValue(IconElement.ForegroundProperty); }
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(b, label);
+            ToolTipService.SetToolTip(b, label);
+        }
+        foreach (var b in new[] { ShuffleBtn, NpShuffleBtn }) Mark(b, _shuffle, shuffleLabel);
+        foreach (var b in new[] { RepeatBtn, NpRepeatBtn }) Mark(b, idx != 0, RepeatLabels[idx]);
+        foreach (var icon in new[] { RepeatIcon, NpRepeatIcon }) icon.Glyph = idx == 2 ? "" : "";   // repetir una / repetir
+    }
+
+    private void Repeat_Click(object sender, RoutedEventArgs e)
+    {
+        _repeat = QueueOps.NextRepeat(_repeat);
+        _settings.Current.Repeat = _repeat; ScheduleSave();
+        ApplyNativeModes(); PaintModes();
+    }
+
+    private void Shuffle_Click(object sender, RoutedEventArgs e)
+    {
+        _shuffle = !_shuffle;
+        _seen = _now is not null ? [Key(_now)] : []; _hist.Clear();
+        _settings.Current.Shuffle = _shuffle; ScheduleSave();
+        ApplyNativeModes(); PaintModes();
     }
 
     private void OnNativeStateChanged()
@@ -1323,7 +1463,7 @@ public sealed partial class MainWindow : Window
                     if (_ytPlaying && _ytTime > 1) _errorStreak = 0;   // ya suena: se acaba la racha de errores
                     break;
                 case "ended" when _mode == Mode.YouTube:
-                    Next();
+                    OnEnded();
                     break;
                 case "error" when _mode == Mode.YouTube:
                     var code = root.GetProperty("code").GetInt32();
@@ -1333,7 +1473,7 @@ public sealed partial class MainWindow : Window
                     ShowYouTubeLayer(false);
                     _ytPlaying = false;
                     _errorStreak++;
-                    if (_errorStreak <= 3 && _index + 1 < _queue.Count) { _index++; StartCurrent(); }
+                    if (_errorStreak <= 3 && AdvanceAuto()) { }
                     else
                     {
                         if (_errorStreak > 3) ShowStatus("YouTube no deja reproducir estos vídeos ahora mismo. Prueba con otro o inténtalo más tarde.");

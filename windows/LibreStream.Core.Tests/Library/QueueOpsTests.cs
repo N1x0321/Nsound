@@ -45,3 +45,58 @@ public class QueueOpsTests
         Assert.Equal(["2"], q);
     }
 }
+
+public class RepeatShuffleTests
+{
+    private static string[] Mk(int n) => Enumerable.Range(0, n).Select(i => "k" + i).ToArray();
+    private static QueueOps.Next Pick(string[] q, int i, string repeat = "off", bool shuffle = false, IEnumerable<string>? seen = null, Func<double>? rand = null)
+        => QueueOps.PickNextIndex(q, i, repeat, shuffle, seen, k => k, rand);
+
+    [Fact]
+    public void RepeatCyclesListSongOff()
+    {
+        Assert.Equal(["all", "one", "off"], new[] { "off", "all", "one" }.Select(QueueOps.NextRepeat));
+        Assert.Equal("all", QueueOps.NextRepeat(null));
+    }
+
+    [Fact]
+    public void WithoutShuffleAdvancesAndOnlyWrapsWhenRepeatingTheList()
+    {
+        var q = Mk(3);
+        Assert.Equal(1, Pick(q, 0).Index);
+        Assert.Equal(-1, Pick(q, 2).Index);
+        Assert.Equal(0, Pick(q, 2, "all").Index);
+        Assert.Equal(-1, Pick(q, 2, "one").Index);   // «repetir canción» lo gestiona el final de la canción, no el botón siguiente
+        Assert.Equal(-1, Pick([], 0).Index);
+    }
+
+    [Fact]
+    public void ShuffleDoesNotRepeatUntilAllPlayedAndHonoursRepeatAll()
+    {
+        var q = Mk(5);
+        var seen = new List<string>(); var idx = 0; var heard = new HashSet<int> { 0 };
+        for (var i = 0; i < 4; i++)
+        {
+            var r = Pick(q, idx, "off", true, seen);
+            Assert.True(r.Index >= 0 && !heard.Contains(r.Index));
+            heard.Add(r.Index); idx = r.Index; seen = r.Seen;
+        }
+        Assert.Equal(5, heard.Count);
+        Assert.Equal(-1, Pick(q, idx, "off", true, seen).Index);          // todas sonadas: se acaba
+        var again = Pick(q, idx, "all", true, seen);
+        Assert.True(again.Index >= 0 && again.Index != idx);               // con repetir lista, vuelve a empezar
+        Assert.Equal([q[idx]], again.Seen);
+        Assert.Equal(4, Pick(q, 0, "off", true, null, () => 0.999).Index); // el azar elige entre las que faltan
+        Assert.Equal(0, Pick(Mk(1), 0, "all", true).Index);                // una sola canción
+    }
+
+    [Fact]
+    public void SettingsNormalizeRepeat()
+    {
+        var s = new AppSettings { Repeat = "nada" };
+        s.Normalize();
+        Assert.Equal("off", s.Repeat);
+        s.Repeat = "one"; s.Normalize();
+        Assert.Equal("one", s.Repeat);
+    }
+}

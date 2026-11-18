@@ -40,4 +40,39 @@ public static class QueueOps
     {
         if (index >= 0 && index < queue.Count - 1) queue.RemoveRange(index + 1, queue.Count - index - 1);
     }
+
+    public const string RepeatOff = "off", RepeatAll = "all", RepeatOne = "one";
+
+    /// <summary>Repetir, como en Spotify: sin repetir → la lista → la canción → sin repetir. Un valor desconocido cuenta como apagado.</summary>
+    public static string NextRepeat(string? mode) => mode == RepeatAll ? RepeatOne : mode == RepeatOne ? RepeatOff : RepeatAll;
+
+    /// <summary>Qué canción suena después: <c>Index</c> -1 = se acabó la lista; <c>Seen</c> = claves ya sonadas en este aleatorio.</summary>
+    public readonly record struct Next(int Index, List<string> Seen);
+
+    /// <summary>
+    /// Mismas reglas que <c>LS.pickNextIndex</c>. Aleatorio: no repite hasta haber sonado todas (y entonces, solo si se repite la lista).
+    /// <paramref name="rand"/> devuelve un número en [0, 1).
+    /// </summary>
+    public static Next PickNextIndex<T>(IReadOnlyList<T> queue, int index, string? repeat, bool shuffle, IEnumerable<string>? seen, Func<T, string> key, Func<double>? rand = null)
+    {
+        var n = queue.Count;
+        if (n == 0) return new(-1, []);
+        rand ??= Random.Shared.NextDouble;
+        var heard = new HashSet<string>(seen ?? []);
+        var valid = index >= 0 && index < n;
+        if (valid) heard.Add(key(queue[index]));
+        if (shuffle && n > 1)
+        {
+            var cands = Enumerable.Range(0, n).Where(i => i != index && !heard.Contains(key(queue[i]))).ToList();
+            if (cands.Count == 0)
+            {
+                if (repeat != RepeatAll) return new(-1, [.. heard]);
+                heard = valid ? [key(queue[index])] : [];
+                cands = Enumerable.Range(0, n).Where(i => i != index).ToList();
+            }
+            return new(cands[Math.Min(cands.Count - 1, (int)Math.Floor(rand() * cands.Count))], [.. heard]);
+        }
+        if (index + 1 < n) return new(index + 1, [.. heard]);
+        return repeat == RepeatAll ? new(0, []) : new(-1, [.. heard]);
+    }
 }

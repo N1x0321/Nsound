@@ -19,6 +19,19 @@ public sealed class AudioPlayerManager : IDisposable
     private List<CatalogItem> _queue = [];
 
     public event Action? StateChanged;
+    /// <summary>Se acabó la cola nativa (sin repetir): la ventana decide qué suena después (p. ej. una canción de YouTube).</summary>
+    public event Action? QueueEnded;
+
+    private string _repeat = QueueOps.RepeatOff;
+    private int _lastIndex = -1;
+
+    /// <summary>Repetir (off/all/one) y aleatorio sobre la cola nativa; «all» y el aleatorio los hace MediaPlaybackList.</summary>
+    public void SetModes(string repeat, bool shuffle)
+    {
+        _repeat = repeat;
+        _list.AutoRepeatEnabled = repeat == QueueOps.RepeatAll;
+        _list.ShuffleEnabled = shuffle;
+    }
     public CatalogItem? Current =>
         _list.CurrentItemIndex < _queue.Count ? _queue[(int)_list.CurrentItemIndex] : null;
     public bool IsPlaying => Player.PlaybackSession.PlaybackState == MediaPlaybackState.Playing;
@@ -31,7 +44,19 @@ public sealed class AudioPlayerManager : IDisposable
         // MediaPlayer integra SMTC automáticamente (CommandManager habilitado por defecto).
         Player.CommandManager.IsEnabled = true;
         Player.Source = _list;
-        _list.CurrentItemChanged += (_, _) => StateChanged?.Invoke();
+        _list.CurrentItemChanged += (_, e) =>
+        {
+            // Repetir la canción: al acabar una, vuelve a la misma
+            if (_repeat == QueueOps.RepeatOne && e.Reason == MediaPlaybackItemChangedReason.EndOfStream && e.OldItem is { } old && _list.Items.IndexOf(old) is var i and >= 0)
+                _list.MoveTo((uint)i);
+            else if (e.NewItem is not null) _lastIndex = (int)_list.CurrentItemIndex;
+            StateChanged?.Invoke();
+        };
+        Player.MediaEnded += (_, _) =>
+        {
+            if (_repeat == QueueOps.RepeatOne && _lastIndex >= 0 && _lastIndex < _list.Items.Count) { _list.MoveTo((uint)_lastIndex); Player.Play(); }
+            else QueueEnded?.Invoke();
+        };
         Player.PlaybackSession.PlaybackStateChanged += (_, _) => StateChanged?.Invoke();
         Player.MediaFailed += (_, e) => System.Diagnostics.Debug.WriteLine($"MediaFailed: {e.ErrorMessage}");
     }
@@ -49,7 +74,8 @@ public sealed class AudioPlayerManager : IDisposable
             _list.Items.Add(BuildPlaybackItem(item, src));
         }
         if (_queue.Count == 0) return;
-        _list.MoveTo((uint)Math.Clamp(startAt, 0, _queue.Count - 1));
+        _lastIndex = Math.Clamp(startAt, 0, _queue.Count - 1);
+        _list.MoveTo((uint)_lastIndex);
         Player.Play();
     }
 

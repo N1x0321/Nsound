@@ -269,7 +269,7 @@
                         </StackPanel>
 
                         <StackPanel x:Name="ArtistsSection" Spacing="6" Visibility="Collapsed">
-                            <TextBlock Text="Artistas de la semana" Style="{StaticResource SubtitleTextBlockStyle}" Margin="8,8,0,0" />
+                            <TextBlock x:Name="ArtistsTitle" Text="Artistas de la semana" Style="{StaticResource SubtitleTextBlockStyle}" Margin="8,8,0,0" />
                             <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled" HorizontalScrollMode="Enabled">
                                 <StackPanel x:Name="ArtistsRow" Orientation="Horizontal" Spacing="14" Margin="8,0,0,8" />
                             </ScrollViewer>
@@ -409,6 +409,9 @@
 
             <StackPanel Grid.Column="1" Spacing="2" MaxWidth="720">
                 <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center">
+                    <Button x:Name="ShuffleBtn" Click="Shuffle_Click" Background="Transparent" BorderThickness="0" ToolTipService.ToolTip="Aleatorio: desactivado" AutomationProperties.Name="Aleatorio: desactivado">
+                        <FontIcon Glyph="&#xE8B1;" FontSize="16" />
+                    </Button>
                     <Button Click="Prev_Click" Background="Transparent" BorderThickness="0" ToolTipService.ToolTip="Anterior" AutomationProperties.Name="Anterior">
                         <SymbolIcon Symbol="Previous" />
                     </Button>
@@ -418,6 +421,9 @@
                     </Button>
                     <Button Click="Next_Click" Background="Transparent" BorderThickness="0" ToolTipService.ToolTip="Siguiente" AutomationProperties.Name="Siguiente">
                         <SymbolIcon Symbol="Next" />
+                    </Button>
+                    <Button x:Name="RepeatBtn" Click="Repeat_Click" Background="Transparent" BorderThickness="0" ToolTipService.ToolTip="Repetir: desactivado" AutomationProperties.Name="Repetir: desactivado">
+                        <FontIcon x:Name="RepeatIcon" Glyph="&#xE8EE;" FontSize="16" />
                     </Button>
                 </StackPanel>
                 <Grid ColumnSpacing="10">
@@ -486,9 +492,11 @@
                     <TextBlock x:Name="NpTotal" Text="0:00" FontSize="12" Opacity="0.7" HorizontalAlignment="Right" />
                 </Grid>
                 <StackPanel Orientation="Horizontal" Spacing="18" HorizontalAlignment="Center">
+                    <Button x:Name="NpShuffleBtn" Click="Shuffle_Click" Background="Transparent" BorderThickness="0" Width="48" Height="48" CornerRadius="24" AutomationProperties.Name="Aleatorio: desactivado"><FontIcon Glyph="&#xE8B1;" FontSize="18" /></Button>
                     <Button Click="Prev_Click" Background="Transparent" BorderThickness="0" Width="56" Height="56" CornerRadius="28" AutomationProperties.Name="Anterior"><SymbolIcon Symbol="Previous" /></Button>
                     <Button Click="Play_Click" Style="{StaticResource AccentButtonStyle}" Width="72" Height="72" CornerRadius="36" Padding="0" AutomationProperties.Name="Reproducir o pausar"><SymbolIcon x:Name="NpPlayIcon" Symbol="Play" /></Button>
                     <Button Click="Next_Click" Background="Transparent" BorderThickness="0" Width="56" Height="56" CornerRadius="28" AutomationProperties.Name="Siguiente"><SymbolIcon Symbol="Next" /></Button>
+                    <Button x:Name="NpRepeatBtn" Click="Repeat_Click" Background="Transparent" BorderThickness="0" Width="48" Height="48" CornerRadius="24" AutomationProperties.Name="Repetir: desactivado"><FontIcon x:Name="NpRepeatIcon" Glyph="&#xE8EE;" FontSize="18" /></Button>
                 </StackPanel>
                 <StackPanel Orientation="Horizontal" Spacing="10" HorizontalAlignment="Center">
                     <Button Click="Save_Click" CornerRadius="14" MinWidth="56" MinHeight="46" AutomationProperties.Name="Guardar"><FontIcon x:Name="NpHeartIcon" Glyph="&#xEB51;" /></Button>

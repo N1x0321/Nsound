@@ -29,7 +29,16 @@ public static partial class YouTubeMusic
     public static string SearchBody(string query, string filter) => JsonSerializer.Serialize(new { context = Context, query = query.Trim(), @params = filter });
 
     /// <summary>Una página de YouTube Music: un álbum (MPREb_…), un artista (UC…) o una lista (VL…).</summary>
-    public static string BrowseBody(string browseId) => JsonSerializer.Serialize(new { context = Context, browseId });
+    public static string BrowseBody(string browseId, string? country = null)
+    {
+        // país (dos letras): las listas de éxitos cambian según el país
+        var body = new Dictionary<string, object> { ["context"] = Context, ["browseId"] = browseId };
+        if (country is not null && CountryCode().IsMatch(country)) body["formData"] = new { selectedValues = new[] { country } };
+        return JsonSerializer.Serialize(body);
+    }
+
+    [GeneratedRegex(@"^[A-Z]{2}$")]
+    private static partial Regex CountryCode();
 
     public static bool IsBrowseId(string? id) => id is not null && BrowseId().IsMatch(id);
 

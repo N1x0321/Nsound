@@ -15,6 +15,9 @@ public sealed class AppSettings
     public bool AdBlock { get; set; } = true;
     public double Volume { get; set; } = 80;
     public string Look { get; set; } = Themes.Default;
+    /// <summary>Repetir: off (apagado), all (la lista) u one (la canción).</summary>
+    public string Repeat { get; set; } = QueueOps.RepeatOff;
+    public bool Shuffle { get; set; }
     /// <summary>Color elegido por el usuario («#RRGGBB») para el estilo «Tu color».</summary>
     public string? CustomAccent { get; set; }
 
@@ -29,6 +32,7 @@ public sealed class AppSettings
         if (string.IsNullOrWhiteSpace(EqPreset) || (EqPreset != EqPresets.Custom && !EqPresets.All.ContainsKey(EqPreset)))
             EqPreset = EqPresets.Custom;
         if (string.IsNullOrWhiteSpace(DownloadFolder)) DownloadFolder = null;
+        if (Repeat is not (QueueOps.RepeatOff or QueueOps.RepeatAll or QueueOps.RepeatOne)) Repeat = QueueOps.RepeatOff;
         CustomAccent = Themes.NormalizeHex(CustomAccent);
         if (Look == Themes.CustomId ? CustomAccent is null : Themes.All.All(t => t.Id != Look)) Look = Themes.Default;
     }
