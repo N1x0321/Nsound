@@ -1,7 +1,9 @@
 /* Interfaz de LibreStream (compartida por iOS, Android y navegador). */
 (function () {
   'use strict';
-  const { Player, Native } = LS;
+  const { Native } = LS;
+  // Solo la app de iPhone de pruebas («Nsound Motores») pasa por el EngineRouter; en el resto Player es el de siempre
+  const Player = LS.enginesEnabled ? LS.engines.wrap(LS.Player) : LS.Player;
 
   const CATALOG_URL = 'https://n1x0321.github.io/Nsound/catalog.json';
   const $ = (sel, root) => (root || document).querySelector(sel);
