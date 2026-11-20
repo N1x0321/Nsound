@@ -11,7 +11,6 @@ final class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate
 
     private var webView: WKWebView!
     private let nowPlaying = NowPlayingBridge()
-    private let keeper = SilentKeeper()
     private var webPlaying = false
     private var userPaused = false
     private var inBackground = false
@@ -49,8 +48,8 @@ final class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate
         nowPlaying.onCommand = { [weak self] command in
             guard let self else { return }
             let cmd = command["cmd"] as? String ?? ""
-            if cmd == "pause" || (cmd == "toggle" && self.webPlaying) { self.userPaused = true; self.keeper.stop() }
-            else if cmd == "play" || cmd == "toggle" { self.userPaused = false; if self.inBackground { self.keeper.start() } }
+            if cmd == "pause" || (cmd == "toggle" && self.webPlaying) { self.userPaused = true; }
+            else if cmd == "play" || cmd == "toggle" { self.userPaused = false; }
             self.sendToWeb(command: command)
         }
         observer = NotificationCenter.default.addObserver(forName: AppDelegate.audioSessionReactivated, object: nil, queue: .main) { [weak self] _ in
@@ -232,10 +231,8 @@ final class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate
         switch event {
         case "inactive", "background":
             inBackground = true
-            if webPlaying && !userPaused { keeper.start() }      // la app sigue viva aunque YouTube se pause
         case "active":
             inBackground = false
-            keeper.stop()
         default:
             break
         }

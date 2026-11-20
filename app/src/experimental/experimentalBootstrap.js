@@ -196,7 +196,7 @@
     if (opts.migrated !== true && !NS.migrate(raw)) return null;            // Fase 13: copia de seguridad antes de inicializar nada
     const player = new NS.PlayerManager({ container: opts.container || cfg().CONTAINER_ID, volume: opts.volume });
     const state = new NS.StateManager({ player, storage: NS.createSafeStorage(raw) });   // con candado: solo escribe «nsound_experimental_*»
-    const network = new NS.NetworkManager({ player, state });
+    const network = new NS.NetworkManager({ player, state, delayMs: 1000, stallMs: 3000 });
     const media = new NS.MediaSessionManager({ player });
     const owned = opts.appOwnsQueue === true;       // integrado: la app manda en cola y Media Session; aquí no se restaura ni se reanuda nada por su cuenta
     const ios = new NS.IOSManager({ player, state, media: owned ? null : media, restore: !owned });
