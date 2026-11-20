@@ -7,7 +7,16 @@
   // y no se intercepta ninguna reproducción.
   const ENABLE_EXPERIMENTAL_PLAYER = true;
 
+  // Reproductor de AUDIO PURO (HTMLAudioElement, sin iframe de vídeo). Apagado por defecto: con false NSound funciona exactamente igual que ahora.
+  // Necesita además ENABLE_EXPERIMENTAL_PLAYER activo y un AUDIO_STREAM_RESOLVER_URL (ver README_EXPERIMENTAL_AUDIO.md). Sin conector no hace nada.
+  const ENABLE_EXPERIMENTAL_AUDIO_PLAYER = false;
+  // Servicio PROPIO que recibe ?trackId=… y devuelve la URL de audio autorizada (con cabeceras Range). Vacío = sin conector.
+  const AUDIO_STREAM_RESOLVER_URL = '';
+
   NS.config = {
+    ENABLE_EXPERIMENTAL_AUDIO_PLAYER,
+    AUDIO_STREAM_RESOLVER_URL,
+    AUDIO_STORAGE_PREFIX: 'nsound_exp_audio_',
     ENABLE_EXPERIMENTAL_PLAYER,
     // Con true (recomendado), además del interruptor maestro hace falta que la app de pruebas lo declare (en iPhone, ios/ define
     // window.ENABLE_EXPERIMENTAL_PLAYER = true solo si el bundle id acaba en «.motores»). Así Android, Windows, la web publicada y la app

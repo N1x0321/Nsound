@@ -9,7 +9,8 @@
   const SCHEMA_KEY = PREFIX + 'schema';
   const CURRENT_SCHEMA = 1;
 
-  const isOwn = (k) => typeof k === 'string' && k.startsWith(PREFIX);
+  const AUDIO_PREFIX = 'nsound_exp_audio_';   // reproductor de audio puro (HTML5): también es nuestro, nada más
+  const isOwn = (k) => typeof k === 'string' && (k.startsWith(PREFIX) || k.startsWith(AUDIO_PREFIX));
   const isBackup = (k) => typeof k === 'string' && k.startsWith(BACKUP_PREFIX);
   const keysOf = (st) => { const out = []; for (let i = 0; i < st.length; i++) out.push(st.key(i)); return out; };
 
@@ -117,7 +118,7 @@
     }
   }
 
-  Migration.PREFIX = PREFIX; Migration.BACKUP_PREFIX = BACKUP_PREFIX; Migration.SCHEMA_KEY = SCHEMA_KEY; Migration.CURRENT_SCHEMA = CURRENT_SCHEMA;
+  Migration.AUDIO_PREFIX = AUDIO_PREFIX; Migration.PREFIX = PREFIX; Migration.BACKUP_PREFIX = BACKUP_PREFIX; Migration.SCHEMA_KEY = SCHEMA_KEY; Migration.CURRENT_SCHEMA = CURRENT_SCHEMA;
   NS.Migration = Migration; NS.createSafeStorage = createSafeStorage;
 })(globalThis);
 if (typeof module !== 'undefined' && module.exports) module.exports = globalThis.NSoundExperimental;

@@ -10,6 +10,9 @@
 
   NS.enabled = () => cfg().ENABLE_EXPERIMENTAL_PLAYER === true && (!cfg().REQUIRE_NATIVE_FLAG || root.ENABLE_EXPERIMENTAL_PLAYER === true);
 
+  /** Audio puro (HTMLAudioElement): flag propio, conector configurado y las mismas puertas del modo experimental. Por defecto, apagado. */
+  NS.audioEnabled = () => NS.enabled() && cfg().ENABLE_EXPERIMENTAL_AUDIO_PLAYER === true && /^https?:\/\//.test(String(cfg().AUDIO_STREAM_RESOLVER_URL || '')) && !!NS.AudioPlayerManager;
+
   // ================= Fase 9: PWA de Apple =================
   const SPLASH = [   // [ancho CSS, alto CSS, ratio]: iPhone y iPad en vertical; los archivos los genera app/assets-experimental.mjs
     [430, 932, 3], [393, 852, 3], [390, 844, 3], [375, 812, 3], [414, 896, 3], [414, 896, 2], [414, 736, 3], [375, 667, 2],
@@ -115,6 +118,7 @@
     /** Conexiones y script de YouTube calentados cuando el navegador está libre. */
     _hints() {
       const run = () => {
+        if (!this.active || !this.doc) return;                              // parado entre medias: nada que calentar
         const add = (rel, href, extra) => { if (this.doc.querySelector(`link[rel="${rel}"][href="${href}"]`)) return; const l = this.doc.createElement('link'); l.setAttribute('rel', rel); l.setAttribute('href', href); Object.keys(extra || {}).forEach((k) => l.setAttribute(k, extra[k])); this.doc.head.appendChild(l); };
         ['https://www.youtube.com', 'https://i.ytimg.com'].forEach((h) => { add('preconnect', h, { crossorigin: '' }); add('dns-prefetch', h); });
         add('preload', 'https://www.youtube.com/iframe_api', { as: 'script' });
@@ -186,6 +190,32 @@
     };
   }
 
+  /** Motor del audio puro: toma la música (y solo la música) si el conector tiene audio autorizado; si no, cede a los motores de siempre. */
+  function makeAudioEngineClass(LS) {
+    const Base = makeEngineClass(LS);
+    return class ExperimentalAudioEngine extends Base {
+      get id() { return 'exp-audio'; }
+      canPlay(track, opts) {
+        return !!track && track.kind !== 'video' && AudioIdRe.test(String(track.id || '')) && !!(opts && opts.audioOnly === true);
+      }
+      async play(track, opts) {
+        const ok = await super.play(track, opts);
+        if (ok || this.pm.blocked) return ok;                               // «blocked»: iOS pide un toque del usuario; no se cambia de motor
+        this._stopPoll();
+        return this._fallback(track, opts);                                 // sin audio autorizado para esta pista → reproductor habitual
+      }
+      async _fallback(track, opts) {
+        const router = this.facade && this.facade.router;
+        if (!router) return false;
+        for (const e of router.engines.values()) {
+          if (e !== this && e.canPlay(track, opts)) { router.current = e; await e.play(track, opts); return true; }
+        }
+        return false;
+      }
+    };
+  }
+  const AudioIdRe = /^[A-Za-z0-9_.:-]{1,200}$/;
+
   // ================= Orquestación =================
   /** Crea los gestores ya conectados. Devuelve null si el modo experimental está apagado. */
   NS.create = function (opts) {
@@ -194,18 +224,21 @@
     let raw = opts.storage; if (!raw) { try { raw = root.localStorage; } catch (e) { raw = null; } }
     if (!raw) return null;
     if (opts.migrated !== true && !NS.migrate(raw)) return null;            // Fase 13: copia de seguridad antes de inicializar nada
-    const player = new NS.PlayerManager({ container: opts.container || cfg().CONTAINER_ID, volume: opts.volume });
-    const state = new NS.StateManager({ player, storage: NS.createSafeStorage(raw) });   // con candado: solo escribe «nsound_experimental_*»
-    const network = new NS.NetworkManager({ player, state, delayMs: 1000, stallMs: 3000 });
+    const audio = opts.audio !== false && NS.audioEnabled();                // audio puro: HTMLAudioElement con su propia recuperación de red
+    const prefix = audio ? cfg().AUDIO_STORAGE_PREFIX : undefined;
+    const player = audio ? new NS.AudioPlayerManager(Object.assign({ resolverUrl: cfg().AUDIO_STREAM_RESOLVER_URL, volume: opts.volume }, opts.audioOptions || {}))
+      : new NS.PlayerManager({ container: opts.container || cfg().CONTAINER_ID, volume: opts.volume });
+    const state = new NS.StateManager({ player, storage: NS.createSafeStorage(raw), prefix });   // con candado: solo escribe «nsound_experimental_*» o «nsound_exp_audio_*»
+    const network = audio ? null : new NS.NetworkManager({ player, state, delayMs: 1000, stallMs: 3000 });
     const media = new NS.MediaSessionManager({ player });
     const owned = opts.appOwnsQueue === true;       // integrado: la app manda en cola y Media Session; aquí no se restaura ni se reanuda nada por su cuenta
-    const ios = new NS.IOSManager({ player, state, media: owned ? null : media, restore: !owned });
+    const ios = new NS.IOSManager({ player, state, media: owned ? null : media, restore: !owned, key: audio ? prefix + 'ios' : undefined });
     const bridge = NS.NativeBridge ? new NS.NativeBridge({ player, commandTarget: owned ? 'app' : 'player' }) : null;   // solo actúa dentro del contenedor iOS (ios-wrapper/)
     const update = new NS.UpdateManager({ player, state, intervalMs: cfg().UPDATE_INTERVAL_MS, versionUrl: cfg().VERSION_URL, swUrl: cfg().SW_URL, resume: !owned });
     return {
-      player, state, network, media, ios, update, bridge,
-      start() { state.start(); network.start(); if (!owned) media.start(); ios.start(); if (bridge) bridge.start(); return update.start(); },
-      stop() { update.stop(); if (bridge) bridge.stop(); ios.stop(); if (!owned) media.stop(); network.stop(); state.stop(); },
+      player, state, network, media, ios, update, bridge, audio,
+      start() { state.start(); if (network) network.start(); if (!owned) media.start(); ios.start(); if (bridge) bridge.start(); return update.start(); },
+      stop() { update.stop(); if (bridge) bridge.stop(); ios.stop(); if (!owned) media.stop(); if (network) network.stop(); state.stop(); },
     };
   };
 
@@ -222,7 +255,7 @@
     const i = NS.instance; if (!i || !i.controller) return { running: false, migration: NS.lastMigration || null };
     const c = i.controller;
     return { running: true, migration: NS.lastMigration, version: c.update.current, player: { state: c.player.state, wantPlay: c.player.wantPlay, queue: c.player.queue.length, time: c.player.getTime() },
-      network: c.network.getLog(), ios: c.ios.getLog(), update: c.update.getLog(), bridge: c.bridge ? c.bridge.getLog() : [], pwa: i.pwa };
+      audio: !!c.audio, network: c.network ? c.network.getLog() : c.player.getLog(), ios: c.ios.getLog(), update: c.update.getLog(), bridge: c.bridge ? c.bridge.getLog() : [], pwa: i.pwa };
   };
 
   /** Arranque completo. Idempotente. Con el modo apagado devuelve null sin tocar nada. */
@@ -238,7 +271,8 @@
     out.perf = new Perf({ env: root }); out.perf.start();
 
     // Contenedor propio del iframe experimental, oculto igual que el actual en solo audio (nunca se reutiliza #yt)
-    let box = doc.getElementById(cfg().CONTAINER_ID);
+    const audioMode = NS.audioEnabled();
+    let box = audioMode ? true : doc.getElementById(cfg().CONTAINER_ID);   // en audio puro no hay iframe: no se crea contenedor
     if (!box) {
       const wrap = doc.createElement('div');
       wrap.setAttribute('style', 'position:fixed;right:0;bottom:0;width:2px;height:2px;opacity:0;pointer-events:none;overflow:hidden');
@@ -247,19 +281,19 @@
     const facade = LS && LS.engines && LS.engines.current;
     out.controller = NS.create({ container: cfg().CONTAINER_ID, appOwnsQueue: !!facade, migrated: true });
     if (facade) {                                                           // modo motores: se coloca delante del reproductor actual solo para música
-      const Engine = makeEngineClass(LS);
+      const Engine = audioMode ? makeAudioEngineClass(LS) : makeEngineClass(LS);
       out.engine = new Engine(out.controller.player, { facade, perf: out.perf });
       facade.router.register(out.engine, true);
     }
     out.controller.start();
     // Calentamiento: se crea el iframe de YouTube con la página libre, para que la primera canción no espere a descargar la API
-    const warm = () => { out.controller.player.init().catch(() => {}); };
+    const warm = () => { if (!audioMode) out.controller.player.init().catch(() => {}); };
     if (root.requestIdleCallback) root.requestIdleCallback(warm, { timeout: 2500 }); else root.setTimeout(warm, 800);
     out.stop = () => { if (out.engine) out.engine._stopPoll(); out.perf.stop(); out.controller.stop(); NS.instance = null; };
     return out;
   };
 
-  NS.injectPwa = injectPwa; NS.Perf = Perf; NS.makeEngineClass = makeEngineClass; NS.SPLASH = SPLASH;
+  NS.injectPwa = injectPwa; NS.Perf = Perf; NS.makeEngineClass = makeEngineClass; NS.makeAudioEngineClass = makeAudioEngineClass; NS.SPLASH = SPLASH;
 
   // Arranque automático al final del paquete (la app ya está creada). Apagado: no hace nada.
   if (NS.enabled() && root.document) {

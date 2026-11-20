@@ -19,6 +19,7 @@
       this.player = opts.player; this.state = opts.state; this.media = opts.media || null;
       this.env = opts.env || root;
       this.force = !!opts.force;
+      this.key = opts.key || KEY;                  // «nsound_exp_audio_ios» en el modo de audio puro
       this.restore = opts.restore !== false;       // false: la app manda en la cola y no se restaura nada por su cuenta
       this.graceMs = opts.graceMs == null ? 600 : opts.graceMs;
       this.coalesceMs = opts.coalesceMs == null ? 300 : opts.coalesceMs;
@@ -54,8 +55,8 @@
     }
 
     _intent() { return !!this.player.wantPlay && !this.player.userPaused; }
-    _store(v) { try { this.env.localStorage.setItem(KEY, JSON.stringify(v)); } catch (e) { /* sin almacenamiento */ } }
-    _read() { try { return JSON.parse(this.env.localStorage.getItem(KEY)); } catch (e) { return null; } }
+    _store(v) { try { this.env.localStorage.setItem(this.key, JSON.stringify(v)); } catch (e) { /* sin almacenamiento */ } }
+    _read() { try { return JSON.parse(this.env.localStorage.getItem(this.key)); } catch (e) { return null; } }
 
     /** Salida de primer plano: se guarda todo y se anota si sonaba (solo la primera señal de cada salida). */
     leave(why) {

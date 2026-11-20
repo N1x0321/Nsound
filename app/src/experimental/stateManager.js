@@ -16,6 +16,8 @@
     constructor(opts) {
       opts = opts || {};
       this.player = opts.player;
+      this.prefix = opts.prefix || PREFIX;            // «nsound_exp_audio_» en el modo de audio puro
+      this._key = this.prefix + 'state'; this._backupKey = this.prefix + 'state_backup';
       this.storage = opts.storage || (() => { try { return root.localStorage; } catch (e) { return null; } })();
       this.intervalMs = opts.intervalMs || 5000;
       this.now = opts.now || (() => Date.now());
@@ -30,8 +32,8 @@
     /** Copia de seguridad del estado previo (si lo hay) antes de escribir nada. */
     backup() {
       try {
-        const raw = this.storage && this.storage.getItem(KEY);
-        if (raw && validState(JSON.parse(raw))) this.storage.setItem(BACKUP, raw);   // no se pisa una buena copia con un estado dañado
+        const raw = this.storage && this.storage.getItem(this._key);
+        if (raw && validState(JSON.parse(raw))) this.storage.setItem(this._backupKey, raw);   // no se pisa una buena copia con un estado dañado
         return !!raw;
       } catch (e) { this.lastError = e; return false; }
     }
@@ -48,14 +50,14 @@
       if (!snap.videoId) return false;                      // nada sonando: no se pisa el último estado bueno
       snap.queue = snap.queue.slice(0, MAX_QUEUE);
       snap.timestamp = this.now();
-      return this._set(KEY, snap);
+      return this._set(this._key, snap);
     }
 
     /** Lee el estado guardado (o su copia si el principal está dañado). */
     load() {
-      const s = this._get(KEY);
+      const s = this._get(this._key);
       if (validState(s)) return s;
-      const b = this._get(BACKUP);
+      const b = this._get(this._backupKey);
       return validState(b) ? b : null;
     }
 

@@ -25,6 +25,8 @@
       this._handlers();
       this._off.push(this.player.on('track', () => this.sync()));
       this._off.push(this.player.on('state', (s) => this._onState(s)));
+      this._off.push(this.player.on('rate', () => this._position(true)));         // el audio puro avisa de los cambios de velocidad y de los saltos
+      this._off.push(this.player.on('seeked', () => this._position(true)));
       this.sync();
       return true;
     }
@@ -32,7 +34,7 @@
       this.active = false;
       this._off.forEach((f) => f()); this._off = [];
       if (!this.supported) return;
-      ['play', 'pause', 'nexttrack', 'previoustrack', 'seekbackward', 'seekforward', 'seekto'].forEach((a) => { try { this._ms.setActionHandler(a, null); } catch (e) { /* no admitida */ } });
+      ['play', 'pause', 'stop', 'nexttrack', 'previoustrack', 'seekbackward', 'seekforward', 'seekto'].forEach((a) => { try { this._ms.setActionHandler(a, null); } catch (e) { /* no admitida */ } });
     }
 
     _handlers() {
@@ -42,6 +44,7 @@
         pause: () => p.pause(),
         nexttrack: () => p.next({ auto: false }),
         previoustrack: () => p.prev(),
+        stop: () => p.pause(),
         seekbackward: (d) => p.seek(Math.max(0, p.getTime() - ((d && d.seekOffset) || this.seekOffset))),
         seekforward: (d) => { const dur = p.getDuration(); const t = p.getTime() + ((d && d.seekOffset) || this.seekOffset); p.seek(dur > 0 ? Math.min(dur, t) : t); },
         seekto: (d) => { if (d && Number.isFinite(d.seekTime)) p.seek(d.seekTime); },
@@ -55,11 +58,11 @@
     _metadata() {
       const it = this.player.current();
       if (!it) return null;
-      const thumb = it.art || `https://i.ytimg.com/vi/${it.id}/hqdefault.jpg`;
-      return new this.env.MediaMetadata({
-        title: it.title || '', artist: it.artist || '', album: this.player.playlist || '',
-        artwork: [{ src: thumb, sizes: '480x360', type: 'image/jpeg' }, { src: thumb, sizes: '512x512', type: 'image/jpeg' }],
-      });
+      // Carátula de la pista; la miniatura de YouTube solo para ids de YouTube (11 caracteres). El audio puro usa los ids de su servicio.
+      const thumb = it.art || (/^[A-Za-z0-9_-]{11}$/.test(it.id || '') ? `https://i.ytimg.com/vi/${it.id}/hqdefault.jpg` : '');
+      const meta = { title: it.title || '', artist: it.artist || '', album: this.player.playlist || '' };
+      if (thumb) meta.artwork = [{ src: thumb, sizes: '480x360', type: 'image/jpeg' }, { src: thumb, sizes: '512x512', type: 'image/jpeg' }];
+      return new this.env.MediaMetadata(meta);
     }
 
     _position(force) {
@@ -68,7 +71,8 @@
       this.lastPosAt = t;
       const d = this.player.getDuration();
       if (!(d > 0) || typeof this._ms.setPositionState !== 'function') return;
-      try { this._ms.setPositionState({ duration: d, playbackRate: 1, position: Math.min(d, Math.max(0, this.player.getTime())) }); } catch (e) { /* valores no válidos */ }
+      const rate = typeof this.player.getPlaybackRate === 'function' ? this.player.getPlaybackRate() : 1;   // HTMLAudioElement: velocidad real; YouTube: 1
+      try { this._ms.setPositionState({ duration: d, playbackRate: rate > 0 ? rate : 1, position: Math.min(d, Math.max(0, this.player.getTime())) }); } catch (e) { /* valores no válidos */ }
     }
 
     _onState(s) {
