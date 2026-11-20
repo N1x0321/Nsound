@@ -202,8 +202,15 @@ final class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate
         let js = "JSON.stringify({url:location.href,cookie:document.cookie.length>0,platform:(window.LS&&LS.Native&&LS.Native.platform)||null,flags:[window.NSOUND_WRAPPER?1:0,window.ENABLE_EXPERIMENTAL_PLAYER?1:0,window.__LS_ENGINES__?1:0],yt:!!(window.YT&&YT.Player),"
             + "diag:window.__nsoundDiag||null,exp:(window.NSoundExperimental&&NSoundExperimental.debug)?NSoundExperimental.debug():null,bridge:!!window.NSoundNativeBridge})"
         webView.evaluateJavaScript(js) { [weak self] result, error in
-            var text = (result as? String) ?? "Sin respuesta de la página: \(error?.localizedDescription ?? "la web no cargó")"
-            if text.count > 1800 { text = String(text.prefix(1800)) + "…" }
+            var web = (result as? String) ?? "Sin respuesta de la página: \(error?.localizedDescription ?? "la web no cargó")"
+            if web.count > 1300 { web = String(web.prefix(1300)) + "…" }
+            let text = "NATIVO
+" + DiagLog.recent(25).joined(separator: "
+") + "
+ahora: " + DiagLog.audioState() + "
+
+WEB
+" + web
             let alert = UIAlertController(title: "Diagnóstico", message: text, preferredStyle: .alert)
             alert.addAction(UIAlertAction(title: "Copiar", style: .default) { _ in UIPasteboard.general.string = text })
             alert.addAction(UIAlertAction(title: "Cerrar", style: .cancel))
@@ -225,6 +232,7 @@ final class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate
     /// primeros segundos (la web solo lo hace si sonaba y el usuario no la pausó).
     private var burstToken = 0
     private func resumeBursts() {
+        DiagLog.add("pide reanudar (ráfaga de 9)")
         burstToken += 1
         let token = burstToken
         for delay in [0.1, 0.25, 0.4, 0.6, 0.9, 1.3, 2.0, 3.0, 5.0] {
@@ -293,6 +301,7 @@ final class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate
 
     /// Si iOS cierra el proceso de la web por falta de memoria, se vuelve a cargar.
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        DiagLog.add("¡iOS cerró el proceso de la web! se recarga")
         if let url = startURL { load(url) }
     }
 

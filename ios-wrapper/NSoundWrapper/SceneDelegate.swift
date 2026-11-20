@@ -15,15 +15,18 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     }
 
     func sceneWillResignActive(_ scene: UIScene) {
+        DiagLog.add("pierde el foco")
         controller.lifecycle("inactive")
     }
 
     func sceneDidEnterBackground(_ scene: UIScene) {
+        DiagLog.add("pasa a segundo plano · " + DiagLog.audioState())
         AppDelegate.activateAudioSession()
         controller.lifecycle("background")
     }
 
     func sceneWillEnterForeground(_ scene: UIScene) {
+        DiagLog.add("vuelve a primer plano")
         AppDelegate.activateAudioSession()
         controller.lifecycle("foreground")
     }
