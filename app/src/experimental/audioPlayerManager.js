@@ -46,7 +46,7 @@
       if (this.url.includes('{trackId}')) return this.url.replace('{trackId}', id);
       return this.url + (this.url.includes('?') ? '&' : '?') + 'trackId=' + id;
     }
-    invalidate(trackId) { this.cache.delete(trackId); }
+    invalidate(trackId) { this.cache.delete(trackId); this.failed.delete(trackId); }
 
     /** Fecha de caducidad en ms desde «expiresAt» (segundos, milisegundos o ISO). Sin dato: ttl por defecto. */
     _expiry(v) {
@@ -108,7 +108,7 @@
       this._ct = opts.clearTimeout || root.clearTimeout.bind(root);
       const make = opts.createAudio || (() => new root.Audio());
       this.audio = make(); this.nextAudioBuffer = make();                   // el segundo objeto solo precarga: nunca suena
-      [this.audio, this.nextAudioBuffer].forEach((a) => { a.preload = 'auto'; a.crossOrigin = 'anonymous'; });
+      [this.audio, this.nextAudioBuffer].forEach((a) => { a.preload = 'auto'; a.crossOrigin = 'anonymous'; if ('playsInline' in a) a.playsInline = true; });
       this.nextAudioBuffer.muted = true;
       this.queue = []; this.order = []; this.pos = -1;
       this.repeat = 'off'; this.shuffle = false; this.autoplay = true;
@@ -116,7 +116,7 @@
       this.playlist = ''; this.wantPlay = false; this.userPaused = false; this.state = 'unstarted';
       this.skipStreak = 0; this.nextPreload = null; this.nextReady = false; this.preparedId = null;
       this.attempts = 0; this.gaveUp = false; this.lastPos = 0; this.blocked = false;
-      this.timer = null; this.stallTimer = null; this.watchTimer = null;
+      this.timer = null; this.stallTimer = null; this.watchTimer = null; this.wdTimer = null; this._wdLast = -1;
       this._token = 0; this._loading = false; this._pendingSeek = 0; this._failedResolve = false;
       this._subs = {}; this._off = []; this.log = [];
       this.audio.volume = this.volume / 100;
@@ -145,12 +145,13 @@
         if (this.attempts > 0) this._log('recovered', { attempts: this.attempts, at: this.getTime() });
         this.attempts = 0; this.gaveUp = false; this._clearTimers();
         this._setState('playing');
+        this._armWatchdog();
         this._releaseBuffer();
       });
       on('pause', () => {
         if (a.ended || this._loading) return;
         this._setState('paused');
-        if (this._wantsSound()) this._armStall('system-pause', 300);   // el sistema pausó (llamada, auriculares, iOS): se intenta volver a sonar
+        if (this._wantsSound()) this._armStall('system-pause', 0);   // el sistema pausó (llamada, auriculares, iOS): se intenta volver a sonar
       });
       on('waiting', () => { if (this._wantsSound() && !this._loading) { this._setState('buffering'); this._armStall('waiting'); } });
       on('stalled', () => { if (this._wantsSound()) this._armStall('stalled'); });
@@ -366,7 +367,23 @@
     }
 
     // ---- recuperación: guarda el segundo exacto, espera, reintenta (máx. 5) ----
-    _clearTimers() { ['timer', 'stallTimer', 'watchTimer'].forEach((k) => { if (this[k]) { this._ct(this[k]); this[k] = null; } }); }
+    _clearTimers() { ['timer', 'stallTimer', 'watchTimer', 'wdTimer'].forEach((k) => { if (this[k]) { this._ct(this[k]); this[k] = null; } }); }
+
+    /** Vigilante sin eventos: iOS puede dejar el audio parado o congelado sin avisar. Solo actúa si el usuario quiere sonido. */
+    _armWatchdog() {
+      if (this.wdTimer) this._ct(this.wdTimer);
+      this._wdLast = this.getTime();
+      this.wdTimer = this._st(() => {
+        this.wdTimer = null;
+        if (!this._wantsSound() || this.gaveUp || this.blocked) return;
+        const a = this.audio, t = this.getTime();
+        if (a.ended || this._loading) { this._armWatchdog(); return; }
+        if (a.paused) { this._log('watchdog-paused', { at: t }); this._tryPlay(); this._armStall('watchdog-paused', this.stallMs); }
+        else if (Math.abs(t - this._wdLast) < 0.05 && (a.readyState | 0) < 3) { this._trouble('watchdog-frozen'); return; }
+        else this._wdLast = t;
+        this._armWatchdog();
+      }, Math.round(this.stallMs * 1.25));   // intervalo propio (distinto del de «stall») para no solaparse
+    }
 
     _armStall(why, ms) {
       if (this.stallTimer || this.timer) return;
@@ -377,7 +394,7 @@
           this._log('soft-resume', { at: this.getTime() }); this._tryPlay(); this._armStall('system-pause-failed'); return;
         }
         this._trouble('stall-' + why);
-      }, ms || this.stallMs);
+      }, ms == null ? this.stallMs : ms);
     }
 
     _onMediaError(code) {

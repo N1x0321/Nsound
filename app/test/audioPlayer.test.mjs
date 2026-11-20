@@ -150,11 +150,11 @@ test('recuperación: error de red → guarda el segundo, espera, reintenta hasta
 test('recuperación: si vuelve a sonar se reinician los intentos', async () => {
   const { pm, a, T } = mk(); pm.setQueue(items, 0); await pm.playIndex(0); a.start(); a.currentTime = 10;
   a.fire('waiting'); assert.equal(pm.state, 'buffering'); await T.fire(4000); assert.equal(T.pending() >= 1, true); await T.fire(1000); await flush();
-  assert.equal(pm.attempts, 1); a.start(); assert.equal(pm.attempts, 0); assert.equal(pm.state, 'playing'); assert.equal(T.pending(), 0);
+  assert.equal(pm.attempts, 1); a.start(); assert.equal(pm.attempts, 0); assert.equal(pm.state, 'playing'); assert.equal(T.pending(), 1, 'solo queda el vigilante'); assert.ok(pm.wdTimer);
 });
 test('pausa del sistema (llamada, iOS): se vuelve a intentar; pausa del usuario: nunca', async () => {
   const { pm, a, T } = mk(); pm.setQueue(items, 0); await pm.playIndex(0); a.start(); a.currentTime = 30;
-  a.pause(); assert.equal(pm.state, 'paused'); const plays = a.plays; assert.equal(await T.fire(300), true); await flush();   // primero pide play otra vez, sin recargar
+  a.pause(); assert.equal(pm.state, 'paused'); const plays = a.plays; assert.equal(await T.fire(0), true); await flush();   // primero pide play otra vez AL INSTANTE (0 ms, antes 300), sin recargar
   assert.equal(a.plays, plays + 1); assert.equal(a.loads, 1);
   assert.equal(await T.fire(4000), true); assert.equal(await T.fire(1000), true); await flush();            // si sigue sin sonar: recarga y reintenta
   assert.equal(pm.attempts, 1);
@@ -281,4 +281,16 @@ test('bootstrap con el flag de audio apagado: se usa el reproductor de YouTube d
   const facade = LS.engines.wrap(raw); const out = NS.bootstrap();
   try { assert.equal(out.controller.audio, false); assert.equal(out.controller.player instanceof NS.PlayerManager, true); assert.ok(out.controller.network); assert.deepEqual([...facade.router.engines.keys()], ['exp-yt', 'yt', 'html5']); out.stop(); }
   finally { cleanup(); }
+});
+
+test('vigilante: detecta una parada sin eventos (pausado o congelado) y actúa; con pausa del usuario no hace nada', async () => {
+  const { pm, a, T } = mk(); pm.setQueue(items, 0); await pm.playIndex(0); a.start(); a.currentTime = 20;
+  assert.ok(pm.wdTimer, 'se arma al empezar a sonar');
+  a.paused = true;                                                       // iOS lo paró sin avisar (sin evento «pause»)
+  const plays = a.plays; assert.equal(await T.fire(5000), true); await flush();
+  assert.equal(a.plays, plays + 1, 'pide play otra vez a los 5 s sin recargar'); assert.equal(a.loads, 1);
+  a.start(); a.currentTime = 25;
+  a.readyState = 2;                                                      // congelado: no avanza y no tiene datos
+  assert.equal(await T.fire(5000), true); await flush(); assert.ok(pm.timer || T.pending() >= 1, 'se programa la recuperación');
+  a.start(); pm.pause(); assert.equal(pm.wdTimer, null, 'la pausa del usuario apaga el vigilante');
 });
