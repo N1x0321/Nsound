@@ -39,6 +39,11 @@
       this._off.push(this.player.on('track', () => this.sync(true)));
       this._off.push(this.player.on('state', (s) => this._onState(s)));
       this._off.push(this.player.on('queueEnd', () => this._post({ type: 'clear' })));
+      const L = this.env.LS, app = L && L.engines && L.engines.current;
+      if (app && typeof app.on === 'function') {
+        // Modo app: también se avisa si suena algo por el reproductor de siempre (vídeo normal, catálogo), para que el contenedor mantenga viva la app
+        app.on('state', (st) => this._post({ type: 'appState', playing: !!(st && st.playing), position: (st && st.time) || 0 }));
+      }
       this.timer = this._si(() => this._state(), this.resyncMs);        // corrige la deriva de la barra de tiempo del sistema
       this._post({ type: 'ready', version: 1 });
       this.sync(true);

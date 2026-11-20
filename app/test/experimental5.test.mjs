@@ -128,6 +128,17 @@ test('ios-wrapper: eq.js se inyecta en todos los marcos (sin él YouTube se paus
   assert.match(read('project.yml'), /\.\.\/app\/src\/eq\.js/);
   assert.match(readFileSync(new URL('../src/eq.js', import.meta.url), 'utf8'), /fixed\(Document\.prototype, 'visibilityState', 'visible'\)/);
 });
+test('el contenedor se entera de si suena algo por el reproductor de siempre (appState)', async () => {
+  const s = setup(); let cb; s.env.LS = { engines: { current: { on: (e, f) => { if (e === 'state') cb = f; } } } };
+  s.b.start(); assert.equal(typeof cb, 'function'); cb({ playing: true, time: 4 });
+  assert.deepEqual(s.posted.at(-1), { type: 'appState', playing: true, position: 4 }); cb({ playing: false, time: 5 });
+  assert.equal(s.posted.at(-1).playing, false);
+});
+test('ios-wrapper: silencio nativo para mantener viva la app en segundo plano', () => {
+  const k = read('NSoundWrapper/SilentKeeper.swift'), vc = read('NSoundWrapper/ViewController.swift');
+  assert.match(k, /numberOfLoops = -1/); assert.match(k, /Data\(repeating: 128/); assert.doesNotMatch(k, /write\(to|FileManager/);
+  assert.match(vc, /keeper\.start\(\)/); assert.match(vc, /keeper\.stop\(\)/); assert.match(vc, /case "appState"/);
+});
 test('ios-wrapper: ráfagas de reanudación y sin audio de mantenimiento web dentro del contenedor', () => {
   const vc = read('NSoundWrapper/ViewController.swift');
   assert.match(vc, /resumeBursts/); assert.match(vc, /\[0\.1, 0\.25, 0\.4, 0\.6, 0\.9, 1\.3, 2\.0, 3\.0, 5\.0\]/);

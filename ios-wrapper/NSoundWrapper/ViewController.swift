@@ -11,6 +11,10 @@ final class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate
 
     private var webView: WKWebView!
     private let nowPlaying = NowPlayingBridge()
+    private let keeper = SilentKeeper()
+    private var webPlaying = false
+    private var userPaused = false
+    private var inBackground = false
     private let spinner = UIActivityIndicatorView(style: .large)
     private let addressButton = UIButton(type: .system)
     private var startURL: URL?
@@ -42,7 +46,13 @@ final class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate
         view.addSubview(addressButton)
         NSLayoutConstraint.activate([addressButton.centerXAnchor.constraint(equalTo: view.centerXAnchor), addressButton.topAnchor.constraint(equalTo: spinner.bottomAnchor, constant: 40)])
 
-        nowPlaying.onCommand = { [weak self] command in self?.sendToWeb(command: command) }
+        nowPlaying.onCommand = { [weak self] command in
+            guard let self else { return }
+            let cmd = command["cmd"] as? String ?? ""
+            if cmd == "pause" || (cmd == "toggle" && self.webPlaying) { self.userPaused = true; self.keeper.stop() }
+            else if cmd == "play" || cmd == "toggle" { self.userPaused = false; if self.inBackground { self.keeper.start() } }
+            self.sendToWeb(command: command)
+        }
         observer = NotificationCenter.default.addObserver(forName: AppDelegate.audioSessionReactivated, object: nil, queue: .main) { [weak self] _ in
             self?.lifecycle("foreground")
         }
@@ -219,6 +229,16 @@ final class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate
         guard isViewLoaded, webView != nil else { return }
         let js = "window.NSoundNativeBridge && window.NSoundNativeBridge.onLifecycle(\(jsString(event)))"
         webView.evaluateJavaScript(js, completionHandler: nil)
+        switch event {
+        case "inactive", "background":
+            inBackground = true
+            if webPlaying && !userPaused { keeper.start() }      // la app sigue viva aunque YouTube se pause
+        case "active":
+            inBackground = false
+            keeper.stop()
+        default:
+            break
+        }
         if event != "foreground" { resumeBursts() }
     }
 
@@ -244,18 +264,28 @@ final class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate
         func number(_ key: String) -> Double { (body[key] as? NSNumber)?.doubleValue ?? 0 }
         switch type {
         case "nowPlaying":
+            noteWebPlaying((body["playing"] as? Bool) ?? false)
             nowPlaying.update(title: body["title"] as? String ?? "", artist: body["artist"] as? String ?? "", album: body["album"] as? String ?? "",
                               artwork: body["artwork"] as? String ?? "", duration: number("duration"), position: number("position"),
                               playing: (body["playing"] as? Bool) ?? false)
         case "state":
+            noteWebPlaying((body["playing"] as? Bool) ?? false)
             nowPlaying.updateState(position: number("position"), duration: number("duration"), playing: (body["playing"] as? Bool) ?? false)
+        case "appState":
+            noteWebPlaying((body["playing"] as? Bool) ?? false)
         case "clear":
+            webPlaying = false
             nowPlaying.clear()
         case "ready":
             AppDelegate.activateAudioSession()
         default:
             break
         }
+    }
+
+    private func noteWebPlaying(_ playing: Bool) {
+        webPlaying = playing
+        if playing && !inBackground { userPaused = false }
     }
 
     // MARK: - Puente nativo → web
