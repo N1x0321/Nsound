@@ -17,7 +17,7 @@ const js = readdirSync(join(src, 'js')).filter((f) => f.endsWith('.js')).sort()
 
 // Experimental (inerte salvo que ENABLE_EXPERIMENTAL_PLAYER sea true): se incrusta después del resto
 const expDir = join(src, 'experimental');
-const expJs = readdirSync(expDir).filter((f) => f.endsWith('.js')).sort()
+const expJs = readdirSync(expDir).filter((f) => f.endsWith('.js') && f !== 'sw-experimental.js').sort()
   .map((f) => readFileSync(join(expDir, f), 'utf8')
     .replace(/\nif \(typeof module !== 'undefined' && module\.exports\) module\.exports = globalThis\.NSoundExperimental;\s*$/, '\n'))
   .join('\n');
@@ -35,5 +35,9 @@ const html = readFileSync(join(src, 'index.template.html'), 'utf8')
 
 writeFileSync(join(dist, 'index.html'), html);
 writeFileSync(join(dist, 'sw.js'), readFileSync(join(src, 'sw.js'), 'utf8'));
+// El service worker experimental y su versión van como archivos aparte (no dentro del HTML)
+mkdirSync(join(dist, 'experimental'), { recursive: true });
+writeFileSync(join(dist, 'sw-experimental.js'), readFileSync(join(expDir, 'sw-experimental.js'), 'utf8'));
+writeFileSync(join(dist, 'experimental', 'version.json'), readFileSync(join(expDir, 'version.json'), 'utf8'));
 writeFileSync(join(dist, 'eq.js'), readFileSync(join(src, 'eq.js'), 'utf8'));
 console.log(`dist/index.html ${(html.length / 1024).toFixed(0)} KB · dist/eq.js`);
