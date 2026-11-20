@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
-for (const f of ['playerManager', 'stateManager', 'networkManager', 'mediaSession', 'iosManager', 'updateManager', 'index']) require(`../src/experimental/${f}.js`);
+for (const f of ['playerManager', 'stateManager', 'networkManager', 'mediaSession', 'iosManager', 'updateManager', 'config', 'experimentalBootstrap']) require(`../src/experimental/${f}.js`);
 const sw = require('../src/experimental/sw-experimental.js');
 const NS = globalThis.NSoundExperimental;
 

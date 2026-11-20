@@ -68,8 +68,10 @@ var LS = globalThis.LS = globalThis.LS || {};
       this._subs = [];
       (engines || []).forEach((e) => this.register(e));
     }
-    register(engine) {
-      this.engines.set(engine.id, engine);
+    /** first=true coloca el motor delante de los demás (el primero que diga canPlay gana). */
+    register(engine, first) {
+      if (first) { const rest = [...this.engines.entries()]; this.engines = new Map([[engine.id, engine]].concat(rest)); }
+      else this.engines.set(engine.id, engine);
       // Solo se reenvían los eventos del motor activo (solo suena uno a la vez)
       engine.on((evt) => { if (engine === this.current) this._dispatch(evt); });
     }
@@ -81,10 +83,10 @@ var LS = globalThis.LS = globalThis.LS || {};
       this.current = e;
       return true;
     }
-    pick(track) { for (const e of this.engines.values()) if (e.canPlay(track)) return e; return null; }
+    pick(track, opts) { for (const e of this.engines.values()) if (e.canPlay(track, opts)) return e; return null; }
     /** Elige motor por pista. false (y evento de error) si ninguno sabe reproducirla. */
     async play(track, opts) {
-      const e = this.pick(track);
+      const e = this.pick(track, opts);
       if (!e) {
         this._dispatch({ type: 'error', error: { code: 'noengine', message: 'Ningún motor sabe reproducir esta pista', recoverable: false } });
         return false;
@@ -104,27 +106,31 @@ var LS = globalThis.LS = globalThis.LS || {};
     const router = new EngineRouter([new YouTubeEngine(raw), new Html5Engine(raw)]);
     const subs = {};
     const emit = (evt, data) => (subs[evt] || []).forEach((fn) => { try { fn(data); } catch (e) { console.error(e); } });
+    let lastVolume = null;
     router.on((e) => {
       if (e.type === 'state') emit('state', e.raw);
       else if (e.type === 'ended') emit('ended');
       else if (e.type === 'error') emit('error', e.raw || { code: e.error.code, message: e.error.message });
     });
     raw.on('eqstatus', (d) => emit('eqstatus', d));
-    return {
+    const facade = {
       router,
       on(evt, fn) { (subs[evt] = subs[evt] || []).push(fn); },
       init: () => raw.init(),
-      state: () => raw.state(),
+      state: () => (router.current && typeof router.current.snapshot === 'function' ? router.current.snapshot() : raw.state()),
       mode: () => raw.mode(),
       load: (item, o) => router.play(item, o),
       play() { if (router.current) router.current.resume(); },
       pause() { if (router.current) router.current.pause(); },
       toggle() { raw.state().playing ? this.pause() : this.play(); },
       seek(t) { if (router.current) router.current.seek(t); },
-      setVolume: (v) => raw.setVolume(v),
+      setVolume: (v) => { lastVolume = v; raw.setVolume(v); if (router.current && router.current.id !== 'yt' && router.current.id !== 'html5') router.current.setVolume(v); },
+      volume: () => lastVolume,
       setEq: (g, en) => raw.setEq(g, en),
       eqStatus: () => raw.eqStatus(),
     };
+    LS.engines.current = facade;          // para que el arranque experimental pueda registrar motores nuevos
+    return facade;
   }
 
   LS.engines = { PlaybackEngineAdapter, StreamProvider, YouTubeEngine, Html5Engine, EngineRouter, wrap };

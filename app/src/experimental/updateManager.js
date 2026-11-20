@@ -9,7 +9,7 @@
   const BUNDLED_VERSION = '1.0.0-beta';                     // debe coincidir con experimental/version.json (lo comprueba un test)
 
   class UpdateManager {
-    /** opts: { player, state, env?, fetchFn?, intervalMs?=60000, versionUrl?, swUrl?, swScope?, waitMs?=8000, setInterval?, clearInterval?, now? } */
+    /** opts: { player, state, env?, fetchFn?, intervalMs?=60000, versionUrl?, swUrl?, resume?=true, swScope?, waitMs?=8000, setInterval?, clearInterval?, now? } */
     constructor(opts) {
       opts = opts || {};
       this.player = opts.player; this.state = opts.state;
@@ -19,6 +19,7 @@
       this.versionUrl = opts.versionUrl || 'experimental/version.json';
       this.swUrl = opts.swUrl || 'sw-experimental.js';
       this.swScope = opts.swScope || './';
+      this.resume = opts.resume !== false;           // false: la app restaura su propia cola tras recargar
       this.waitMs = opts.waitMs == null ? 8000 : opts.waitMs;
       this._si = opts.setInterval || root.setInterval.bind(root);
       this._ci = opts.clearInterval || root.clearInterval.bind(root);
@@ -36,8 +37,10 @@
 
     async start() {
       if (this.timer) return;
+      this.stopped = false;
       await this._afterReload();
       await this._registerSw(this.current);
+      if (this.stopped) return;                      // se paró mientras arrancaba
       this.timer = this._si(() => { this.check(); }, this.intervalMs);
       const doc = this.env.document;
       if (doc && doc.addEventListener) {
@@ -47,6 +50,7 @@
       this._log('start', { version: this.current });
     }
     stop() {
+      this.stopped = true;
       if (this.timer) { this._ci(this.timer); this.timer = null; }
       this._off.forEach((f) => f()); this._off = [];
     }
@@ -124,6 +128,7 @@
       const raw = this._stored(RELOAD_KEY);
       if (!raw) return false;
       this._del(RELOAD_KEY);
+      if (!this.resume) return false;
       let r; try { r = JSON.parse(raw); } catch (e) { return false; }
       if (!r || this.now() - r.ts > 5 * 60 * 1000) return false;   // marca antigua: no se reanuda nada por sorpresa
       const ok = await this.state.restore();

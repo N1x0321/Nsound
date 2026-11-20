@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
-for (const f of ['playerManager', 'stateManager', 'networkManager', 'index']) require(`../src/experimental/${f}.js`);
+for (const f of ['config', 'playerManager', 'stateManager', 'networkManager', 'mediaSession', 'iosManager', 'updateManager', 'experimentalBootstrap']) require(`../src/experimental/${f}.js`);
 const NS = globalThis.NSoundExperimental;
 
 const ids = ['aaaaaaaaaaa', 'bbbbbbbbbbb', 'ccccccccccc', 'ddddddddddd'];

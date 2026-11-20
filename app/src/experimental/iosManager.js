@@ -13,12 +13,13 @@
   }
 
   class IOSManager {
-    /** opts: { player, state (StateManager), media? (MediaSessionManager), env?, force?, graceMs?=600, coalesceMs?=300, setTimeout?, clearTimeout?, now? } */
+    /** opts: { player, state (StateManager), media? (MediaSessionManager), env?, force?, restore?=true, graceMs?=600, coalesceMs?=300, setTimeout?, clearTimeout?, now? } */
     constructor(opts) {
       opts = opts || {};
       this.player = opts.player; this.state = opts.state; this.media = opts.media || null;
       this.env = opts.env || root;
       this.force = !!opts.force;
+      this.restore = opts.restore !== false;       // false: la app manda en la cola y no se restaura nada por su cuenta
       this.graceMs = opts.graceMs == null ? 600 : opts.graceMs;
       this.coalesceMs = opts.coalesceMs == null ? 300 : opts.coalesceMs;
       this.now = opts.now || (() => Date.now());
@@ -84,6 +85,7 @@
       if (doc && doc.hidden) return;                       // falsa alarma: sigue oculta
       const wasAway = this.away; this.away = false;
       if (this.media) this.media.sync();
+      if (!this.player.queue.length && !this.restore) return;
       if (!this.player.queue.length) {                     // la página se descargó de memoria: se restaura todo desde lo guardado
         const ok = await this.state.restore();
         this._log('restored', { ok, why });
@@ -110,6 +112,7 @@
 
     /** Al arrancar: si se salió hace poco con música sonando y la página se recargó, se restaura sin esperar a un evento. */
     async _restoreIfFresh() {
+      if (!this.restore) return;
       const s = this._read();
       if (!s || !this.now || this.now() - s.ts > 6 * 3600 * 1000) return;
       if (this.player.queue.length) return;

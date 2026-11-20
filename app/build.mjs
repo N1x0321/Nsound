@@ -1,6 +1,7 @@
 // Une CSS y JS en un único index.html (dist/index.html) y copia eq.js. Sin dependencias: node app/build.mjs
 import { readFileSync, writeFileSync, mkdirSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+import { generateExperimentalAssets } from './assets-experimental.mjs';
 import { fileURLToPath } from 'node:url';
 
 const root = dirname(fileURLToPath(import.meta.url));
@@ -39,5 +40,6 @@ writeFileSync(join(dist, 'sw.js'), readFileSync(join(src, 'sw.js'), 'utf8'));
 mkdirSync(join(dist, 'experimental'), { recursive: true });
 writeFileSync(join(dist, 'sw-experimental.js'), readFileSync(join(expDir, 'sw-experimental.js'), 'utf8'));
 writeFileSync(join(dist, 'experimental', 'version.json'), readFileSync(join(expDir, 'version.json'), 'utf8'));
+generateExperimentalAssets(dist, readFileSync(join(src, 'logo.png')));   // iconos, pantallas de arranque y manifest (solo se usan con el modo experimental)
 writeFileSync(join(dist, 'eq.js'), readFileSync(join(src, 'eq.js'), 'utf8'));
 console.log(`dist/index.html ${(html.length / 1024).toFixed(0)} KB · dist/eq.js`);
