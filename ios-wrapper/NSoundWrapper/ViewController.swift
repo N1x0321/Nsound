@@ -200,7 +200,7 @@ final class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate
     /// Resumen para depurar sin Mac: página, errores, peticiones, estado del modo experimental y del puente.
     private func showDiagnostics() {
         let js = "JSON.stringify({url:location.href,cookie:document.cookie.length>0,platform:(window.LS&&LS.Native&&LS.Native.platform)||null,flags:[window.NSOUND_WRAPPER?1:0,window.ENABLE_EXPERIMENTAL_PLAYER?1:0,window.__LS_ENGINES__?1:0],yt:!!(window.YT&&YT.Player),"
-            + "diag:window.__nsoundDiag||null,exp:(window.NSoundExperimental&&NSoundExperimental.debug)?NSoundExperimental.debug():null,bridge:!!window.NSoundNativeBridge})"
+            + "diag:window.__nsoundDiag||null,exp:(window.NSoundExperimental&&NSoundExperimental.debug)?NSoundExperimental.debug():null,bridge:!!window.NSoundNativeBridge,eng:(window.LS&&LS.engines&&LS.engines.current&&LS.engines.current.router.current)?LS.engines.current.router.current.id:null,st:(window.LS&&LS.engines&&LS.engines.current)?LS.engines.current.state():null,h5:(function(){var m=document.getElementById('html5');return m?[m.paused,Math.round(m.currentTime)]:null})(),vis:document.visibilityState})"
         webView.evaluateJavaScript(js) { [weak self] result, error in
             var web = (result as? String) ?? "Sin respuesta de la página: \(error?.localizedDescription ?? "la web no cargó")"
             if web.count > 1300 { web = String(web.prefix(1300)) + "…" }
