@@ -735,7 +735,10 @@
     S.userPause = false; S.resumeTries = 0;
     keepAlive.on();
     S.now = it; S.time = 0; S.duration = it.duration || 0; S.lyrics = null; S.lyricsFor = ''; S.lyricIndex = -1;
-    Player.load(resolveLocal(it), { audioOnly: S.audioOnly });
+    const loadOpts = { audioOnly: S.audioOnly };
+    if (LS.enginesEnabled) loadOpts.queue = { items: S.queue, index: S.index, repeat: S.repeat, shuffle: S.shuffle };   // el motor experimental puede llevar la cola entera
+    Player.load(resolveLocal(it), loadOpts);
+    prepareNext();
     if (S.audioOnly) showVideo(false); else setVideoMode(videoMode() === 'pip' ? 'pip' : 'full');
     updateBar();
     if (!$('#lyrics').hidden) loadLyrics();
@@ -743,13 +746,45 @@
 
   // Aleatorio y repetir (como en Spotify): repetir una vez = la lista, dos = la canción, tres = apagado
   S.repeat = store.settings.get().repeat; S.shuffle = store.settings.get().shuffle; S.seen = []; S.hist = [];
+  // ---- Modo de motores (iPhone «Motores»): la cola del motor experimental manda en siguiente, anterior y fin de pista. Apagado: nada de esto actúa ----
+  /** Precarga lógica de la pista siguiente de la cola de la app (con aleatorio no se sabe cuál es: lo hace el motor con su propia cola). */
+  function prepareNext() {
+    if (!LS.enginesEnabled || typeof Player.prepare !== 'function' || S.shuffle) return;
+    const r = LS.pickNextIndex(S.queue, S.index, { repeat: S.repeat, shuffle: false, seen: S.seen });
+    const n = r.index >= 0 && r.index !== S.index ? S.queue[r.index] : null;
+    if (n) Player.prepare(resolveLocal(n), { audioOnly: S.audioOnly });
+  }
+  function syncExpQueue() {
+    if (LS.enginesEnabled && typeof Player.syncQueue === 'function') Player.syncQueue({ items: S.queue, index: S.index, repeat: S.repeat, shuffle: S.shuffle });
+  }
+  function engineOwnsQueue() { return LS.enginesEnabled && typeof Player.ownsQueue === 'function' && Player.ownsQueue(); }
+  /** El motor pasó solo a otra pista de su cola: se ponen al día la pantalla y el estado, sin volver a cargar nada. */
+  function adoptIndex(index, key) {
+    const it = S.queue[index];
+    if (!it || (key && it.key !== key) || (S.now && S.now.key === it.key && S.index === index)) return;
+    if (S.now) S.hist = S.hist.concat(S.now.key).slice(-50);
+    S.index = index; S.userPause = false; S.resumeTries = 0; S.skips = 0;
+    keepAlive.on();
+    S.now = it; S.time = 0; S.duration = it.duration || 0; S.lyrics = null; S.lyricsFor = ''; S.lyricIndex = -1;
+    updateBar();
+    if (!$('#lyrics').hidden) loadLyrics();
+  }
+  function ownedStep(dir) {
+    if (!engineOwnsQueue()) return false;
+    syncExpQueue();
+    if (Player[dir]() === false) { if (dir === 'next') Player.pause(); else Player.seek(0); }   // sin siguiente: parar; sin anterior: al principio (como la cola de la app)
+    return true;
+  }
+
   function next() {
+    if (ownedStep('next')) return;
     const r = LS.pickNextIndex(S.queue, S.index, { repeat: S.repeat, shuffle: S.shuffle, seen: S.seen });
     if (r.index < 0) { Player.pause(); return; }
     if (S.queue[S.index]) S.hist = S.hist.concat(S.queue[S.index].key).slice(-50);
     S.seen = r.seen; S.index = r.index; start();
   }
   function prev() {
+    if (ownedStep('prev')) return;
     if (S.time > 3) { Player.seek(0); return; }
     if (S.shuffle && S.hist.length) {                       // en aleatorio «anterior» vuelve a la que sonó antes
       const key = S.hist[S.hist.length - 1], i = S.queue.findIndex((x) => x.key === key);
@@ -765,11 +800,11 @@
     for (const id of ['#npShuffle', '#shuffleBtn']) { const b = $(id); if (!b) continue; b.classList.toggle('on', S.shuffle); b.setAttribute('aria-pressed', String(S.shuffle)); b.setAttribute('aria-label', S.shuffle ? 'Aleatorio: activado' : 'Aleatorio: desactivado'); b.title = b.getAttribute('aria-label'); }
   }
   function toggleRepeat() {
-    S.repeat = LS.nextRepeat(S.repeat); store.settings.set({ repeat: S.repeat }); paintModes();
+    S.repeat = LS.nextRepeat(S.repeat); store.settings.set({ repeat: S.repeat }); paintModes(); syncExpQueue();
     toast(S.repeat === 'all' ? 'Repetir la lista' : S.repeat === 'one' ? 'Repetir la canción' : 'Repetición desactivada', 2200);
   }
   function toggleShuffle() {
-    S.shuffle = !S.shuffle; S.seen = S.now ? [S.now.key] : []; S.hist = []; store.settings.set({ shuffle: S.shuffle }); paintModes();
+    S.shuffle = !S.shuffle; S.seen = S.now ? [S.now.key] : []; S.hist = []; store.settings.set({ shuffle: S.shuffle }); paintModes(); syncExpQueue();
     toast(S.shuffle ? 'Aleatorio activado' : 'Aleatorio desactivado', 2200);
   }
 
@@ -967,6 +1002,10 @@
         if (!b.ignoring && !seen) { try { localStorage.setItem('ls.bgHint', '1'); } catch (e) { /* ya */ } toast('Para que suene con la pantalla apagada, revisa Ajustes → Música en segundo plano.', 9000); }
       }).catch(() => {});
     }
+    if (LS.enginesEnabled && Native.platform === 'ios') {                    // la app de iPhone «Motores» sabe si debe volver a sonar al salir/volver (no pisa una pausa del usuario)
+      const sig = (S.wantPlay ? 1 : 0) + '' + (S.userPause ? 1 : 0) + (st.playing ? 1 : 0);
+      if (sig !== S.nativeSig) { S.nativeSig = sig; Native.call('playbackState', { wantPlay: !!S.wantPlay, userPause: !!S.userPause, playing: !!st.playing }).catch(() => {}); }
+    }
     S.playing = st.playing; S.time = st.time; if (st.duration > 0) S.duration = st.duration;
     mediaSessionTick(st);
     autoResume(st);
@@ -981,13 +1020,14 @@
     syncNp();
     followLyrics();
   });
-  Player.on('ended', onEnded);
+  Player.on('ended', (e) => { if (e && e.queueEnd) { S.skips = 0; Player.pause(); return; } onEnded(); });   // queueEnd: la cola del motor se acabó (sin repetir): se para, como con la cola de la app
+  Player.on('track', (e) => { if (e && typeof e.index === 'number') adoptIndex(e.index, e.key); });
   Player.on('error', (e) => {
     const t = S.now ? S.now.title : '';
     toast(e.code === 101 || e.code === 150 ? `«${t}» no permite reproducirse fuera de youtube.com (lo decide quien lo subió).` : `No se pudo reproducir «${t}» (${e.message || 'error ' + e.code}).`);
     showVideo(false);
     S.skips++;
-    if (S.skips <= 3 && S.index + 1 < S.queue.length) setTimeout(next, 1200);
+    if (S.skips <= 3 && S.index + 1 < S.queue.length && !engineOwnsQueue()) setTimeout(next, 1200);   // con la cola del motor, él mismo salta la pista inservible
     else if (S.skips > 3) toast('YouTube no deja reproducir estos vídeos ahora mismo. Prueba con otro o inténtalo más tarde.', 7000);
   });
 
@@ -1282,7 +1322,7 @@
   }
 
   // ---------- Cola de reproducción ----------
-  function applyQueue(r) { S.queue = r.queue; S.index = r.index; }
+  function applyQueue(r) { S.queue = r.queue; S.index = r.index; syncExpQueue(); }
   function queueIt(key, mode) {
     const it = reg.get(key);
     if (!it) return;

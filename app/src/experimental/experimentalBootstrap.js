@@ -154,7 +154,13 @@
         this._clearInterval = o.clearInterval || root.clearInterval.bind(root);
         this.poll = null;
         pm.on('state', (s) => { this._st.playing = s.state === 'playing' || s.state === 'buffering'; this._publish(); });
-        pm.on('ended', () => { this._st.playing = false; this._publish(); this._emit({ type: 'ended' }); });
+        this.owned = false; this.keys = []; this._sig = '';
+        // Con la cola del motor al mando, ella sola avanza al terminar cada pista: la app solo se entera del final de la lista
+        pm.on('ended', () => { this._st.playing = false; this._publish(); if (!this.owned) this._emit({ type: 'ended' }); });
+        const queueEnded = () => { if (!this.owned) return; this._st.playing = false; this._publish(); this._emit({ type: 'ended', queueEnd: true }); };
+        pm.on('queueEnd', queueEnded); pm.on('queueExhausted', queueEnded);
+        pm.on('track', (t) => { if (this.owned) this._emit({ type: 'queueTrack', index: t.index, key: this.keys[t.index] || null, track: t.item }); });
+        pm.on('preload', (p) => { if (this.perf && p && p.item && p.item.art) this.perf.preloadImage(p.item.art); });   // precarga lógica de la siguiente
         pm.on('error', (e) => { if (!e.recoverable) this._emit({ type: 'error', error: { code: e.code, recoverable: false }, raw: { code: e.code } }); });   // los recuperables los reintenta networkManager
       }
       get id() { return 'exp-yt'; }
@@ -169,9 +175,43 @@
         this._emit({ type: 'state', state: raw.playing ? 'playing' : 'paused', position: raw.time, duration: raw.duration, raw });
       }
       async prepare(track) { if (this.perf && track && track.thumb) this.perf.preloadImage(track.thumb); }   // precarga de la miniatura de la siguiente
+
+      // ---- cola del modo experimental ----
+      /** Pista de la app → elemento de cola del gestor. */
+      _item(t) { return { id: t.id, title: t.title, artist: t.artist || t.sub || '', art: t.thumb || '', duration: t.duration, kind: t.kind }; }
+      /** ¿Puede esta cola entera llevarla el motor? (todo música que él mismo reproduce; si hay vídeos o catálogo, manda la cola de la app) */
+      acceptsQueueItem(t) { return !!t && t.src === 'yt' && t.kind !== 'video' && !!this.pm.constructor.normalize(this._item(t)); }
+      _adoptable(items) { return Array.isArray(items) && items.length > 0 && items.every((t) => this.acceptsQueueItem(t)); }
+      _queueSig(q) { return q.items.map((t) => t.key).join('|') + '#' + q.index + '#' + q.repeat + '#' + !!q.shuffle; }
+      _applyQueue(q) {
+        this.keys = q.items.map((t) => t.key);
+        this.pm.setAutoplay(true);                                          // la cola del motor manda: avanza sola al terminar
+        this.pm.repeat = ['off', 'all', 'one'].includes(q.repeat) ? q.repeat : 'off'; this.pm.shuffle = !!q.shuffle;   // antes de armar el orden
+        this.pm.setQueue(q.items.map((t) => this._item(t)), q.index, '');
+        this._sig = this._queueSig(q);
+      }
+      ownsQueue() { return this.owned && this.pm.queue.length > 0; }
+      /** La app cambió la cola o los modos: se actualiza sin tocar lo que suena. Con elementos que el motor no lleva (vídeos…) devuelve el mando a la cola de la app. */
+      syncQueue(q) {
+        if (!this.owned || !q) return false;
+        if (!this._adoptable(q.items) || !(q.index >= 0 && q.index < q.items.length)) { this.owned = false; this.pm.setAutoplay(false); this._sig = ''; return false; }
+        if (this._queueSig(q) === this._sig) return true;
+        this._applyQueue(q); return true;
+      }
+      next() { return this.ownsQueue() && this.pm.peekNext() ? this.pm.next({ auto: false }) : false; }   // false al final de la lista: la app para, como con su cola
+      prev() { return this.ownsQueue() ? this.pm.prev() : false; }
+
       async play(track, opts) {
         this._st = { playing: true, time: 0, duration: track.duration || 0 };
-        this.pm.setAutoplay(false);                                         // la cola, repetir y aleatorio son de la app: el motor solo reproduce esta pista
+        const q = opts && opts.queue;
+        if (q && this._adoptable(q.items) && q.items[q.index] && q.items[q.index].id === track.id) {
+          this.owned = true; this._applyQueue(q);                           // la cola experimental manda en siguiente, anterior y fin de pista
+          const vol = this.facade && this.facade.volume ? this.facade.volume() : null; if (vol != null) this.pm.setVolume(vol);
+          this._startPoll();
+          return this.pm.playIndex(q.index);
+        }
+        this.owned = false; this._sig = '';
+        this.pm.setAutoplay(false);                                         // sin cola propia: la cola, repetir y aleatorio son de la app y el motor solo reproduce esta pista
         this.pm.setQueue([{ id: track.id, title: track.title, artist: track.artist || track.sub || '', art: track.thumb || '', duration: track.duration }], 0);
         const v = this.facade && this.facade.volume ? this.facade.volume() : null; if (v != null) this.pm.setVolume(v);
         this._startPoll();
@@ -181,7 +221,7 @@
       async resume() { this.pm.play(); }
       async seek(s) { this.pm.seek(s); this._st.time = s; }
       async setVolume(v) { this.pm.setVolume(v); }
-      async stop() { this._stopPoll(); this.pm.pause(); this._st.playing = false; }
+      async stop() { this._stopPoll(); this.owned = false; this._sig = ''; this.pm.pause(); this._st.playing = false; }
       _startPoll() {                                                        // como el reproductor actual: cada 0,5 s y no con la página oculta
         if (this.poll) return;
         this.poll = this._setInterval(() => { if (root.document && root.document.hidden) return; if (this.pm.state === 'playing') this._publish(); }, 500);
@@ -195,6 +235,7 @@
     const Base = makeEngineClass(LS);
     return class ExperimentalAudioEngine extends Base {
       get id() { return 'exp-audio'; }
+      acceptsQueueItem(t) { return !!t && t.kind !== 'video' && AudioIdRe.test(String(t.id || '')); }
       canPlay(track, opts) {
         return !!track && track.kind !== 'video' && AudioIdRe.test(String(track.id || '')) && !!(opts && opts.audioOnly === true);
       }
@@ -205,6 +246,7 @@
         return this._fallback(track, opts);                                 // sin audio autorizado para esta pista → reproductor habitual
       }
       async _fallback(track, opts) {
+        this.owned = false; this._sig = '';
         const router = this.facade && this.facade.router;
         if (!router) return false;
         for (const e of router.engines.values()) {

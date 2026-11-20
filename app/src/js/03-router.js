@@ -47,6 +47,7 @@ var LS = globalThis.LS = globalThis.LS || {};
     }
     get id() { return this._id; }
     canPlay(track) { return !!track && this._accepts(track); }
+    async prepare(track) { if (typeof this.raw.prepare === 'function') this.raw.prepare(track); }   // precarga lógica de la siguiente (miniatura)
     async play(track, opts) { return this.raw.load(track, opts); }
     async pause() { this.raw.pause(); }
     async resume() { this.raw.play(); }
@@ -109,7 +110,8 @@ var LS = globalThis.LS = globalThis.LS || {};
     let lastVolume = null;
     router.on((e) => {
       if (e.type === 'state') emit('state', e.raw);
-      else if (e.type === 'ended') emit('ended');
+      else if (e.type === 'ended') emit('ended', e.queueEnd ? { queueEnd: true } : undefined);   // queueEnd: la cola del motor llegó al final
+      else if (e.type === 'queueTrack') emit('track', e);                                          // la cola del motor pasó sola a otra pista
       else if (e.type === 'error') emit('error', e.raw || { code: e.error.code, message: e.error.message });
     });
     raw.on('eqstatus', (d) => emit('eqstatus', d));
@@ -120,6 +122,13 @@ var LS = globalThis.LS = globalThis.LS || {};
       state: () => (router.current && typeof router.current.snapshot === 'function' ? router.current.snapshot() : raw.state()),
       mode: () => raw.mode(),
       load: (item, o) => router.play(item, o),
+      /** Precarga lógica de la pista siguiente en el motor que la reproduciría (solo con los motores encendidos). */
+      prepare: (item, o) => { const e = router.pick(item, o); return e ? e.prepare(item, o) : undefined; },
+      /** Con el modo experimental, la cola del motor manda en siguiente/anterior/fin de pista. */
+      ownsQueue: () => !!(router.current && typeof router.current.ownsQueue === 'function' && router.current.ownsQueue()),
+      syncQueue: (q) => (router.current && typeof router.current.syncQueue === 'function' ? router.current.syncQueue(q) : false),
+      next() { return this.ownsQueue() ? router.current.next() : false; },
+      prev() { return this.ownsQueue() ? router.current.prev() : false; },
       play() { if (router.current) router.current.resume(); },
       pause() { if (router.current) router.current.pause(); },
       toggle() { raw.state().playing ? this.pause() : this.play(); },

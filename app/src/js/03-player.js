@@ -94,12 +94,25 @@ var LS = globalThis.LS = globalThis.LS || {};
     setState({ time: Number.isFinite(t) ? t : 0, duration: Number.isFinite(d) && d > 0 ? d : st.duration });
   }, 500);
 
+  const prefetched = [];               // miniaturas precargadas (tope de 4 para no acumular memoria)
+
   // ---------- API ----------
   LS.Player = {
     on,
     init() { bindMedia(); },
     state: () => Object.assign({}, st),
     mode: () => mode,
+
+    /** Precarga lógica de la siguiente pista: solo su miniatura (nada de audio ni vídeo). La llama el modo de motores; sin él nadie la usa. */
+    prepare(item) {
+      const url = item && item.thumb;
+      if (!url || !/^https:/.test(url) || typeof Image !== 'function') return false;
+      const list = prefetched;
+      if (list.some((i) => i.src === url)) return false;
+      const img = new Image(); img.decoding = 'async'; img.src = url;
+      list.push(img); while (list.length > 4) list.shift();
+      return true;
+    },
 
     async load(item, opts) {
       const audioOnly = !!(opts && opts.audioOnly);

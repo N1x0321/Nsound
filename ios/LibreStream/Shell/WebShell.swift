@@ -155,6 +155,11 @@ final class ShellCoordinator: NSObject, WKScriptMessageHandlerWithReply, WKURLSc
         case "nowPlayingState":
             nowPlaying.updateState(position: num(payload["position"]), duration: num(payload["duration"]), playing: payload["playing"] as? Bool ?? false)
             replyHandler("ok", nil)
+        case "playbackState":
+            // Solo la app de pruebas «Motores»: la interfaz dice si la música debe seguir sonando (y si el usuario la pausó)
+            wantPlay = payload["wantPlay"] as? Bool ?? true
+            userPause = payload["userPause"] as? Bool ?? false
+            replyHandler("ok", nil)
         case "setAdBlock":
             setAdBlock(payload["enabled"] as? Bool ?? true)
             replyHandler("ok", nil)
@@ -165,6 +170,9 @@ final class ShellCoordinator: NSObject, WKScriptMessageHandlerWithReply, WKURLSc
 
     /// Mantiene viva la sesión de audio: si el sistema la interrumpe (llamada, Siri, bloqueo) la música se reanuda al terminar.
     private var audioObservers: [NSObjectProtocol] = []
+    /// Lo que la interfaz cuenta de la reproducción. Por defecto «debe sonar» (como siempre) hasta que la interfaz diga otra cosa.
+    private var wantPlay = true
+    private var userPause = false
     private func observeAudioSession() {
         guard audioObservers.isEmpty else { return }
         let nc = NotificationCenter.default
@@ -177,7 +185,8 @@ final class ShellCoordinator: NSObject, WKScriptMessageHandlerWithReply, WKURLSc
         })
         // Al salir de la app, bloquear o desbloquear, iOS puede pausar el vídeo de YouTube: se pide a la interfaz que reanude (solo si sonaba y no la pausó el usuario)
         let resumeSoon: () -> Void = { [weak self] in
-            for delay in [0.1, 0.25, 0.4, 0.6, 0.9, 1.3, 2.0, 3.0, 5.0] { DispatchQueue.main.asyncAfter(deadline: .now() + delay) { self?.sendRemote(["cmd": "resume"]) } }
+            guard let self, self.wantPlay, !self.userPause else { return }   // si no debía sonar o la pausó el usuario, no se insiste
+            for delay in [0.1, 0.25, 0.4, 0.6, 0.9, 1.3, 2.0, 3.0, 5.0] { DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in self?.sendRemote(["cmd": "resume"]) } }
         }
         audioObservers.append(nc.addObserver(forName: UIApplication.willResignActiveNotification, object: nil, queue: .main) { _ in resumeSoon() })
         audioObservers.append(nc.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { _ in resumeSoon() })
