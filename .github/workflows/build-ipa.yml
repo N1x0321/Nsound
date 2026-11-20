@@ -36,7 +36,7 @@ jobs:
 
       - name: Pruebas del modo experimental (motores, cola, audio puro, contenedor)
         working-directory: .
-        run: node --test app/test/engines.test.mjs app/test/experimental.test.mjs app/test/experimental2.test.mjs app/test/experimental3.test.mjs app/test/experimental4.test.mjs app/test/experimental5.test.mjs app/test/audioPlayer.test.mjs
+        run: node --test app/test/engines.test.mjs app/test/experimental.test.mjs app/test/experimental2.test.mjs app/test/experimental3.test.mjs app/test/experimental4.test.mjs app/test/experimental5.test.mjs app/test/audioPlayer.test.mjs app/test/resolverServer.test.mjs
 
       - name: Seleccionar Xcode
         run: |
