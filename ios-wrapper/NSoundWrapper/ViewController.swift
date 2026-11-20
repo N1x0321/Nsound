@@ -195,6 +195,21 @@ final class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate
         guard isViewLoaded, webView != nil else { return }
         let js = "window.NSoundNativeBridge && window.NSoundNativeBridge.onLifecycle(\(jsString(event)))"
         webView.evaluateJavaScript(js, completionHandler: nil)
+        if event != "foreground" { resumeBursts() }
+    }
+
+    /// Al salir de la app, bloquear o volver, iOS puede pausar el vídeo de YouTube de la web. Se pide reanudar varias veces en los
+    /// primeros segundos (la web solo lo hace si sonaba y el usuario no la pausó).
+    private var burstToken = 0
+    private func resumeBursts() {
+        burstToken += 1
+        let token = burstToken
+        for delay in [0.1, 0.25, 0.4, 0.6, 0.9, 1.3, 2.0, 3.0, 5.0] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                guard let self, self.burstToken == token else { return }
+                self.sendToWeb(command: ["cmd": "resume"])
+            }
+        }
     }
 
     // MARK: - Puente web → nativo

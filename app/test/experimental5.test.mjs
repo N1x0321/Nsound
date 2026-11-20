@@ -112,3 +112,18 @@ test('ios-wrapper: no guarda audio/vídeo ni toca la web ni el catálogo', () =>
   }
   assert.match(read('NSoundWrapper/NowPlayingBridge.swift'), /"ytimg\.com", "googleusercontent\.com", "ggpht\.com"/);   // la única descarga es la carátula, de hosts de YouTube
 });
+
+test('resume (ráfagas del contenedor): solo reanuda si debía sonar y no la pausó el usuario', async () => {
+  const s = setup(); s.b.start(); await s.pm.playIndex(0); const p = s.m.made[0]; p.t = 33; p.emit(2);          // iOS pausó el iframe
+  const loads = () => p.calls.filter((c) => c[0] === 'load').length;
+  assert.equal(s.b.handle({ cmd: 'resume' }), true); await new Promise((r) => setImmediate(r)); assert.equal(loads(), 2); assert.deepEqual(p.calls.at(-1), ['load', ids[0]]);
+  p.emit(1); s.b.handle({ cmd: 'resume' }); await new Promise((r) => setImmediate(r)); assert.equal(loads(), 2);                                              // ya suena: nada
+  s.pm.pause(); p.emit(2); s.b.handle({ cmd: 'resume' }); await new Promise((r) => setImmediate(r)); assert.equal(loads(), 2);                                // pausa del usuario: se respeta
+  const a = setup({ commandTarget: 'app' }); a.b.start(); a.b.handle({ cmd: 'resume' });
+  assert.deepEqual(a.env.events, [{ type: 'remote', cmd: 'resume' }]);
+});
+test('ios-wrapper: ráfagas de reanudación y sin audio de mantenimiento web dentro del contenedor', () => {
+  const vc = read('NSoundWrapper/ViewController.swift');
+  assert.match(vc, /resumeBursts/); assert.match(vc, /\[0\.1, 0\.25, 0\.4, 0\.6, 0\.9, 1\.3, 2\.0, 3\.0, 5\.0\]/);
+  assert.match(readFileSync(new URL('../src/js/04-app.js', import.meta.url), 'utf8'), /window\.NSOUND_WRAPPER \|\| typeof Audio/);
+});

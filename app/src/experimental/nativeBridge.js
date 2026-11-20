@@ -6,7 +6,7 @@
   'use strict';
   const NS = root.NSoundExperimental = root.NSoundExperimental || {};
   const HANDLER = 'nsoundAudio';
-  const COMMANDS = ['play', 'pause', 'toggle', 'next', 'previous', 'prev', 'seek'];
+  const COMMANDS = ['play', 'pause', 'toggle', 'next', 'previous', 'prev', 'seek', 'resume'];
 
   class NativeBridge {
     /** opts: { player (PlayerManager), env?, commandTarget?='player'|'app', resyncMs?=15000, setInterval?, clearInterval? }
@@ -86,6 +86,14 @@
       return true;
     }
 
+    /** El contenedor lo pide en ráfagas al salir/volver a la app: reanuda solo si debía sonar y no la pausó el usuario. */
+    _resume() {
+      const p = this.player;
+      if (this.commandTarget === 'app' && typeof this.env.__nativeEvent === 'function') { this.env.__nativeEvent({ type: 'remote', cmd: 'resume' }); return true; }
+      if (p.wantPlay && !p.userPaused && p.state !== 'playing' && p.state !== 'buffering') p.resumeFrom(p.getTime());
+      return true;
+    }
+
     /** Orden del sistema (pantalla de bloqueo, AirPods, Centro de control). Devuelve true si se entendió. */
     handle(cmd) {
       if (!cmd || typeof cmd !== 'object' || !COMMANDS.includes(cmd.cmd)) { this._log('bad-command', { cmd }); return false; }
@@ -93,6 +101,7 @@
       const pos = Number(cmd.position);
       if (name === 'seek' && !(Number.isFinite(pos) && pos >= 0)) { this._log('bad-seek', { cmd }); return false; }
       this._log('command', { name });
+      if (name === 'resume') return this._resume();
       if (this.commandTarget === 'app' && typeof this.env.__nativeEvent === 'function') {
         const e = { type: 'remote', cmd: name === 'previous' ? 'prev' : name };
         if (name === 'seek') e.position = pos;

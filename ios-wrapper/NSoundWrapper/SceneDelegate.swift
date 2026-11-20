@@ -14,6 +14,10 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         self.window = window
     }
 
+    func sceneWillResignActive(_ scene: UIScene) {
+        controller.lifecycle("inactive")
+    }
+
     func sceneDidEnterBackground(_ scene: UIScene) {
         AppDelegate.activateAudioSession()
         controller.lifecycle("background")

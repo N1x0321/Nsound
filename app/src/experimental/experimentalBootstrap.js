@@ -252,6 +252,9 @@
       facade.router.register(out.engine, true);
     }
     out.controller.start();
+    // Calentamiento: se crea el iframe de YouTube con la página libre, para que la primera canción no espere a descargar la API
+    const warm = () => { out.controller.player.init().catch(() => {}); };
+    if (root.requestIdleCallback) root.requestIdleCallback(warm, { timeout: 2500 }); else root.setTimeout(warm, 800);
     out.stop = () => { if (out.engine) out.engine._stopPoll(); out.perf.stop(); out.controller.stop(); NS.instance = null; };
     return out;
   };
