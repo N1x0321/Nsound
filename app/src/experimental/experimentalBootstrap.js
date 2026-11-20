@@ -200,11 +200,12 @@
     const media = new NS.MediaSessionManager({ player });
     const owned = opts.appOwnsQueue === true;       // integrado: la app manda en cola y Media Session; aquí no se restaura ni se reanuda nada por su cuenta
     const ios = new NS.IOSManager({ player, state, media: owned ? null : media, restore: !owned });
+    const bridge = NS.NativeBridge ? new NS.NativeBridge({ player, commandTarget: owned ? 'app' : 'player' }) : null;   // solo actúa dentro del contenedor iOS (ios-wrapper/)
     const update = new NS.UpdateManager({ player, state, intervalMs: cfg().UPDATE_INTERVAL_MS, versionUrl: cfg().VERSION_URL, swUrl: cfg().SW_URL, resume: !owned });
     return {
-      player, state, network, media, ios, update,
-      start() { state.start(); network.start(); if (!owned) media.start(); ios.start(); return update.start(); },
-      stop() { update.stop(); ios.stop(); if (!owned) media.stop(); network.stop(); state.stop(); },
+      player, state, network, media, ios, update, bridge,
+      start() { state.start(); network.start(); if (!owned) media.start(); ios.start(); if (bridge) bridge.start(); return update.start(); },
+      stop() { update.stop(); if (bridge) bridge.stop(); ios.stop(); if (!owned) media.stop(); network.stop(); state.stop(); },
     };
   };
 
@@ -221,7 +222,7 @@
     const i = NS.instance; if (!i || !i.controller) return { running: false, migration: NS.lastMigration || null };
     const c = i.controller;
     return { running: true, migration: NS.lastMigration, version: c.update.current, player: { state: c.player.state, wantPlay: c.player.wantPlay, queue: c.player.queue.length, time: c.player.getTime() },
-      network: c.network.getLog(), ios: c.ios.getLog(), update: c.update.getLog(), pwa: i.pwa };
+      network: c.network.getLog(), ios: c.ios.getLog(), update: c.update.getLog(), bridge: c.bridge ? c.bridge.getLog() : [], pwa: i.pwa };
   };
 
   /** Arranque completo. Idempotente. Con el modo apagado devuelve null sin tocar nada. */

@@ -21,6 +21,8 @@ Todo el código nuevo vive en `app/src/experimental/` y solo se activa en la app
 | `app/src/experimental/sw-experimental.js` | Service worker, Stale While Revalidate, sin dominios de YouTube |
 | `app/src/experimental/version.json` | `{"version":"1.0.0-beta"}` |
 | `app/src/experimental/INFORME-FASE-1.md` | Auditoría del repositorio |
+| `app/src/experimental/nativeBridge.js` | Puente opcional con el contenedor iOS `ios-wrapper/` (solo se activa si existe `nsoundAudio`) |
+| `ios-wrapper/` | Contenedor nativo Swift opcional (ver `ios-wrapper/README.md`) |
 | `app/assets-experimental.mjs` | Genera iconos, 12 pantallas de arranque y manifest en `dist/experimental/` |
 | `app/src/js/03-router.js`, `03-covers.js` | EngineRouter y `proxifyCover` (bloque 0; `proxifyCover` apagado y sin conectar) |
 | `app/test/*.test.mjs`, `app/test/run-all.mjs` | Pruebas (ver §8) |

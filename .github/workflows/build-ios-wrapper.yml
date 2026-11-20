@@ -1,0 +1,56 @@
+name: Build NSound iOS wrapper (experimental)
+
+# Independiente del resto: no se ejecuta en pull requests ni en main, no publica nada y no toca la fuente de SideStore.
+on:
+  workflow_dispatch:
+  push:
+    branches: ["claude/experimento-motores-ios-*"]
+    paths: ["ios-wrapper/**", ".github/workflows/build-ios-wrapper.yml"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-ios-wrapper-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: ios-wrapper
+    steps:
+      - uses: actions/checkout@v4
+      - name: Seleccionar Xcode
+        run: |
+          X=$(ls -d /Applications/Xcode_16*.app 2>/dev/null | sort -V | tail -1)
+          [ -n "$X" ] || X=$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)
+          sudo xcode-select -s "$X"; xcodebuild -version
+      - run: brew install xcodegen
+      - run: xcodegen generate
+      - name: Compilar (Release, sin firmar)
+        shell: bash
+        run: |
+          xcodebuild build \
+            -project NSoundWrapper.xcodeproj -scheme NSoundWrapper \
+            -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            | xcpretty || exit ${PIPESTATUS[0]}
+      - name: Empaquetar .ipa
+        shell: bash
+        run: |
+          APP="build/Build/Products/Release-iphoneos/NSoundWrapper.app"
+          test -d "$APP" || { echo "::error::No se encontró $APP"; exit 1; }
+          plutil -p "$APP/Info.plist" | grep -E "UIBackgroundModes|audio|CFBundleIdentifier"
+          rm -rf Payload && mkdir Payload && cp -R "$APP" Payload/
+          zip -qry "NSoundWrapper-unsigned.ipa" Payload
+          shasum -a 256 NSoundWrapper-unsigned.ipa > NSoundWrapper-unsigned.ipa.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: NSoundWrapper-ipa
+          path: |
+            ios-wrapper/NSoundWrapper-unsigned.ipa
+            ios-wrapper/NSoundWrapper-unsigned.ipa.sha256

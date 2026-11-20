@@ -1,0 +1,30 @@
+name: NSoundWrapper
+options:
+  bundleIdPrefix: org.nsound
+  deploymentTarget:
+    iOS: "16.0"
+settings:
+  base:
+    SWIFT_VERSION: "5.9"
+    MARKETING_VERSION: "1.0.0"
+    CURRENT_PROJECT_VERSION: "1"
+    ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+targets:
+  NSoundWrapper:
+    type: application
+    platform: iOS
+    sources:
+      - path: NSoundWrapper
+        excludes: ["Info.plist"]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: org.nsound.wrapper
+        INFOPLIST_FILE: NSoundWrapper/Info.plist
+        GENERATE_INFOPLIST_FILE: NO
+        CODE_SIGN_STYLE: Automatic
+        TARGETED_DEVICE_FAMILY: "1,2"
+schemes:
+  NSoundWrapper:
+    build:
+      targets:
+        NSoundWrapper: all

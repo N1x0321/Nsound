@@ -1,0 +1,6 @@
+# Proyecto generado por XcodeGen y restos de compilación
+*.xcodeproj/
+build/
+Payload/
+*.ipa
+*.ipa.sha256
