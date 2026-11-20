@@ -55,7 +55,7 @@ final class ShellCoordinator: NSObject, WKScriptMessageHandlerWithReply, WKURLSc
 
         // EXPERIMENTO: solo la app de pruebas (id «…motores») enciende el EngineRouter de la interfaz compartida
         if Bundle.main.bundleIdentifier?.hasSuffix(".motores") == true {
-            controller.addUserScript(WKUserScript(source: "window.__LS_ENGINES__ = true;", injectionTime: .atDocumentStart, forMainFrameOnly: true))
+            controller.addUserScript(WKUserScript(source: "window.__LS_ENGINES__ = true; window.ENABLE_EXPERIMENTAL_PLAYER = true;", injectionTime: .atDocumentStart, forMainFrameOnly: true))
         }
 
         let web = WKWebView(frame: .zero, configuration: config)

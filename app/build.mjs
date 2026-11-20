@@ -15,14 +15,22 @@ const js = readdirSync(join(src, 'js')).filter((f) => f.endsWith('.js')).sort()
     .replace(/\nif \(typeof module !== 'undefined' && module\.exports\) module\.exports = LS;\s*$/, '\n'))
   .join('\n');
 
-if (/<\/script/i.test(js)) throw new Error('El JS contiene "</script": se rompería el HTML incrustado.');
+// Experimental (inerte salvo que ENABLE_EXPERIMENTAL_PLAYER sea true): se incrusta después del resto
+const expDir = join(src, 'experimental');
+const expJs = readdirSync(expDir).filter((f) => f.endsWith('.js')).sort()
+  .map((f) => readFileSync(join(expDir, f), 'utf8')
+    .replace(/\nif \(typeof module !== 'undefined' && module\.exports\) module\.exports = globalThis\.NSoundExperimental;\s*$/, '\n'))
+  .join('\n');
+const allJs = js + '\n' + expJs;
+
+if (/<\/script/i.test(allJs)) throw new Error('El JS contiene "</script": se rompería el HTML incrustado.');
 
 const logo = 'data:image/png;base64,' + readFileSync(join(src, 'logo.png')).toString('base64');
 
 // Funciones de reemplazo para que "$&" y similares dentro del código no se interpreten
 const html = readFileSync(join(src, 'index.template.html'), 'utf8')
   .replace('<!--CSS-->', () => css)
-  .replace('<!--JS-->', () => js)
+  .replace('<!--JS-->', () => allJs)
   .replaceAll('<!--LOGO-->', () => logo);
 
 writeFileSync(join(dist, 'index.html'), html);
