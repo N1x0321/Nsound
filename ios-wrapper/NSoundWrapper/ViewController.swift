@@ -6,6 +6,7 @@ import WebKit
 final class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler {
 
     private static let defaultsKey = "nsound.startURL"
+    private static let fallbackKey = "nsound.fallbackURL"     // segunda dirección (p. ej. tu PC en casa) si la principal (la nube) no responde
     private static let handlerName = "nsoundAudio"
 
     private var webView: WKWebView!
@@ -13,6 +14,8 @@ final class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate
     private let spinner = UIActivityIndicatorView(style: .large)
     private let addressButton = UIButton(type: .system)
     private var startURL: URL?
+    private var fallbackURL: URL?
+    private var triedFallback = false
     private var observer: NSObjectProtocol?
 
     // MARK: - Ciclo de vida de la vista
@@ -43,6 +46,7 @@ final class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate
         observer = NotificationCenter.default.addObserver(forName: AppDelegate.audioSessionReactivated, object: nil, queue: .main) { [weak self] _ in
             self?.lifecycle("foreground")
         }
+        if let saved = UserDefaults.standard.string(forKey: ViewController.fallbackKey) { fallbackURL = validated(saved) }
         if let url = resolveStartURL() { load(url) } else { addressButton.isHidden = false }   // el cuadro se presenta en viewDidAppear (aquí la vista aún no está en pantalla)
     }
 
@@ -140,12 +144,26 @@ final class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate
             field.keyboardType = .URL
             field.autocapitalizationType = .none
             field.autocorrectionType = .no
-            field.text = self.startURL?.absoluteString ?? UserDefaults.standard.string(forKey: ViewController.defaultsKey)
+            field.text = UserDefaults.standard.string(forKey: ViewController.defaultsKey) ?? self.startURL?.absoluteString
+        }
+        alert.addTextField { field in
+            field.placeholder = "Alternativa si la primera falla (opcional)"
+            field.keyboardType = .URL
+            field.autocapitalizationType = .none
+            field.autocorrectionType = .no
+            field.text = UserDefaults.standard.string(forKey: ViewController.fallbackKey)
         }
         alert.addAction(UIAlertAction(title: "Abrir", style: .default) { [weak self, weak alert] _ in
             guard let self, let text = alert?.textFields?.first?.text else { return }
             if let url = self.validated(text) {
                 UserDefaults.standard.set(url.absoluteString, forKey: ViewController.defaultsKey)
+                let second = alert?.textFields?.dropFirst().first?.text ?? ""
+                if let fb = self.validated(second) {
+                    UserDefaults.standard.set(fb.absoluteString, forKey: ViewController.fallbackKey); self.fallbackURL = fb
+                } else {
+                    UserDefaults.standard.removeObject(forKey: ViewController.fallbackKey); self.fallbackURL = nil
+                }
+                self.triedFallback = false
                 self.load(url)
             } else {
                 self.askForAddress(message: "Dirección no válida. Usa https:// (http:// solo en tu red local).")
@@ -249,7 +267,7 @@ final class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate
 
     // MARK: - Navegación
 
-    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) { spinner.stopAnimating() }
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) { spinner.stopAnimating(); triedFallback = false }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) { navigationFailed(error) }
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) { navigationFailed(error) }
@@ -257,6 +275,9 @@ final class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate
     private func navigationFailed(_ error: Error) {
         spinner.stopAnimating()
         if (error as NSError).code == NSURLErrorCancelled { return }
+        if let fb = fallbackURL, !triedFallback, startURL != fb {            // la principal no responde: se prueba la alternativa
+            triedFallback = true; load(fb); return
+        }
         addressButton.isHidden = false
         guard presentedViewController == nil else { return }
         let alert = UIAlertController(title: "No se pudo abrir NSound", message: error.localizedDescription, preferredStyle: .alert)

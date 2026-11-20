@@ -48,6 +48,12 @@ no descarga ni guarda audio/vídeo en disco (lo único que descarga es la carát
 - **Agitar el teléfono** abre otra vez el cuadro para cambiar la dirección.
 - Los enlaces a otros sitios se abren en Safari; el reproductor de YouTube (marco) funciona dentro de la app.
 
+### Nube y local a la vez
+El cuadro de dirección tiene **dos campos**: la principal (nube) y una alternativa (tu PC en casa, opcional). Si la principal no responde, la app prueba la alternativa sola.
+- **Nube:** el repositorio trae `render.yaml` (servicio gratuito de Render con clave `LS_TOKEN`; se duerme tras 15 min sin uso y tarda ~1 min en despertar). En Render: *New → Blueprint →* este repositorio, **rama `claude/experimento-motores-ios-f23fb5`** → Apply. Dirección: `https://TU-SERVICIO.onrender.com/?k=CLAVE`. No está desplegado: es una cuenta tuya y no la he creado.
+- **Local:** `node app/build.mjs` y `LS_TOKEN=clave node app/dev/server.mjs 5174`, más un túnel (`cloudflared tunnel --url http://127.0.0.1:5174`) o la IP de tu red (`http://192.168.x.x:5174/?k=clave`, solo en casa).
+- GitHub Pages no sirve: la web necesita el servidor `/__proxy` para buscar canciones.
+
 ## 4. Compilar y sacar el `.ipa`
 Xcode **solo existe para Mac**. Con Windows tienes dos caminos.
 
