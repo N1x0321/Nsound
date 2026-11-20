@@ -11,6 +11,7 @@ final class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate
     private var webView: WKWebView!
     private let nowPlaying = NowPlayingBridge()
     private let spinner = UIActivityIndicatorView(style: .large)
+    private let addressButton = UIButton(type: .system)
     private var startURL: URL?
     private var observer: NSObjectProtocol?
 
@@ -25,12 +26,27 @@ final class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate
         view.addSubview(spinner)
         NSLayoutConstraint.activate([spinner.centerXAnchor.constraint(equalTo: view.centerXAnchor), spinner.centerYAnchor.constraint(equalTo: view.centerYAnchor)])
 
+        // Botón siempre visible cuando no hay nada cargado (sin dirección o con error): evita una pantalla negra sin salida
+        addressButton.setTitle("Escribir la dirección de NSound", for: .normal)
+        addressButton.setTitleColor(.white, for: .normal)
+        addressButton.titleLabel?.font = .systemFont(ofSize: 17, weight: .semibold)
+        addressButton.backgroundColor = UIColor(white: 1, alpha: 0.14)
+        addressButton.layer.cornerRadius = 12
+        addressButton.contentEdgeInsets = UIEdgeInsets(top: 12, left: 20, bottom: 12, right: 20)
+        addressButton.translatesAutoresizingMaskIntoConstraints = false
+        addressButton.isHidden = true
+        addressButton.addTarget(self, action: #selector(addressButtonTapped), for: .touchUpInside)
+        view.addSubview(addressButton)
+        NSLayoutConstraint.activate([addressButton.centerXAnchor.constraint(equalTo: view.centerXAnchor), addressButton.topAnchor.constraint(equalTo: spinner.bottomAnchor, constant: 40)])
+
         nowPlaying.onCommand = { [weak self] command in self?.sendToWeb(command: command) }
         observer = NotificationCenter.default.addObserver(forName: AppDelegate.audioSessionReactivated, object: nil, queue: .main) { [weak self] _ in
             self?.lifecycle("foreground")
         }
-        if let url = resolveStartURL() { load(url) } else { askForAddress(message: "Escribe la dirección de tu NSound (por ejemplo https://tu-servidor/).") }
+        if let url = resolveStartURL() { load(url) } else { addressButton.isHidden = false }   // el cuadro se presenta en viewDidAppear (aquí la vista aún no está en pantalla)
     }
+
+    @objc private func addressButtonTapped() { askForAddress(message: "Escribe la dirección de tu NSound (por ejemplo https://tu-servidor/).") }
 
     deinit { if let observer { NotificationCenter.default.removeObserver(observer) } }
 
@@ -98,6 +114,7 @@ final class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate
 
     private func load(_ url: URL) {
         startURL = url
+        addressButton.isHidden = true
         spinner.startAnimating()
         webView.load(URLRequest(url: url, cachePolicy: .useProtocolCachePolicy, timeoutInterval: 30))
     }
@@ -127,7 +144,13 @@ final class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate
 
     /// Agitar el teléfono permite cambiar la dirección.
     override var canBecomeFirstResponder: Bool { true }
-    override func viewDidAppear(_ animated: Bool) { super.viewDidAppear(animated); becomeFirstResponder() }
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        becomeFirstResponder()
+        if startURL == nil && presentedViewController == nil {
+            askForAddress(message: "Escribe la dirección de tu NSound (por ejemplo https://tu-servidor/).")
+        }
+    }
     override func motionEnded(_ motion: UIEvent.EventSubtype, with event: UIEvent?) {
         if motion == .motionShake { askForAddress(message: "Cambiar la dirección de NSound.") }
     }
@@ -186,6 +209,7 @@ final class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate
     private func navigationFailed(_ error: Error) {
         spinner.stopAnimating()
         if (error as NSError).code == NSURLErrorCancelled { return }
+        addressButton.isHidden = false
         guard presentedViewController == nil else { return }
         let alert = UIAlertController(title: "No se pudo abrir NSound", message: error.localizedDescription, preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: "Reintentar", style: .default) { [weak self] _ in if let url = self?.startURL { self?.load(url) } })
