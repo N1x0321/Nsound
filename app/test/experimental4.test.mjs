@@ -102,6 +102,20 @@ test('corte de red: guarda, espera 3 s, sigue sin conexión, vuelve y continúa 
   p.emit(1); assert.ok(nm.getLog().some((e) => e.event === 'recovered'));
 });
 
+// Fallo grave: la música no se podía parar (un reintento pendiente la reanudaba tras pausar)
+test('pausa del usuario: cancela reintentos pendientes y nunca se reanuda sola', async () => {
+  const { pm, m } = mkPm(); pm.setQueue(items, 0); const st = mem(); const sm = new NS.StateManager({ player: pm, storage: st });
+  const t = timers(), env = { navigator: { onLine: true }, addEventListener() {}, removeEventListener() {} };
+  const nm = new NS.NetworkManager({ player: pm, state: sm, env, setTimeout: t.st, clearTimeout: t.ct }); nm.start();
+  await pm.playIndex(0); const p = m.made[0]; p.emit(1); p.t = 20; p.emit(3);
+  nm.trouble('x'); await t.run(3000);                                        // 1.er reintento hecho
+  const loads = () => p.calls.filter((c) => c[0] === 'load').length; const before = loads();
+  pm.pause(); p.emit(2);                                                     // el usuario pausa
+  await t.run(6000); await t.run(3000); await t.run(6000);
+  assert.equal(loads(), before); assert.equal(nm.trouble('offline'), false);
+  assert.ok(nm.getLog().some((e) => e.event === 'ignored-user-paused'));
+});
+
 // ================= Fase 14: ciclo de vida Safari iOS / Chrome iOS / iPad =================
 const UAS = {
   'Safari iPhone': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1',

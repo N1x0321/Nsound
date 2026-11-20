@@ -50,6 +50,8 @@
       this._clearTimers(); this._log('stop');
     }
 
+    _wantsSound() { return !!this.player.wantPlay && !this.player.userPaused; }
+
     _needsHelp() { return this.player.wantPlay && !this.player.userPaused && this.player.state !== 'playing' && this.player.state !== 'buffering'; }
 
     _onPlayerState(s) {
@@ -59,6 +61,7 @@
         return;
       }
       if (s.time > 0) this.lastPos = s.time;
+      if (!this._wantsSound()) { this._clearTimers(); this.attempts = 0; return; }              // pausa del usuario: se cancela cualquier reintento pendiente
       // Corte de reproducción: la app quería sonar pero el reproductor se queda en carga/pausa sin que el usuario lo haya pedido
       if (this.player.wantPlay && !this.player.userPaused && ['buffering', 'paused', 'unstarted'].includes(s.state)) this._armStall(s.state);
     }
@@ -75,6 +78,7 @@
     trouble(reason) {
       if (!this.active) return false;
       this._log('trouble', { reason });
+      if (!this._wantsSound()) { this._log('ignored-user-paused', { reason }); return false; }   // si el usuario pausó, nunca se reanuda
       if (this.timer || this.gaveUp) return false;          // ya hay un reintento programado o se agotaron los intentos
       if (this.attempts >= this.maxAttempts) { this._giveUp(); return false; }
       const t = this.player.getTime(); if (t > 0) this.lastPos = t;
@@ -95,6 +99,7 @@
 
     async _retry(reason) {
       if (!this.active) return;
+      if (!this._wantsSound()) { this.attempts = 0; this._clearTimers(); this._log('cancelled-user-paused'); return; }   // pausa del usuario entre medias
       this.attempts++;
       const online = this._online();
       this._log('retry', { attempt: this.attempts, reason, from: this.lastPos, online });
@@ -106,6 +111,7 @@
       this.watchTimer = this._st(() => {
         this.watchTimer = null;
         if (!this.active || this.player.state === 'playing') return;
+        if (!this._wantsSound()) { this.attempts = 0; this._log('cancelled-user-paused'); return; }
         if (this.attempts < this.maxAttempts) this._schedule('no-playing-after-retry'); else this._giveUp();
       }, this.stallMs);
     }
