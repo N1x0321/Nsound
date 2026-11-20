@@ -5,6 +5,9 @@
 (() => {
   // Solo en YouTube: sobre medios de otros orígenes (sin CORS) el audio quedaría en silencio
   if (!/(^|\.)youtube(-nocookie)?\.com$/.test(location.hostname)) return;
+  // Sesión de audio de la web (WebKit): tipo «playback» = el audio es reproducción multimedia y no un efecto de la página, de modo que iOS no lo
+  // suspende al pasar a segundo plano. Prueba aparte (IPA «Nsound AudioSession»); inocua donde la API no existe (Android, Windows, Chrome).
+  try { if (navigator.audioSession && navigator.audioSession.type !== 'playback') navigator.audioSession.type = 'playback'; } catch (e) { /* API no disponible */ }
   // Segundo plano: el reproductor de YouTube se pausa solo cuando la página pasa a «oculta» (pantalla bloqueada o app en segundo
   // plano). Aquí se le indica que sigue visible y se descartan los avisos de cambio de visibilidad, como hace la
   // «reproducción en segundo plano» de Brave. Solo afecta al marco de YouTube; la interfaz de Nsound no se toca.

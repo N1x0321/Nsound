@@ -1,6 +1,9 @@
 /* Interfaz de LibreStream (compartida por iOS, Android y navegador). */
 (function () {
   'use strict';
+  // Sesión de audio de la web (WebKit): tipo «playback» = el audio es reproducción multimedia y no un efecto de la página, de modo que iOS no lo
+  // suspende al pasar a segundo plano. Prueba aparte (IPA «Nsound AudioSession»); inocua donde la API no existe (Android, Windows, Chrome).
+  try { if (navigator.audioSession && navigator.audioSession.type !== 'playback') navigator.audioSession.type = 'playback'; } catch (e) { /* API no disponible */ }
   const { Player, Native } = LS;
 
   const CATALOG_URL = 'https://n1x0321.github.io/Nsound/catalog.json';
