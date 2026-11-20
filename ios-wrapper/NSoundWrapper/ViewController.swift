@@ -204,13 +204,7 @@ final class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate
         webView.evaluateJavaScript(js) { [weak self] result, error in
             var web = (result as? String) ?? "Sin respuesta de la página: \(error?.localizedDescription ?? "la web no cargó")"
             if web.count > 1300 { web = String(web.prefix(1300)) + "…" }
-            let text = "NATIVO
-" + DiagLog.recent(25).joined(separator: "
-") + "
-ahora: " + DiagLog.audioState() + "
-
-WEB
-" + web
+            let text = "NATIVO\n" + DiagLog.recent(25).joined(separator: "\n") + "\nahora: " + DiagLog.audioState() + "\n\nWEB\n" + web
             let alert = UIAlertController(title: "Diagnóstico", message: text, preferredStyle: .alert)
             alert.addAction(UIAlertAction(title: "Copiar", style: .default) { _ in UIPasteboard.general.string = text })
             alert.addAction(UIAlertAction(title: "Cerrar", style: .cancel))
