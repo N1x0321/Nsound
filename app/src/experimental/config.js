@@ -13,7 +13,11 @@
   // Servicio PROPIO que recibe ?trackId=… y devuelve la URL de audio autorizada (con cabeceras Range). Vacío = sin conector.
   const AUDIO_STREAM_RESOLVER_URL = '';
 
+  // Motor OFICIAL de Spotify (Web Playback SDK; solo escritorio/navegador, Premium, el usuario inicia sesión). APAGADO y sin registrarse solo: ver spotifyEngine.js.
+  const ENABLE_SPOTIFY_ENGINE = false;
+
   NS.config = {
+    ENABLE_SPOTIFY_ENGINE,
     ENABLE_EXPERIMENTAL_AUDIO_PLAYER,
     AUDIO_STREAM_RESOLVER_URL,
     AUDIO_STORAGE_PREFIX: 'nsound_exp_audio_',
