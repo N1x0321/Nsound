@@ -71,5 +71,7 @@
 	<string></string>
 	<key>NSoundInjectExperimentalFlags</key>
 	<true/>
+	<key>NSoundDiagnostics</key>
+	<true/>
 </dict>
 </plist>

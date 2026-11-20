@@ -69,6 +69,15 @@ final class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate
             controller.addUserScript(WKUserScript(source: js, injectionTime: .atDocumentStart, forMainFrameOnly: true))
         }
 
+        if diagnosticsEnabled {
+            // Solo observa (no cambia nada): guarda errores de la página y el estado de sus peticiones para «Ver diagnóstico» (agitar el teléfono)
+            let diag = "(function(){var d=window.__nsoundDiag={errors:[],fetches:[]};var push=function(a,v){a.push(v);if(a.length>25)a.shift()};"
+                + "window.addEventListener('error',function(e){push(d.errors,String(e.message)+' @'+e.lineno)});"
+                + "window.addEventListener('unhandledrejection',function(e){push(d.errors,'promesa: '+String(e.reason))});"
+                + "var of=window.fetch;if(of){window.fetch=function(u){var s=String((u&&u.url)||u).slice(0,90);return of.apply(this,arguments).then(function(r){push(d.fetches,r.status+' '+s);return r},function(e){push(d.fetches,'ERR '+s+' '+e);throw e})}}})();"
+            controller.addUserScript(WKUserScript(source: diag, injectionTime: .atDocumentStart, forMainFrameOnly: true))
+        }
+
         let web = WKWebView(frame: .zero, configuration: config)
         web.navigationDelegate = self
         web.uiDelegate = self
@@ -86,6 +95,10 @@ final class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate
             web.topAnchor.constraint(equalTo: view.topAnchor), web.bottomAnchor.constraint(equalTo: view.bottomAnchor),
         ])
         webView = web
+    }
+
+    private var diagnosticsEnabled: Bool {
+        (Bundle.main.object(forInfoDictionaryKey: "NSoundDiagnostics") as? Bool) ?? true
     }
 
     private var injectExperimentalFlags: Bool {
@@ -152,7 +165,27 @@ final class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate
         }
     }
     override func motionEnded(_ motion: UIEvent.EventSubtype, with event: UIEvent?) {
-        if motion == .motionShake { askForAddress(message: "Cambiar la dirección de NSound.") }
+        guard motion == .motionShake, presentedViewController == nil else { return }
+        let menu = UIAlertController(title: "NSound", message: nil, preferredStyle: .alert)
+        menu.addAction(UIAlertAction(title: "Cambiar dirección", style: .default) { [weak self] _ in self?.askForAddress(message: "Cambiar la dirección de NSound.") })
+        menu.addAction(UIAlertAction(title: "Ver diagnóstico", style: .default) { [weak self] _ in self?.showDiagnostics() })
+        menu.addAction(UIAlertAction(title: "Recargar", style: .default) { [weak self] _ in if let url = self?.startURL { self?.load(url) } })
+        menu.addAction(UIAlertAction(title: "Cancelar", style: .cancel))
+        present(menu, animated: true)
+    }
+
+    /// Resumen para depurar sin Mac: página, errores, peticiones, estado del modo experimental y del puente.
+    private func showDiagnostics() {
+        let js = "JSON.stringify({url:location.href,cookie:document.cookie.length>0,platform:(window.LS&&LS.Native&&LS.Native.platform)||null,flags:[window.NSOUND_WRAPPER?1:0,window.ENABLE_EXPERIMENTAL_PLAYER?1:0,window.__LS_ENGINES__?1:0],yt:!!(window.YT&&YT.Player),"
+            + "diag:window.__nsoundDiag||null,exp:(window.NSoundExperimental&&NSoundExperimental.debug)?NSoundExperimental.debug():null,bridge:!!window.NSoundNativeBridge})"
+        webView.evaluateJavaScript(js) { [weak self] result, error in
+            var text = (result as? String) ?? "Sin respuesta de la página: \(error?.localizedDescription ?? "la web no cargó")"
+            if text.count > 1800 { text = String(text.prefix(1800)) + "…" }
+            let alert = UIAlertController(title: "Diagnóstico", message: text, preferredStyle: .alert)
+            alert.addAction(UIAlertAction(title: "Copiar", style: .default) { _ in UIPasteboard.general.string = text })
+            alert.addAction(UIAlertAction(title: "Cerrar", style: .cancel))
+            self?.present(alert, animated: true)
+        }
     }
 
     // MARK: - Ciclo de vida (lo llama SceneDelegate)
