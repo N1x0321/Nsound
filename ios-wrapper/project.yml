@@ -16,6 +16,8 @@ targets:
     sources:
       - path: NSoundWrapper
         excludes: ["Info.plist"]
+      - path: ../app/src/eq.js          # el mismo script que usa la app de iPhone actual (mantiene a YouTube sonando en segundo plano)
+        buildPhase: resources
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: org.nsound.wrapper

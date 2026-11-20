@@ -73,6 +73,11 @@ final class ViewController: UIViewController, WKNavigationDelegate, WKUIDelegate
             controller.addUserScript(WKUserScript(source: js, injectionTime: .atDocumentStart, forMainFrameOnly: true))
         }
 
+        // Segundo plano: eq.js (el mismo de la app de iPhone actual) se inyecta en TODOS los marcos y, en el de YouTube, le dice al reproductor que la
+        // página sigue «visible» y descarta los avisos de visibilidad. Sin esto YouTube se pausa solo al salir de la app o bloquear.
+        if let eqURL = Bundle.main.url(forResource: "eq", withExtension: "js"), let eqJS = try? String(contentsOf: eqURL, encoding: .utf8) {
+            controller.addUserScript(WKUserScript(source: eqJS, injectionTime: .atDocumentStart, forMainFrameOnly: false))
+        }
         if diagnosticsEnabled {
             // Solo observa (no cambia nada): guarda errores de la página y el estado de sus peticiones para «Ver diagnóstico» (agitar el teléfono)
             let diag = "(function(){var d=window.__nsoundDiag={errors:[],fetches:[]};var push=function(a,v){a.push(v);if(a.length>25)a.shift()};"

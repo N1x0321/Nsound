@@ -122,6 +122,12 @@ test('resume (ráfagas del contenedor): solo reanuda si debía sonar y no la pau
   const a = setup({ commandTarget: 'app' }); a.b.start(); a.b.handle({ cmd: 'resume' });
   assert.deepEqual(a.env.events, [{ type: 'remote', cmd: 'resume' }]);
 });
+test('ios-wrapper: eq.js se inyecta en todos los marcos (sin él YouTube se pausa al pasar a segundo plano)', () => {
+  const vc = read('NSoundWrapper/ViewController.swift');
+  assert.match(vc, /forResource: "eq", withExtension: "js"[\s\S]*?forMainFrameOnly: false/);
+  assert.match(read('project.yml'), /\.\.\/app\/src\/eq\.js/);
+  assert.match(readFileSync(new URL('../src/eq.js', import.meta.url), 'utf8'), /fixed\(Document\.prototype, 'visibilityState', 'visible'\)/);
+});
 test('ios-wrapper: ráfagas de reanudación y sin audio de mantenimiento web dentro del contenedor', () => {
   const vc = read('NSoundWrapper/ViewController.swift');
   assert.match(vc, /resumeBursts/); assert.match(vc, /\[0\.1, 0\.25, 0\.4, 0\.6, 0\.9, 1\.3, 2\.0, 3\.0, 5\.0\]/);
