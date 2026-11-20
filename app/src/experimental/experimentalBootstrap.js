@@ -191,8 +191,11 @@
   NS.create = function (opts) {
     if (!NS.enabled()) return null;
     opts = opts || {};
+    let raw = opts.storage; if (!raw) { try { raw = root.localStorage; } catch (e) { raw = null; } }
+    if (!raw) return null;
+    if (opts.migrated !== true && !NS.migrate(raw)) return null;            // Fase 13: copia de seguridad antes de inicializar nada
     const player = new NS.PlayerManager({ container: opts.container || cfg().CONTAINER_ID, volume: opts.volume });
-    const state = new NS.StateManager({ player, storage: opts.storage });
+    const state = new NS.StateManager({ player, storage: NS.createSafeStorage(raw) });   // con candado: solo escribe «nsound_experimental_*»
     const network = new NS.NetworkManager({ player, state });
     const media = new NS.MediaSessionManager({ player });
     const owned = opts.appOwnsQueue === true;       // integrado: la app manda en cola y Media Session; aquí no se restaura ni se reanuda nada por su cuenta
@@ -205,12 +208,29 @@
     };
   };
 
+  /** Copia de seguridad + migración del estado experimental. Devuelve true si se puede seguir; si no, el modo experimental no arranca. */
+  NS.migrate = function (storage) {
+    let st = storage; if (!st) { try { st = root.localStorage; } catch (e) { st = null; } }
+    const res = new NS.Migration({ storage: st }).run();
+    NS.lastMigration = res;
+    return !!res.ok;
+  };
+
+  /** Registros de todos los gestores para depurar (en iOS: consola de Safari → NSoundExperimental.debug()). */
+  NS.debug = function () {
+    const i = NS.instance; if (!i || !i.controller) return { running: false, migration: NS.lastMigration || null };
+    const c = i.controller;
+    return { running: true, migration: NS.lastMigration, version: c.update.current, player: { state: c.player.state, wantPlay: c.player.wantPlay, queue: c.player.queue.length, time: c.player.getTime() },
+      network: c.network.getLog(), ios: c.ios.getLog(), update: c.update.getLog(), pwa: i.pwa };
+  };
+
   /** Arranque completo. Idempotente. Con el modo apagado devuelve null sin tocar nada. */
   NS.bootstrap = function () {
     if (!NS.enabled()) return null;
     if (NS.instance) return NS.instance;
     const doc = root.document, LS = root.LS;
     if (!doc || !doc.body) return null;
+    if (!NS.migrate()) return null;                                         // sin copia de seguridad no se arranca nada
     const out = { pwa: [], engine: null, controller: null, perf: null };
     NS.instance = out;
     try { out.pwa = injectPwa(doc); } catch (e) { out.pwa = []; }
@@ -224,7 +244,7 @@
       box = doc.createElement('div'); box.id = cfg().CONTAINER_ID; wrap.appendChild(box); doc.body.appendChild(wrap);
     }
     const facade = LS && LS.engines && LS.engines.current;
-    out.controller = NS.create({ container: cfg().CONTAINER_ID, appOwnsQueue: !!facade });
+    out.controller = NS.create({ container: cfg().CONTAINER_ID, appOwnsQueue: !!facade, migrated: true });
     if (facade) {                                                           // modo motores: se coloca delante del reproductor actual solo para música
       const Engine = makeEngineClass(LS);
       out.engine = new Engine(out.controller.player, { facade, perf: out.perf });

@@ -9,7 +9,7 @@ const require = createRequire(import.meta.url);
 
 // Sin document al cargar: así el arranque automático no se dispara y se prueba a mano
 require('../src/js/03-router.js');
-for (const f of ['config', 'playerManager', 'stateManager', 'networkManager', 'mediaSession', 'iosManager', 'updateManager', 'experimentalBootstrap']) require(`../src/experimental/${f}.js`);
+for (const f of ['config', 'migration', 'playerManager', 'stateManager', 'networkManager', 'mediaSession', 'iosManager', 'updateManager', 'experimentalBootstrap']) require(`../src/experimental/${f}.js`);
 const NS = globalThis.NSoundExperimental, LS = globalThis.LS;
 
 // ---- DOM mínimo ----
@@ -112,6 +112,7 @@ test('rendimiento: lazy loading por lotes, precarga acotada, pausa con página o
 // ---- Fase 12: intercepta solo la música ----
 async function boot() {
   globalThis.ENABLE_EXPERIMENTAL_PLAYER = true; NS.instance = null;
+  const d = new Map(); globalThis.localStorage = { get length() { return d.size; }, key: (i) => [...d.keys()][i] ?? null, getItem: (k) => (d.has(k) ? d.get(k) : null), setItem: (k, v) => d.set(k, String(v)), removeItem: (k) => d.delete(k) };
   const doc = fakeDom(); globalThis.document = doc;
   const m = mockYT(); globalThis.YT = m.YT;
   const raw = fakeRaw(); const facade = LS.engines.wrap(raw);

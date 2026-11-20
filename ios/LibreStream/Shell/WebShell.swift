@@ -61,6 +61,8 @@ final class ShellCoordinator: NSObject, WKScriptMessageHandlerWithReply, WKURLSc
         let web = WKWebView(frame: .zero, configuration: config)
         web.navigationDelegate = self
         web.uiDelegate = self
+        // EXPERIMENTO: solo la app de pruebas se puede inspeccionar desde Safari (Develop → iPhone) para depurar
+        if #available(iOS 16.4, *), Bundle.main.bundleIdentifier?.hasSuffix(".motores") == true { web.isInspectable = true }
         web.isOpaque = false
         web.backgroundColor = UIColor(red: 0.07, green: 0.07, blue: 0.08, alpha: 1)
         web.scrollView.backgroundColor = web.backgroundColor
