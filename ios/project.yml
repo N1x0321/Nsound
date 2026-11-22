@@ -33,6 +33,8 @@ targets:
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         UILaunchScreen: {}
         UIBackgroundModes: [audio]
+        UIFileSharingEnabled: true          # diagnóstico: Archivos > En mi iPhone > Nsound > nativo-tiempos.log
+        LSSupportsOpeningDocumentsInPlace: true
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
         LSCatalogURL: https://n1x0321.github.io/Nsound/catalog.json
   LibreStreamTests:

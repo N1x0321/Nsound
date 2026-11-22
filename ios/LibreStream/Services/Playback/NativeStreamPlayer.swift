@@ -41,6 +41,23 @@ final class NativeStreamPlayer: NSObject {
     private var artwork: MPMediaItemArtwork?
     private var artworkTask: URLSessionDataTask?
 
+    // MARK: - Registro de tiempos (diagnóstico del hueco entre pistas)
+    private let t0 = CACurrentMediaTime()
+    private var endedAt: Double?
+    private var itemBorn: [ObjectIdentifier: Double] = [:]
+    private var itemObs: [ObjectIdentifier: NSKeyValueObservation] = [:]
+    private static let logURL: URL? = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?.appendingPathComponent("nativo-tiempos.log")
+    private func ms() -> Double { ((CACurrentMediaTime() - t0) * 1000).rounded() }
+    /// Una línea por suceso: «[ms desde el arranque] texto». Sale por NSLog (Consola del Mac) y se guarda en Documentos/nativo-tiempos.log.
+    private func log(_ text: String) {
+        let line = "[\(Int(ms()))ms] \(text)"
+        NSLog("NSOUND-NATIVO %@", line)
+        guard let url = NativeStreamPlayer.logURL, let data = (line + "
+").data(using: .utf8) else { return }
+        if let h = try? FileHandle(forWritingTo: url) { h.seekToEndOfFile(); h.write(data); try? h.close() }
+        else { try? data.write(to: url) }
+    }
+
     override init() {
         super.init()
         player.automaticallyWaitsToMinimizeStalling = true
@@ -55,6 +72,7 @@ final class NativeStreamPlayer: NSObject {
         self.tracks = tracks
         self.index = index
         self.repeatMode = ["off", "all", "one"].contains(repeatMode) ? repeatMode : "off"
+        log("LOAD pistas=\(tracks.count) index=\(index) pos=\(position) repeat=\(self.repeatMode)")
         activateSession()
         configureCommands()
         observe()
@@ -108,6 +126,7 @@ final class NativeStreamPlayer: NSObject {
         player.pause()
         player.removeAllItems()
         queued.removeAll()
+        itemObs.removeAll(); itemBorn.removeAll()
         rebuilding = false
         isActive = false
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
@@ -142,6 +161,7 @@ final class NativeStreamPlayer: NSObject {
         player.pause()
         player.removeAllItems()
         queued.removeAll()
+        itemObs.removeAll(); itemBorn.removeAll()
         append(index)
         player.actionAtItemEnd = repeatMode == "one" ? .none : .advance
         if position > 0 {
@@ -163,6 +183,17 @@ final class NativeStreamPlayer: NSObject {
         let item = AVPlayerItem(asset: asset)
         item.preferredForwardBufferDuration = 30
         queued.append((item: item, index: i))
+        let key = ObjectIdentifier(item)
+        itemBorn[key] = ms()
+        log("COLA pista=\(i) «\(tracks[i].title)» encolada")
+        itemObs[key] = item.observe(\.status, options: [.new]) { [weak self] it, _ in
+            DispatchQueue.main.async {
+                guard let self = self else { return }
+                let born = self.itemBorn[key] ?? self.ms()
+                let name = it.status == .readyToPlay ? "LISTA" : (it.status == .failed ? "FALLO \(it.error?.localizedDescription ?? "")" : "?")
+                self.log("ITEM \(name) tras \(Int(self.ms() - born))ms desde encolada")
+            }
+        }
         player.insert(item, after: nil)
     }
 
@@ -196,15 +227,24 @@ final class NativeStreamPlayer: NSObject {
             let handle: () -> Void = { self?.currentItemChanged() }
             if Thread.isMainThread { handle() } else { DispatchQueue.main.async(execute: handle) }
         }
-        statusObservation = player.observe(\.timeControlStatus, options: [.new]) { [weak self] _, _ in
+        statusObservation = player.observe(\.timeControlStatus, options: [.new]) { [weak self] p, _ in
             DispatchQueue.main.async {
+                let st = p.timeControlStatus == .playing ? "SONANDO" : (p.timeControlStatus == .paused ? "PAUSA" : "ESPERANDO(\(p.reasonForWaitingToPlay?.rawValue ?? "?"))")
+                var extra = ""
+                if p.timeControlStatus == .playing, let e = self?.endedAt, let n = self?.ms() { extra = "  ← HUECO desde fin de pista anterior: \(Int(n - e))ms"; self?.endedAt = nil }
+                self?.log("ESTADO \(st)\(extra)")
                 self?.updateNowPlaying()
                 self?.emitState()
             }
         }
         let nc = NotificationCenter.default
         notifications.append(nc.addObserver(forName: .AVPlayerItemDidPlayToEndTime, object: nil, queue: .main) { [weak self] note in
+            self?.endedAt = self?.ms()
+            self?.log("FIN de pista (DidPlayToEnd)")
             self?.itemEnded(note.object as? AVPlayerItem)
+        })
+        notifications.append(nc.addObserver(forName: .AVPlayerItemPlaybackStalled, object: nil, queue: .main) { [weak self] _ in
+            self?.log("ATASCO (PlaybackStalled): se quedó sin datos")
         })
         notifications.append(nc.addObserver(forName: .AVPlayerItemFailedToPlayToEndTime, object: nil, queue: .main) { [weak self] note in
             guard let self = self, let item = note.object as? AVPlayerItem, self.queued.contains(where: { $0.item === item }) else { return }
@@ -240,6 +280,9 @@ final class NativeStreamPlayer: NSObject {
             return
         }
         guard let entry = queued.first(where: { $0.item === item }) else { return }
+        let ready = item.status == .readyToPlay
+        let buf = item.loadedTimeRanges.first.map { Int(CMTimeGetSeconds($0.timeRangeValue.duration)) } ?? 0
+        log("CAMBIO de pista → \(entry.index) lista=\(ready) búfer=\(buf)s")
         let alive = player.items()
         queued = queued.filter { q in alive.contains(where: { $0 === q.item }) }
         if entry.index != index {
@@ -260,6 +303,7 @@ final class NativeStreamPlayer: NSObject {
     }
 
     private func failed(_ message: String) {
+        log("ERROR \(message)")
         onEvent?(["type": "nativeError", "message": message, "index": index])
     }
 
