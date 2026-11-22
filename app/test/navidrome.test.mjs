@@ -7,6 +7,10 @@ import { createServer } from 'node:http';
 import { spawn } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 const require = createRequire(import.meta.url);
+// Puente nativo simulado (03-player.js se engancha a LS.Native al cargarse)
+const nativeListeners = [], nativeCalls = [];
+globalThis.LS = globalThis.LS || {};
+globalThis.LS.Native = { platform: 'web', call: async (name, payload) => { nativeCalls.push([name, payload]); return 'ok'; }, onEvent: (f) => nativeListeners.push(f) };
 {   // 03-player.js toca window/document al cargarse; se simulan y su intervalo no debe mantener vivo el proceso
   const si = globalThis.setInterval; globalThis.setInterval = (f, ms) => { const t = si(f, ms); if (t && t.unref) t.unref(); return t; };
   globalThis.window = globalThis.window || { addEventListener() {} }; globalThis.location = globalThis.location || { origin: 'null' };
@@ -206,4 +210,57 @@ test('interfaz: «Mi servidor» solo existe con LS.enginesEnabled y el audio pro
   assert.match(a, /e\.code === '40' \|\| e\.code === '41'/);
   assert.match(t, /<audio id="audio5" playsinline preload="auto" hidden><\/audio>/); assert.match(p, /useAudio = item\.src === 'nd'/);
   assert.ok(!a.includes('password') || !/setItem\([^)]*pass/i.test(a), 'la contraseña no se guarda');
+});
+
+// ---------- reproductor NATIVO (AVQueuePlayer) para el audio propio ----------
+test('nativo: con los motores encendidos en iPhone la lista de «nd» se entrega al reproductor nativo y el WebView no reproduce nada', async () => {
+  const mkEl = (id) => { const l = {}; return { id, src: '', volume: 1, plays: 0, pauses: 0, addEventListener: (e, f) => (l[e] = l[e] || []).push(f), pause() { this.pauses++; }, play() { this.plays++; return Promise.resolve(); }, removeAttribute(k) { if (k === 'src') this.src = ''; } }; };
+  const els = { html5: mkEl('html5'), audio5: mkEl('audio5') };
+  globalThis.document = { hidden: true, getElementById: (i) => els[i] || null, querySelector: () => null };
+  const ev = []; LS.Player.on('state', (s) => ev.push(['state', s.playing, s.time, s.duration])); LS.Player.on('ended', () => ev.push(['ended'])); LS.Player.on('error', (e) => ev.push(['error', e.code, e.message]));
+  const run = { tracks: [{ id: '1', url: 'https://app.test/__nd/rest/stream?id=1&lk=F' }, { id: '2', url: 'https://app.test/__nd/rest/stream?id=2&lk=F' }], index: 0, repeat: 'all' };
+  const fire = (e) => nativeListeners.forEach((f) => f(e));
+  LS.enginesEnabled = true; LS.Native.platform = 'ios'; nativeCalls.length = 0;
+  try {
+    LS.Player.init();
+    await LS.Player.load({ src: 'nd', id: '1', url: run.tracks[0].url, duration: 10 }, { audioOnly: false, native: run });
+    assert.equal(LS.Player.mode(), 'native');
+    assert.deepEqual(nativeCalls.at(-1), ['nativeLoad', { tracks: run.tracks, index: 0, repeat: 'all', position: 0, autoplay: true }]);
+    assert.equal(els.audio5.plays + els.html5.plays, 0, 'el WebView no reproduce');
+    LS.Player.play(); LS.Player.pause(); LS.Player.seek(30);
+    assert.deepEqual(nativeCalls.slice(-3), [['nativePlay', {}], ['nativePause', {}], ['nativeSeek', { position: 30 }]]);
+    fire({ type: 'nativeState', playing: true, time: 5, duration: 200 });
+    assert.deepEqual(ev.filter((e) => e[0] === 'state').at(-1), ['state', true, 5, 200]); assert.equal(LS.Player.state().duration, 200);
+    fire({ type: 'nativeTrack', index: 1 }); assert.deepEqual(ev.filter((e) => e[0] === 'state').at(-1), ['state', true, 0, 200]);
+    fire({ type: 'nativeError', message: 'sin red' }); assert.deepEqual(ev.at(-1), ['error', 'media', 'sin red']);
+    fire({ type: 'nativeEnded' }); assert.deepEqual(ev.at(-1), ['ended']);
+    // pasar a otra cosa calla al nativo; y los eventos nativos que lleguen después se ignoran
+    nativeCalls.length = 0; await LS.Player.load({ src: 'cat', id: 'c', url: 'https://x/v.mp4' }, {});
+    assert.deepEqual(nativeCalls, [['nativeStop', {}]]); assert.equal(els.html5.src, 'https://x/v.mp4');
+    const n = ev.length; fire({ type: 'nativeEnded' }); fire({ type: 'nativeState', playing: true, time: 1, duration: 1 }); assert.equal(ev.length, n);
+    // sin lista nativa (o sin ser iPhone, o con los motores apagados) el audio propio suena por el <audio> del WebView, como antes
+    nativeCalls.length = 0; await LS.Player.load({ src: 'nd', id: '3', url: 'https://x/c.mp3' }, {}); assert.equal(els.audio5.src, 'https://x/c.mp3'); assert.deepEqual(nativeCalls, []);
+    LS.Native.platform = 'web'; await LS.Player.load({ src: 'nd', id: '4', url: 'https://x/d.mp3' }, { native: run }); assert.equal(els.audio5.src, 'https://x/d.mp3'); assert.equal(nativeCalls.length, 0);
+    LS.Native.platform = 'ios'; LS.enginesEnabled = false; await LS.Player.load({ src: 'nd', id: '5', url: 'https://x/e.mp3' }, { native: run }); assert.equal(els.audio5.src, 'https://x/e.mp3'); assert.equal(nativeCalls.length, 0);
+  } finally { LS.enginesEnabled = false; LS.Native.platform = 'web'; }
+});
+test('nativo (Swift): AVQueuePlayer + AVAudioSession(.playback) + MPRemoteCommandCenter + MPNowPlayingInfoCenter + audio en segundo plano, sin guardar audio en disco', () => {
+  const n = read('ios/LibreStream/Services/Playback/NativeStreamPlayer.swift'), w = read('ios/LibreStream/Shell/WebShell.swift'), y = read('ios/project.yml');
+  for (const k of ['AVQueuePlayer()', 'setCategory(.playback, mode: .default)', 'setActive(true)', 'MPRemoteCommandCenter.shared()', 'MPNowPlayingInfoCenter.default().nowPlayingInfo',
+    'playCommand', 'pauseCommand', 'togglePlayPauseCommand', 'nextTrackCommand', 'previousTrackCommand', 'changePlaybackPositionCommand', 'AVAudioSession.interruptionNotification', 'oldDeviceUnavailable',
+    'MPNowPlayingInfoPropertyElapsedPlaybackTime', 'MPMediaItemPropertyArtwork', 'AVPlayerItemDidPlayToEndTime']) assert.ok(n.includes(k), k);
+  assert.match(y, /UIBackgroundModes: \[audio\]/);
+  assert.doesNotMatch(n, /FileManager|write\(to|\.download|AVAssetDownload|AVAssetExportSession/, 'no guarda audio en disco');
+  for (const c of ['nativeLoad', 'nativePlay', 'nativePause', 'nativeSeek', 'nativeRepeat', 'nativeStop']) assert.ok(w.includes(`case "${c}":`), c);
+  assert.match(w, /url\.host == host/); assert.match(w, /url\.path\.hasPrefix\("\/__nd\/rest\/stream"\)/); assert.match(w, /u\.path\.hasPrefix\("\/__nd\/rest\/getCoverArt"\)/);
+  assert.equal((w.match(/if nativePlayer\.isActive \{ replyHandler\("ok", nil\); return \}/g) || []).length, 3, 'mientras suena el nativo, la pantalla de bloqueo no la pisa la interfaz');
+  assert.match(w, /nativePlayer\.onEvent = \{ \[weak self\] event in self\?\.sendEvent\(event\) \}/);
+  assert.match(n, /\["type": "nativeTrack", "index": index\]/); assert.match(n, /\["type": "nativeEnded"\]/); assert.match(n, /\["type": "remote", "cmd": "pause"\]/);
+});
+test('nativo (interfaz): solo con motores en iPhone, sin barajar, con la cola de tu servidor; los cambios de pista del nativo ponen al día la pantalla', () => {
+  const a = read('app/src/js/04-app.js');
+  assert.match(a, /if \(LS\.enginesEnabled && it\.src === 'nd' && Native\.platform === 'ios' && !S\.shuffle\) \{ const run = nativeRun\(\);/);
+  assert.match(a, /function nativeRun\(\) \{\s*if \(!ndClient \|\| !S\.queue\.length\) return null;/);
+  assert.match(a, /Native\.onEvent\(\(e\) => \{ if \(e && e\.type === 'nativeTrack' && typeof e\.index === 'number'\) adoptIndex\(\(S\.nativeBase \|\| 0\) \+ e\.index\); \}\);/);
+  assert.match(a, /Native\.call\('nativeRepeat'/);
 });

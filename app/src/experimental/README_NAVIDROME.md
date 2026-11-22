@@ -34,6 +34,19 @@ Solo aparece en la app «Motores» (`__LS_ENGINES__`): Android, Windows, la web 
    Si Navidrome está en otro equipo o en internet, `ND_URL` es su dirección (`https://musica.tudominio.com`).
 3. En el iPhone, abre Nsound Motores → **Mi servidor** → usuario y contraseña de Navidrome.
 
+## Reproductor nativo en la app de iPhone (AVQueuePlayer)
+En la app «Nsound Motores» el audio de «Mi servidor» **no suena dentro del WebView**: lo reproduce el propio iOS con `AVQueuePlayer`
+(`ios/LibreStream/Services/Playback/NativeStreamPlayer.swift`), con `AVAudioSession(.playback)`, `MPRemoteCommandCenter` (play, pausa, siguiente, anterior y barra de tiempo),
+`MPNowPlayingInfoCenter` (pantalla de bloqueo con título, artista, carátula y tiempo) y «Audio en segundo plano» (`UIBackgroundModes: audio`).
+Así no depende de la página ni de ningún iframe: iOS no lo pausa al bloquear o cambiar de app.
+- La interfaz entrega la lista de pistas (toda la cola si es solo de tu servidor; si hay mezcla, el tramo hasta la primera pista de otro origen) y el nativo **avanza solo**, con la siguiente ya cargada.
+- El nativo solo acepta direcciones `/__nd/rest/stream` del mismo servidor que la página (y carátulas `/__nd/rest/getCoverArt`); no guarda audio en disco.
+- Los botones de la pantalla de bloqueo los atiende el nativo (también con la página dormida) y avisa a la interfaz (pausa del usuario, cambio de pista).
+- Con «Aleatorio» activado, o fuera de la app de iPhone (navegador, `ios-wrapper/`), las pistas suenan por `<audio id="audio5">` en el WebView, como se explica abajo.
+- Hace falta que la dirección del servidor de Nsound sea **https** (túnel o Render): iOS bloquea `http` en reproducción nativa.
+- Si cambias la cola mientras suena el tramo nativo, el cambio se aplica al empezar el siguiente tramo (la lista que está sonando no se reordena).
+- **No verificado en un iPhone**: el código Swift solo se ha compilado en CI.
+
 ## Cómo funciona (y por qué así)
 - **Puente `/__nd`:** Navidrome no envía cabeceras CORS, así que el navegador no puede llamarlo directamente. El servidor de Nsound lo reenvía en `/__nd/rest/<endpoint>`:
   solo **GET/HEAD**, solo una **lista cerrada** de endpoints (`ping`, `search3`, `getAlbumList2`, `getAlbum`, `getArtists`, `getArtist`, `getRandomSongs`, `getPlaylists`, `getPlaylist`, `getSong`, `stream`, `getCoverArt`), con `Range` para saltar en la pista.

@@ -8,12 +8,24 @@ var LS = globalThis.LS = globalThis.LS || {};
   const emit = (evt, data) => (subs[evt] || []).forEach((fn) => { try { fn(data); } catch (e) { console.error(e); } });
 
   let yt = null, ytReady = false, ytLoading = null, pendingId = null;
-  let mode = null;                     // 'yt' | 'html5' | null
+  let mode = null;                     // 'yt' | 'html5' | 'native' | null  (native: suena el reproductor nativo de la app de iPhone «Motores», AVQueuePlayer)
   let volume = 80;
   let eq = { gains: new Array(10).fill(0), on: false };
   const st = { playing: false, time: 0, duration: 0 };
   // El audio de tu propio servidor (src «nd») suena por un <audio> de verdad (iOS lo trata como sesión de audio pura); el resto, por el <video id="html5"> de siempre
   let useAudio = false;
+  // Reproductor nativo (solo app de iPhone «Motores»): el audio propio lo reproduce AVQueuePlayer, fuera del WebView
+  const nativeOn = () => !!(LS.enginesEnabled && LS.Native && LS.Native.platform === 'ios');
+  const ncall = (name, payload) => { try { const p = LS.Native.call(name, payload || {}); if (p && typeof p.catch === 'function') p.catch(() => {}); } catch (e) { /* sin puente nativo */ } };
+  if (LS.Native && typeof LS.Native.onEvent === 'function') {
+    LS.Native.onEvent((e) => {
+      if (!e || mode !== 'native') return;
+      if (e.type === 'nativeState') setState({ playing: !!e.playing, time: Number(e.time) || 0, duration: Number(e.duration) > 0 ? Number(e.duration) : st.duration });
+      else if (e.type === 'nativeTrack') setState({ time: 0, playing: true });
+      else if (e.type === 'nativeEnded') { setState({ playing: false }); emit('ended'); }
+      else if (e.type === 'nativeError') emit('error', { code: 'media', message: e.message });
+    });
+  }
   const media = () => document.getElementById(useAudio ? 'audio5' : 'html5');
   const allMedia = () => ['html5', 'audio5'].map((i) => document.getElementById(i)).filter(Boolean);
 
@@ -122,6 +134,8 @@ var LS = globalThis.LS = globalThis.LS || {};
     async load(item, opts) {
       const audioOnly = !!(opts && opts.audioOnly);
       st.time = 0; st.duration = item.duration || 0; st.playing = true;
+      const nat = item.src === 'nd' && nativeOn() && opts && opts.native && Array.isArray(opts.native.tracks) && opts.native.tracks.length > 0;
+      if (mode === 'native' && !nat) ncall('nativeStop');                  // se pasa a otra cosa: el reproductor nativo calla
       if (item.src === 'yt') {
         allMedia().forEach((x) => { x.pause(); x.removeAttribute('src'); });
         mode = 'yt';
@@ -133,6 +147,12 @@ var LS = globalThis.LS = globalThis.LS || {};
         if (ytReady) yt.loadVideoById({ videoId: item.id, suggestedQuality: quality }); else pendingId = item.id;
         if (ytReady && typeof yt.setPlaybackQuality === 'function') yt.setPlaybackQuality(quality);
         postEq();
+      } else if (nat) {
+        if (yt && ytReady && typeof yt.stopVideo === 'function') yt.stopVideo();
+        allMedia().forEach((x) => { x.pause(); x.removeAttribute('src'); });
+        mode = 'native';
+        setState({});
+        ncall('nativeLoad', { tracks: opts.native.tracks, index: opts.native.index || 0, repeat: opts.native.repeat || 'off', position: 0, autoplay: true });
       } else {
         if (yt && ytReady && typeof yt.stopVideo === 'function') yt.stopVideo();
         mode = 'html5';
@@ -145,11 +165,12 @@ var LS = globalThis.LS = globalThis.LS || {};
       }
     },
 
-    play() { if (mode === 'yt' && ytReady) yt.playVideo(); else if (mode === 'html5') media().play(); },
-    pause() { if (mode === 'yt' && ytReady) yt.pauseVideo(); else if (mode === 'html5') media().pause(); },
+    play() { if (mode === 'native') ncall('nativePlay'); else if (mode === 'yt' && ytReady) yt.playVideo(); else if (mode === 'html5') media().play(); },
+    pause() { if (mode === 'native') ncall('nativePause'); else if (mode === 'yt' && ytReady) yt.pauseVideo(); else if (mode === 'html5') media().pause(); },
     toggle() { st.playing ? LS.Player.pause() : LS.Player.play(); },
     seek(t) {
-      if (mode === 'yt' && ytReady) yt.seekTo(t, true);
+      if (mode === 'native') ncall('nativeSeek', { position: t });
+      else if (mode === 'yt' && ytReady) yt.seekTo(t, true);
       else if (mode === 'html5') media().currentTime = t;
       setState({ time: t });
     },

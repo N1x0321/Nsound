@@ -829,6 +829,7 @@
     S.now = it; S.time = 0; S.duration = it.duration || 0; S.lyrics = null; S.lyricsFor = ''; S.lyricIndex = -1;
     const loadOpts = { audioOnly: S.audioOnly };
     if (LS.enginesEnabled) loadOpts.queue = { items: S.queue, index: S.index, repeat: S.repeat, shuffle: S.shuffle };   // el motor experimental puede llevar la cola entera
+    if (LS.enginesEnabled && it.src === 'nd' && Native.platform === 'ios' && !S.shuffle) { const run = nativeRun(); if (run) { loadOpts.native = run; S.nativeBase = run.base; } }
     Player.load(resolveLocal(it), loadOpts);
     prepareNext();
     if (S.audioOnly || it.src === 'nd') showVideo(false); else setVideoMode(videoMode() === 'pip' ? 'pip' : 'full');
@@ -846,6 +847,23 @@
     const n = r.index >= 0 && r.index !== S.index ? S.queue[r.index] : null;
     if (n) Player.prepare(resolveLocal(n), { audioOnly: S.audioOnly });
   }
+  // ---- Audio propio por el reproductor NATIVO (AVQueuePlayer): la lista de pistas «nd» se le entrega entera y él avanza solo, también en segundo plano ----
+  const absUrl = (u) => { try { return new URL(u, location.href).href; } catch (e) { return ''; } };
+  function nativeTrackOf(it) {
+    if (!it || !it.url) return null;
+    return { id: it.id, url: absUrl(it.url), title: it.title, artist: it.artist || '', album: String(it.sub || '').split(' · ')[1] || '', artwork: it.thumb ? absUrl(it.thumb) : '', duration: it.duration || 0 };
+  }
+  /** Tramo de la cola que lleva el nativo: toda la cola si es solo de tu servidor, y si hay mezcla, desde la actual hasta la primera pista de otro origen. */
+  function nativeRun() {
+    if (!ndClient || !S.queue.length) return null;
+    const allNd = S.queue.every((q) => q.src === 'nd');
+    const from = allNd ? 0 : S.index, tracks = [];
+    for (let i = from; i < S.queue.length && S.queue[i].src === 'nd'; i++) tracks.push(nativeTrackOf(resolveLocal(S.queue[i])));
+    if (!tracks.length || tracks.some((t) => !t)) return null;
+    return { tracks, index: S.index - from, base: from, repeat: allNd ? S.repeat : (S.repeat === 'one' ? 'one' : 'off') };   // con mezcla, el «repetir lista» lo hace la app al acabar el tramo
+  }
+  Native.onEvent((e) => { if (e && e.type === 'nativeTrack' && typeof e.index === 'number') adoptIndex((S.nativeBase || 0) + e.index); });   // el nativo pasó solo a otra pista
+
   function syncExpQueue() {
     if (LS.enginesEnabled && typeof Player.syncQueue === 'function') Player.syncQueue({ items: S.queue, index: S.index, repeat: S.repeat, shuffle: S.shuffle });
   }
@@ -892,7 +910,7 @@
     for (const id of ['#npShuffle', '#shuffleBtn']) { const b = $(id); if (!b) continue; b.classList.toggle('on', S.shuffle); b.setAttribute('aria-pressed', String(S.shuffle)); b.setAttribute('aria-label', S.shuffle ? 'Aleatorio: activado' : 'Aleatorio: desactivado'); b.title = b.getAttribute('aria-label'); }
   }
   function toggleRepeat() {
-    S.repeat = LS.nextRepeat(S.repeat); store.settings.set({ repeat: S.repeat }); paintModes(); syncExpQueue();
+    S.repeat = LS.nextRepeat(S.repeat); store.settings.set({ repeat: S.repeat }); paintModes(); syncExpQueue(); if (Player.mode && Player.mode() === 'native') Native.call('nativeRepeat', { repeat: S.repeat === 'one' ? 'one' : (S.queue.every((q) => q.src === 'nd') ? S.repeat : 'off') }).catch(() => {});
     toast(S.repeat === 'all' ? 'Repetir la lista' : S.repeat === 'one' ? 'Repetir la canción' : 'Repetición desactivada', 2200);
   }
   function toggleShuffle() {

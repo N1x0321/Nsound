@@ -23,6 +23,8 @@ final class ShellCoordinator: NSObject, WKScriptMessageHandlerWithReply, WKURLSc
 
     private weak var webView: WKWebView?
     private let nowPlaying = NowPlayingBridge()
+    /// Reproductor nativo del audio propio («Mi servidor»): AVQueuePlayer; solo lo usa la app de pruebas «Motores»
+    private let nativePlayer = NativeStreamPlayer()
     private var adList: WKContentRuleList?
     private var adEnabled = true
     private lazy var session = URLSession(configuration: .default, delegate: self, delegateQueue: .main)
@@ -43,6 +45,7 @@ final class ShellCoordinator: NSObject, WKScriptMessageHandlerWithReply, WKURLSc
         config.allowsPictureInPictureMediaPlayback = true
         config.setURLSchemeHandler(self, forURLScheme: "lsmedia")
         nowPlaying.onCommand = { [weak self] command in self?.sendRemote(command) }
+        nativePlayer.onEvent = { [weak self] event in self?.sendEvent(event) }
         observeAudioSession()
 
         let controller = config.userContentController
@@ -140,11 +143,13 @@ final class ShellCoordinator: NSObject, WKScriptMessageHandlerWithReply, WKURLSc
             saveText(text, name: safeName(payload["name"] as? String ?? "nsound.json"))
             replyHandler("ok", nil)
         case "nowPlaying":
+            if nativePlayer.isActive { replyHandler("ok", nil); return }   // suena el reproductor nativo: la pantalla de bloqueo es suya
             nowPlaying.update(title: payload["title"] as? String ?? "", artist: payload["artist"] as? String ?? "",
                               album: payload["album"] as? String ?? "", artwork: payload["artwork"] as? String ?? "",
                               duration: num(payload["duration"]), position: num(payload["position"]), playing: payload["playing"] as? Bool ?? true)
             replyHandler("ok", nil)
         case "nowPlayingHold":
+            if nativePlayer.isActive { replyHandler("ok", nil); return }
             nowPlaying.hold(title: payload["title"] as? String ?? "", artist: payload["artist"] as? String ?? "",
                             album: payload["album"] as? String ?? "", artwork: payload["artwork"] as? String ?? "",
                             duration: num(payload["duration"]), position: num(payload["position"]))
@@ -153,7 +158,36 @@ final class ShellCoordinator: NSObject, WKScriptMessageHandlerWithReply, WKURLSc
             nowPlaying.release()
             replyHandler("ok", nil)
         case "nowPlayingState":
+            if nativePlayer.isActive { replyHandler("ok", nil); return }
             nowPlaying.updateState(position: num(payload["position"]), duration: num(payload["duration"]), playing: payload["playing"] as? Bool ?? false)
+            replyHandler("ok", nil)
+        case "nativeLoad":
+            // Solo la dirección /__nd/rest/stream del propio servidor de Nsound: la interfaz no puede pedir otra
+            guard let list = payload["tracks"] as? [[String: Any]], !list.isEmpty else { replyHandler(nil, "Faltan las pistas"); return }
+            let pageHost = webView?.url?.host
+            var tracks: [NativeStreamPlayer.Track] = []
+            for entry in list {
+                guard let track = nativeTrack(entry, pageHost: pageHost) else { replyHandler(nil, "Pista no válida"); return }
+                tracks.append(track)
+            }
+            nowPlaying.release()
+            nativePlayer.load(tracks: tracks, index: payload["index"] as? Int ?? 0, position: num(payload["position"]),
+                              repeatMode: payload["repeat"] as? String ?? "off", autoplay: payload["autoplay"] as? Bool ?? true)
+            replyHandler("ok", nil)
+        case "nativePlay":
+            nativePlayer.play()
+            replyHandler("ok", nil)
+        case "nativePause":
+            nativePlayer.pause()
+            replyHandler("ok", nil)
+        case "nativeSeek":
+            nativePlayer.seek(to: num(payload["position"]))
+            replyHandler("ok", nil)
+        case "nativeRepeat":
+            nativePlayer.setRepeat(payload["repeat"] as? String ?? "off")
+            replyHandler("ok", nil)
+        case "nativeStop":
+            nativePlayer.stop()
             replyHandler("ok", nil)
         case "playbackState":
             // Solo la app de pruebas «Motores»: la interfaz dice si la música debe seguir sonando (y si el usuario la pausó)
@@ -216,6 +250,26 @@ final class ShellCoordinator: NSObject, WKScriptMessageHandlerWithReply, WKURLSc
     }
 
     private func num(_ value: Any?) -> Double { (value as? NSNumber)?.doubleValue ?? 0 }
+
+    /// Convierte una pista que manda la interfaz en una del reproductor nativo (solo del propio servidor de Nsound).
+    private func nativeTrack(_ t: [String: Any], pageHost: String?) -> NativeStreamPlayer.Track? {
+        guard let host = pageHost, let id = t["id"] as? String, let s = t["url"] as? String, let url = URL(string: s),
+              url.host == host, url.scheme == "https" || url.scheme == "http", url.path.hasPrefix("/__nd/rest/stream") else { return nil }
+        var art: URL?
+        if let a = t["artwork"] as? String, let u = URL(string: a), u.host == host, u.path.hasPrefix("/__nd/rest/getCoverArt") { art = u }
+        return NativeStreamPlayer.Track(id: id, url: url, title: t["title"] as? String ?? "", artist: t["artist"] as? String ?? "",
+                                        album: t["album"] as? String ?? "", artwork: art, duration: num(t["duration"]))
+    }
+
+    /// Estado del reproductor nativo y otros eventos hacia la interfaz.
+    private func sendEvent(_ event: [String: Any]) {
+        guard JSONSerialization.isValidJSONObject(event),
+              let data = try? JSONSerialization.data(withJSONObject: event),
+              let json = String(data: data, encoding: .utf8) else { return }
+        DispatchQueue.main.async { [weak self] in
+            self?.webView?.evaluateJavaScript("window.__nativeEvent && window.__nativeEvent(\(json))")
+        }
+    }
 
     /// Los botones de la pantalla de bloqueo vuelven a la interfaz como eventos nativos.
     private func sendRemote(_ command: [String: Any]) {
