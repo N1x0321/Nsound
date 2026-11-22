@@ -12,7 +12,10 @@ var LS = globalThis.LS = globalThis.LS || {};
   let volume = 80;
   let eq = { gains: new Array(10).fill(0), on: false };
   const st = { playing: false, time: 0, duration: 0 };
-  const media = () => document.getElementById('html5');
+  // El audio de tu propio servidor (src «nd») suena por un <audio> de verdad (iOS lo trata como sesión de audio pura); el resto, por el <video id="html5"> de siempre
+  let useAudio = false;
+  const media = () => document.getElementById(useAudio ? 'audio5' : 'html5');
+  const allMedia = () => ['html5', 'audio5'].map((i) => document.getElementById(i)).filter(Boolean);
 
   function setState(p) {
     Object.assign(st, p);
@@ -79,12 +82,14 @@ var LS = globalThis.LS = globalThis.LS || {};
 
   // ---------- HTML5 ----------
   function bindMedia() {
-    const m = media();
-    m.addEventListener('play', () => mode === 'html5' && setState({ playing: true }));
-    m.addEventListener('pause', () => mode === 'html5' && setState({ playing: false }));
-    m.addEventListener('ended', () => { if (mode === 'html5') { setState({ playing: false }); emit('ended'); } });
-    m.addEventListener('error', () => { if (mode === 'html5') emit('error', { code: 'media' }); });
-    m.addEventListener('timeupdate', () => mode === 'html5' && setState({ time: m.currentTime, duration: Number.isFinite(m.duration) ? m.duration : 0 }));
+    allMedia().forEach((m) => {
+      const mine = () => mode === 'html5' && m === media();             // solo habla el elemento que está sonando
+      m.addEventListener('play', () => mine() && setState({ playing: true }));
+      m.addEventListener('pause', () => mine() && setState({ playing: false }));
+      m.addEventListener('ended', () => { if (mine()) { setState({ playing: false }); emit('ended'); } });
+      m.addEventListener('error', () => { if (mine()) emit('error', { code: 'media' }); });
+      m.addEventListener('timeupdate', () => mine() && setState({ time: m.currentTime, duration: Number.isFinite(m.duration) ? m.duration : 0 }));
+    });
   }
 
   setInterval(() => {
@@ -118,7 +123,7 @@ var LS = globalThis.LS = globalThis.LS || {};
       const audioOnly = !!(opts && opts.audioOnly);
       st.time = 0; st.duration = item.duration || 0; st.playing = true;
       if (item.src === 'yt') {
-        const m = media(); m.pause(); m.removeAttribute('src');
+        allMedia().forEach((x) => { x.pause(); x.removeAttribute('src'); });
         mode = 'yt';
         setState({});
         try { await ensureYT(); } catch (e) { emit('error', { code: 'api', message: e.message }); return; }
@@ -131,6 +136,8 @@ var LS = globalThis.LS = globalThis.LS || {};
       } else {
         if (yt && ytReady && typeof yt.stopVideo === 'function') yt.stopVideo();
         mode = 'html5';
+        useAudio = item.src === 'nd';
+        allMedia().forEach((x) => { if (x !== media()) { x.pause(); x.removeAttribute('src'); } });
         const m = media();
         m.src = item.url; m.volume = volume / 100;
         setState({});
@@ -149,7 +156,7 @@ var LS = globalThis.LS = globalThis.LS || {};
     setVolume(v) {
       volume = Math.max(0, Math.min(100, v));
       if (yt && ytReady) yt.setVolume(volume);
-      media().volume = volume / 100;
+      allMedia().forEach((m) => { m.volume = volume / 100; });
     },
     // En las apps de iPhone y Android el ecualizador queda apagado siempre: engancha el sonido a un procesador de audio que el sistema
     // corta al salir de la app o bloquear el móvil (la música se paraba del todo). Solo funciona en Windows y en navegadores.

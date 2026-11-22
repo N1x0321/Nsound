@@ -173,11 +173,12 @@
   }
 
   // ---------- Navegación ----------
-  const PAGES = ['home', 'music', 'videos', 'library', 'settings', 'artist'];
+  const PAGES = ['home', 'music', 'videos', 'library', 'settings', 'artist'].concat(LS.enginesEnabled && LS.Subsonic ? ['navidrome'] : []);   // «Mi servidor» solo en la app de pruebas «Motores»
   function route() {
     const parts = (location.hash.replace(/^#\/?/, '') || 'home').split('/');
     S.page = PAGES.includes(parts[0]) ? parts[0] : 'home';
     S.artist = S.page === 'artist' ? LS.artistFromParts(parts) : '';
+    if (S.page !== 'navidrome') S.ndAlbum = '';
     S.sub = S.page === 'library' ? (parts[1] === 'downloads' ? 'downloads' : parts[1] === 'pl' && parts[2] ? 'pl:' + parts[2] : 'saved') : 'saved';
     $$('#nav [data-page]').forEach((b) => b.classList.toggle('on', b.dataset.page === (S.page === 'artist' ? 'music' : S.page)));   // el artista se ve dentro de Música
     render();
@@ -200,6 +201,7 @@
     if (S.page === 'videos') return renderVideos(v, id);
     if (S.page === 'library') return renderLibrary(v, id);
     if (S.page === 'artist') return renderArtist(v, id);
+    if (S.page === 'navidrome') return renderNavidrome(v, id);
     return renderSettings(v);
   }
 
@@ -601,6 +603,95 @@
       ${items.length ? grid('lib', items, 'video') : `<p class="hint">${q ? 'Nada guardado coincide con la búsqueda.' : pl ? 'Lista vacía. Reproduce algo y pulsa + en la barra inferior para añadirlo.' : 'Aún no has guardado nada. Reproduce algo y pulsa el corazón de la barra inferior.'}</p>`}`;
   }
 
+  // ---------- Mi servidor (Navidrome): tu propia música, con audio propio. Solo en la app de pruebas «Motores» ----------
+  const ND_BASE = '/__nd';
+  const ndStore = safeStorage();
+  let ndClient = null;
+  async function ndConnect() {
+    if (ndClient) return ndClient;
+    const saved = LS.Subsonic.loadSaved(ndStore);
+    if (!saved) return null;
+    const ses = await LS.Subsonic.fetchSession(ND_BASE);
+    if (!ses.configured) return null;
+    ndClient = new LS.Subsonic.SubsonicClient({ base: ND_BASE, auth: saved, sig: ses.sig });
+    return ndClient;
+  }
+  const ndItem = (s) => remember({
+    src: 'nd', id: s.id, title: s.title, artist: s.artist, sub: s.artist + (s.album ? ' · ' + s.album : ''), duration: s.duration,
+    thumb: ndClient ? ndClient.coverUrl(s.coverArt, 200) : '', kind: 'track', fmt: s.suffix,
+  });
+  const ndAlbumCard = (a) => `<button class="card video" data-act="ndalbum" data-id="${esc(a.id)}"><div class="thumb" style="--h:${hue(a.id)}">${ndClient && a.coverArt ? `<img loading="lazy" alt="" src="${esc(ndClient.coverUrl(a.coverArt, 300))}" onerror="this.remove()">` : ''}</div>
+    <div class="t">${esc(a.name)}</div><div class="s">${esc(a.artist)}${a.year ? ' · ' + a.year : ''}</div></button>`;
+
+  async function renderNavidrome(v, id) {
+    const head = '<h1>Mi servidor</h1>';
+    v.innerHTML = head + '<div class="busy">Conectando…</div>';
+    const ses = await LS.Subsonic.fetchSession(ND_BASE);
+    if (id !== S.renderId) return;
+    if (!ses.configured) {
+      v.innerHTML = head + '<p class="hint err">Este servidor de Nsound no tiene Navidrome configurado. Arráncalo con la variable <b>ND_URL</b> (por ejemplo ND_URL=http://127.0.0.1:4533) y vuelve a abrir esta página.</p>';
+      return;
+    }
+    let c = null;
+    try { c = await ndConnect(); } catch (e) { c = null; }
+    if (!c) { drawNdLogin(v, head, ses, ''); return; }
+    const q = S.query;
+    try {
+      if (S.ndAlbum) {
+        const r = await c.album(S.ndAlbum);
+        if (id !== S.renderId) return;
+        const items = setList('nd', r.songs.map(ndItem));
+        v.innerHTML = `<div class="row-actions"><button data-act="ndback">‹ Volver</button><button data-act="ndout">Salir del servidor</button></div>
+          <h1>${esc(r.album ? r.album.name : 'Álbum')}</h1><p class="hint">${esc(r.album ? r.album.artist : '')}</p>
+          <div class="row-actions"><button class="primary" data-act="ndplayall">${LS.icon('play')} Reproducir todo</button></div>
+          ${items.length ? grid('nd', items, 'video') : '<p class="hint">Este álbum no tiene canciones.</p>'}`;
+        return;
+      }
+      if (q) {
+        const r = await c.search(q);
+        if (id !== S.renderId) return;
+        const items = setList('nd', r.songs.map(ndItem));
+        v.innerHTML = `<div class="row-actions"><button data-act="ndout">Salir del servidor</button></div><h1>Mi servidor</h1><p class="hint">Resultados para «${esc(q)}» en tu servidor.</p>
+          ${items.length ? `<section><h2>Canciones</h2>${grid('nd', items, 'video')}</section>` : ''}
+          ${r.albums.length ? `<section><h2>Álbumes</h2><div class="grid video">${r.albums.map(ndAlbumCard).join('')}</div></section>` : ''}
+          ${items.length || r.albums.length ? '' : '<p class="hint">Nada coincide en tu servidor.</p>'}`;
+        return;
+      }
+      const [rnd, albums] = await Promise.all([c.randomSongs(24), c.albumList('newest', 18)]);
+      if (id !== S.renderId) return;
+      const items = setList('nd', rnd.map(ndItem));
+      v.innerHTML = `<div class="row-actions"><button data-act="ndout">Salir del servidor</button></div><h1>Mi servidor</h1><p class="hint">Tu música, con audio propio: suena como un archivo normal y aguanta en segundo plano. Busca arriba o elige algo.</p>
+        ${albums.length ? `<section><h2>Álbumes recientes</h2><div class="grid video">${albums.map(ndAlbumCard).join('')}</div></section>` : ''}
+        ${items.length ? `<section><h2>Al azar</h2>${grid('nd', items, 'video')}</section>` : '<p class="hint">Tu biblioteca de Navidrome está vacía.</p>'}`;
+    } catch (e) {
+      if (id !== S.renderId) return;
+      if (e && (e.code === '40' || e.code === '41')) { LS.Subsonic.clearSaved(ndStore); ndClient = null; drawNdLogin(v, head, ses, 'Usuario o contraseña incorrectos.'); return; }
+      v.innerHTML = head + `<p class="hint err">No se pudo hablar con tu servidor: ${esc(e && e.message ? e.message : e)}</p><div class="row-actions"><button data-act="ndout">Cambiar de servidor</button></div>`;
+    }
+  }
+
+  function drawNdLogin(v, head, ses, msg) {
+    v.innerHTML = head + `<p class="hint">Conecta tu servidor Navidrome (tu música, tus archivos). La contraseña no se guarda: solo un token que el protocolo calcula en este dispositivo.</p>
+      <form id="ndForm" class="panel">
+        <label class="field">Usuario <input id="ndUser" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false"></label>
+        <label class="field">Contraseña <input id="ndPass" type="password" autocomplete="current-password"></label>
+        <div class="row-actions"><button class="primary" type="submit">Conectar</button></div>
+        <p id="ndMsg" class="hint ${msg ? 'err' : ''}">${esc(msg)}</p>
+      </form>`;
+    $('#ndForm').onsubmit = async (ev) => {
+      ev.preventDefault();
+      const user = $('#ndUser').value.trim(), pass = $('#ndPass').value;
+      if (!user || !pass) { $('#ndMsg').textContent = 'Escribe usuario y contraseña.'; return; }
+      $('#ndMsg').className = 'hint'; $('#ndMsg').textContent = 'Comprobando…';
+      const auth = LS.Subsonic.makeAuth(user, pass);
+      const cl = new LS.Subsonic.SubsonicClient({ base: ND_BASE, auth, sig: ses.sig });
+      try { await cl.ping(); }
+      catch (e) { $('#ndMsg').className = 'hint err'; $('#ndMsg').textContent = e && (e.code === '40' || e.code === '41') ? 'Usuario o contraseña incorrectos.' : 'No se pudo conectar: ' + (e && e.message ? e.message : e); return; }
+      LS.Subsonic.saveAuth(ndStore, auth); ndClient = cl; $('#ndPass').value = '';
+      render();
+    };
+  }
+
   // ---------- Descargas del contenido libre ----------
   async function loadCatalog() {
     if (S.catalog.length) return S.catalog;
@@ -713,6 +804,7 @@
 
   // ---------- Reproducción ----------
   function resolveLocal(it) {
+    if (it.src === 'nd') return ndClient ? Object.assign({}, it, { url: ndClient.streamUrl(it.id, it.fmt) }) : it;   // audio de tu servidor: la dirección (con su firma) se calcula al reproducir
     if (it.src !== 'cat') return it;
     const d = store.downloads.find(it.id);
     return d ? Object.assign({}, it, { url: d.url }) : it;
@@ -739,7 +831,7 @@
     if (LS.enginesEnabled) loadOpts.queue = { items: S.queue, index: S.index, repeat: S.repeat, shuffle: S.shuffle };   // el motor experimental puede llevar la cola entera
     Player.load(resolveLocal(it), loadOpts);
     prepareNext();
-    if (S.audioOnly) showVideo(false); else setVideoMode(videoMode() === 'pip' ? 'pip' : 'full');
+    if (S.audioOnly || it.src === 'nd') showVideo(false); else setVideoMode(videoMode() === 'pip' ? 'pip' : 'full');
     updateBar();
     if (!$('#lyrics').hidden) loadLyrics();
   }
@@ -1423,6 +1515,10 @@
       case 'back': if (history.length > 1) history.back(); else go('#/music'); break;
       case 'playartist': { const k = lists.get('artist') || []; if (k.length) play(k[0], 'artist'); break; }
       case 'album': playAlbum(d.artist, d.title, d.id, d.art); break;
+      case 'ndalbum': S.ndAlbum = d.id; render(); break;
+      case 'ndback': S.ndAlbum = ''; render(); break;
+      case 'ndout': LS.Subsonic.clearSaved(ndStore); ndClient = null; S.ndAlbum = ''; render(); break;
+      case 'ndplayall': { const k = lists.get('nd') || []; if (k.length) play(k[0], 'nd'); break; }
       case 'playall': { const k = lists.get('lib') || []; if (k.length) play(k[0], 'lib'); break; }
       case 'newlist': newList(false); break;
       case 'qnext': queueIt(d.key, 'next'); $('#qm').hidden = true; break;
@@ -1538,5 +1634,15 @@
   applyEq();
   Native.call('setAdBlock', { enabled: s0.adBlock }).catch(() => {});
   loadCatalog();
+  // «Mi servidor»: botón de navegación y conexión previa (así las canciones guardadas de tu servidor suenan sin abrir antes la página)
+  if (LS.enginesEnabled && LS.Subsonic) {
+    const navBtn = document.createElement('button');
+    navBtn.dataset.page = 'navidrome';
+    navBtn.innerHTML = '<span class="ico" data-ic="music"></span>Mi servidor';
+    const settingsBtn = $('#nav [data-page="settings"]');
+    if (settingsBtn) settingsBtn.parentNode.insertBefore(navBtn, settingsBtn); else $('#nav').appendChild(navBtn);
+    LS.paintIcons($('#nav'));
+    ndConnect().catch(() => {});
+  }
   route();
 })();
