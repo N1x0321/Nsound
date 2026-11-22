@@ -52,8 +52,7 @@ final class NativeStreamPlayer: NSObject {
     private func log(_ text: String) {
         let line = "[\(Int(ms()))ms] \(text)"
         NSLog("NSOUND-NATIVO %@", line)
-        guard let url = NativeStreamPlayer.logURL, let data = (line + "
-").data(using: .utf8) else { return }
+        guard let url = NativeStreamPlayer.logURL, let data = (line + "\n").data(using: .utf8) else { return }
         if let h = try? FileHandle(forWritingTo: url) { h.seekToEndOfFile(); h.write(data); try? h.close() }
         else { try? data.write(to: url) }
     }
