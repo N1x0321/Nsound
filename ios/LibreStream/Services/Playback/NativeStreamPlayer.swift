@@ -158,8 +158,10 @@ final class NativeStreamPlayer: NSObject {
 
     private func append(_ i: Int) {
         guard tracks.indices.contains(i) else { return }
-        let item = AVPlayerItem(url: tracks[i].url)
-        item.preferredForwardBufferDuration = 20
+        let asset = AVURLAsset(url: tracks[i].url)
+        asset.loadValuesAsynchronously(forKeys: ["playable", "duration"]) {}   // cabeceras y duración ya pedidas: al llegar su turno no hay espera
+        let item = AVPlayerItem(asset: asset)
+        item.preferredForwardBufferDuration = 30
         queued.append((item: item, index: i))
         player.insert(item, after: nil)
     }
@@ -172,9 +174,14 @@ final class NativeStreamPlayer: NSObject {
 
     /// Mantiene siempre la pista siguiente ya cargada en la cola: el paso de una a otra no deja hueco.
     private func enqueueNext() {
-        guard player.items().count < 2 else { return }
-        let last = queued.last?.index ?? index
-        if let n = nextIndex(after: last) { append(n) }
+        // Actual + dos por delante: la segunda ya va descargando mientras suena la primera
+        var guardCount = 0
+        while player.items().count < 3, guardCount < 3 {
+            guardCount += 1
+            let last = queued.last?.index ?? index
+            guard let n = nextIndex(after: last) else { break }
+            append(n)
+        }
     }
 
     // MARK: - Observación
