@@ -250,7 +250,8 @@ test('nativo (Swift): AVQueuePlayer + AVAudioSession(.playback) + MPRemoteComman
     'playCommand', 'pauseCommand', 'togglePlayPauseCommand', 'nextTrackCommand', 'previousTrackCommand', 'changePlaybackPositionCommand', 'AVAudioSession.interruptionNotification', 'oldDeviceUnavailable',
     'MPNowPlayingInfoPropertyElapsedPlaybackTime', 'MPMediaItemPropertyArtwork', 'AVPlayerItemDidPlayToEndTime']) assert.ok(n.includes(k), k);
   assert.match(y, /UIBackgroundModes: \[audio\]/);
-  assert.doesNotMatch(n, /FileManager|write\(to|\.download|AVAssetDownload|AVAssetExportSession/, 'no guarda audio en disco');
+  assert.doesNotMatch(n, /\.download|AVAssetDownload|AVAssetExportSession/, 'no guarda audio en disco');
+  assert.equal((n.match(/FileManager/g) || []).length, 1, 'el único acceso a disco es el registro de tiempos'); assert.match(n, /FileManager\.default\.urls\(for: \.documentDirectory, in: \.userDomainMask\)\.first\?\.appendingPathComponent\("nativo-tiempos\.log"\)/);
   for (const c of ['nativeLoad', 'nativePlay', 'nativePause', 'nativeSeek', 'nativeRepeat', 'nativeStop']) assert.ok(w.includes(`case "${c}":`), c);
   assert.match(w, /url\.host == host/); assert.match(w, /url\.path\.hasPrefix\("\/__nd\/rest\/stream"\)/); assert.match(w, /u\.path\.hasPrefix\("\/__nd\/rest\/getCoverArt"\)/);
   assert.equal((w.match(/if nativePlayer\.isActive \{ replyHandler\("ok", nil\); return \}/g) || []).length, 3, 'mientras suena el nativo, la pantalla de bloqueo no la pisa la interfaz');
