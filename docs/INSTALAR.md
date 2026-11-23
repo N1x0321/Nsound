@@ -4,7 +4,7 @@ Nsound es gratuita y no tiene cuentas ni suscripciones. Los paquetes no están f
 (Microsoft Store, Google Play, App Store), así que cada sistema te pedirá una confirmación al instalar.
 Es normal: no significa que haya nada raro, sino que la app no pasa por una tienda.
 
-**Dónde conseguirlos:** en la [beta 4 (Releases)](https://github.com/N1x0321/Nsound/releases/tag/v0.8.0-beta.4) o en la pestaña *Actions* → ejecución de «Build Android APK» / «Build unsigned IPA» / «Build Windows app»
+**Dónde conseguirlos:** en la página de [Releases](https://github.com/N1x0321/Nsound/releases) (la última beta aparece arriba; Windows en la beta 10, Android e iPhone en la beta 9) o en la pestaña *Actions* → ejecución de «Build Android APK» / «Build unsigned IPA» / «Build Windows app»
 → *Artifacts* (hace falta sesión iniciada en GitHub).
 
 **Comprobar que el archivo no está alterado (opcional):** cada paquete trae un `.sha256`.
@@ -18,7 +18,7 @@ Necesitas: Windows 10 (1809) o superior y el *WebView2 Runtime* (ya viene con Wi
 
 1. Descarga `Nsound-<versión>-windows-x64.zip` (o `-arm64.zip` si tu PC es ARM).
 2. **Extrae todo el contenido** del zip en una carpeta (clic derecho → *Extraer todo*). No lo ejecutes desde dentro del zip.
-3. Abre `Nsound.exe`.
+3. Abre **Abrir Nsound** (o el archivo `Nsound.exe` de la carpeta `app`).
 4. Si aparece *«Windows protegió su PC»*: pulsa **Más información → Ejecutar de todas formas**
    (SmartScreen avisa porque el programa no está firmado).
 
