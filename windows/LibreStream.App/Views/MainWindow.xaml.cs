@@ -155,6 +155,7 @@ public sealed partial class MainWindow : Window
         LookBox.ItemsSource = Themes.Names;
         ApplyLook(_settings.Current.Look);
         StartKenBurns();
+        foreach (var r in PlayingBars.Children.OfType<Microsoft.UI.Xaml.Shapes.Rectangle>()) r.Fill = _songBrush;
         _ = LoadAsync();
         _ = InitYouTubePlayerAsync();
     }
@@ -1121,7 +1122,8 @@ public sealed partial class MainWindow : Window
     private void SyncMini()
     {
         if (_mini is null) return;
-        _mini.SetTrack(_now?.Title ?? "", _now is null ? "" : _now.YouTubeId is null ? _now.Subtitle : $"{_now.Subtitle} · YouTube", _now?.Artwork, _now?.Tile, IsPlaying);
+        _mini.SetTrack(_now?.Id ?? "", _now?.Title ?? "", _now is null ? "" : _now.YouTubeId is null ? _now.Subtitle : $"{_now.Subtitle} · YouTube", _now?.Artwork, _now?.Tile, _now is null ? null : Backdrop(_now), IsPlaying);
+        _mini.SetGlow(_songColor);
         _mini.SetSaved(_now is not null && _library.Contains(_now.Source, _now.Id));
     }
 
@@ -1142,11 +1144,14 @@ public sealed partial class MainWindow : Window
         SyncMini();
         if (_now is null) return;
         if (_analyzedId != _now.Id) { _analyzedId = _now.Id; _keyBpm = ""; _analyzer.Reset(); }
+        var changed = _barTrackId != _now.Id;
+        _barTrackId = _now.Id;
         NowTitle.Text = _now.Title;
         NowArtist.Text = _now.YouTubeId is null ? _now.Subtitle : $"{_now.Subtitle} · YouTube";
         ShowKeyBpm();
         NowTile.Background = _now.Tile;
         NowImage.Source = _now.Artwork;
+        if (changed && _palette.Id != "clasico") AnimateTrackChange();
         SaveIcon.Glyph = _library.Contains(_now.Source, _now.Id) ? "" : "";
         if (LyricsPanel.Visibility == Visibility.Visible) _ = LoadLyricsAsync();
         UpdateAmbient();
@@ -1830,9 +1835,12 @@ public sealed partial class MainWindow : Window
         AmbientBlueEnd.Color = Hex(t.Blue, 0);
         SlashA.Color = Hex(t.Accent, 0); SlashB.Color = Hex(t.Accent, 0x66); SlashC.Color = Hex(t.Accent, 0);
         HeroSlash.Visibility = Vis(!classic);
+        BarTint.Visibility = BarLine.Visibility = NowGlow.Visibility = Vis(!classic);
+        NpShadeTop.Color = Hex(t.Bg, 0x66);
+        NpShadeBottom.Color = Hex(t.Bg, 0xF2);
         Hero.CornerRadius = new CornerRadius(classic ? 14 : 26);
         Bar.Margin = classic ? new Thickness(0) : new Thickness(12, 4, 12, 12);
-        Bar.CornerRadius = new CornerRadius(classic ? 0 : 22);
+        Bar.CornerRadius = new CornerRadius(classic ? 0 : 24);
         Bar.BorderThickness = classic ? new Thickness(0, 1, 0, 0) : new Thickness(1);
         UpdateAmbient();
         if (_featured is not null) UpdateHero();
@@ -1840,15 +1848,108 @@ public sealed partial class MainWindow : Window
         SetBars(IsPlaying);
     }
 
-    /// <summary>El brillo de arriba a la derecha toma el tono de la canción (o el acento si no suena nada).</summary>
+    private Windows.UI.Color _songColor = Windows.UI.Color.FromArgb(255, 0xFF, 0x4D, 0x62);
+    private readonly SolidColorBrush _songBrush = new(Windows.UI.Color.FromArgb(255, 0xFF, 0x4D, 0x62));
+    private readonly Dictionary<string, Windows.UI.Color> _artColors = [];
+    private readonly HashSet<string> _artColorTried = [];
+    private string? _barTrackId;
+
+    /// <summary>
+    /// El color de la canción tiñe el brillo de fondo, la barra inferior, la pantalla «Reproduciendo» y el mini reproductor. Mientras se
+    /// lee la portada se usa el tono estable de la tarjeta; en cuanto se sabe el color de la portada, se pasa a él con una transición.
+    /// </summary>
     private void UpdateAmbient()
     {
-        var color = _now is { } n ? MediaCard.Hsl(MediaCard.HueOf(n.Id), 0.8, 0.48) : Hex(_palette.Accent);
-        var alpha = _palette.Dark ? (byte)0x4D : (byte)0x30;
-        AmbientStop.Color = Windows.UI.Color.FromArgb(alpha, color.R, color.G, color.B);
-        AmbientEnd.Color = Windows.UI.Color.FromArgb(0, color.R, color.G, color.B);
-        NpGlowStop.Color = Windows.UI.Color.FromArgb(0x70, color.R, color.G, color.B);
-        NpGlowEnd.Color = Windows.UI.Color.FromArgb(0, color.R, color.G, color.B);
+        if (_now is not { } n) { ApplySongColor(Hex(_palette.Accent)); return; }
+        ApplySongColor(_artColors.TryGetValue(n.Id, out var known) ? known : MediaCard.Hsl(MediaCard.HueOf(n.Id), 0.75, 0.52));
+        if (_artColors.ContainsKey(n.Id) || !_artColorTried.Add(n.Id)) return;
+        _ = LoadArtColorAsync(n);
+    }
+
+    private void ApplySongColor(Windows.UI.Color c)
+    {
+        _songColor = c;
+        var dark = _palette.Dark;
+        Windows.UI.Color A(byte alpha) => Windows.UI.Color.FromArgb(alpha, c.R, c.G, c.B);
+        AnimateColor(AmbientStop, A(dark ? (byte)0x5A : (byte)0x38));
+        AnimateColor(AmbientEnd, A(0));
+        AnimateColor(NpGlowStop, A(0x80));
+        AnimateColor(NpGlowEnd, A(0));
+        AnimateColor(NpArtGlowStop, A(0x99));
+        AnimateColor(NpArtGlowEnd, A(0));
+        AnimateColor(BarTintStop, A(dark ? (byte)0x40 : (byte)0x26));
+        AnimateColor(BarTintEnd, A(0));
+        AnimateColor(BarLineA, A(0));
+        AnimateColor(BarLineB, A(0xCC));
+        AnimateColor(BarLineC, A(0));
+        AnimateColor(NowGlowStop, A(0xB0));
+        AnimateColor(NowGlowEnd, A(0));
+        AnimateColor(_songBrush, A(0xFF));
+        _mini?.SetGlow(c);
+    }
+
+    /// <summary>Cambia un color poco a poco (≈0,9 s) en vez de saltar.</summary>
+    private static void AnimateColor(DependencyObject target, Windows.UI.Color to)
+    {
+        var a = new ColorAnimation
+        {
+            To = to, Duration = TimeSpan.FromMilliseconds(900), EnableDependentAnimation = true,
+            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseInOut },
+        };
+        Storyboard.SetTarget(a, target);
+        Storyboard.SetTargetProperty(a, "Color");
+        var sb = new Storyboard();
+        sb.Children.Add(a);
+        sb.Begin();
+    }
+
+    /// <summary>Lee el color dominante de la portada (miniatura reducida a 24×24); la miniatura pequeña de YouTube basta.</summary>
+    private async Task LoadArtColorAsync(MediaCard card)
+    {
+        try
+        {
+            var uri = card.YouTubeId is { } y ? new Uri($"https://i.ytimg.com/vi/{y}/mqdefault.jpg") : card.ArtworkUrl;
+            if (uri is null) return;
+            var bytes = uri.IsFile ? await File.ReadAllBytesAsync(uri.LocalPath) : await _http.GetByteArrayAsync(uri);
+            using var stream = new Windows.Storage.Streams.InMemoryRandomAccessStream();
+            await stream.WriteAsync(System.Runtime.InteropServices.WindowsRuntime.WindowsRuntimeBufferExtensions.AsBuffer(bytes));
+            stream.Seek(0);
+            var decoder = await Windows.Graphics.Imaging.BitmapDecoder.CreateAsync(stream);
+            var data = await decoder.GetPixelDataAsync(Windows.Graphics.Imaging.BitmapPixelFormat.Bgra8, Windows.Graphics.Imaging.BitmapAlphaMode.Straight,
+                new Windows.Graphics.Imaging.BitmapTransform { ScaledWidth = 24, ScaledHeight = 24, InterpolationMode = Windows.Graphics.Imaging.BitmapInterpolationMode.Linear },
+                Windows.Graphics.Imaging.ExifOrientationMode.IgnoreExifOrientation, Windows.Graphics.Imaging.ColorManagementMode.DoNotColorManage);
+            if (ArtPalette.Vibrant(data.DetachPixelData()) is not { } vivid) return;
+            var g = ArtPalette.Glow(vivid);
+            var color = Windows.UI.Color.FromArgb(255, g.R, g.G, g.B);
+            _artColors[card.Id] = color;
+            if (_now?.Id == card.Id) ApplySongColor(color);
+        }
+        catch (Exception ex) { App.LogOnce("Color de la portada", ex); }   // sin portada o sin conexión: se queda el tono de la tarjeta
+    }
+
+    private readonly Dictionary<string, ImageSource> _backdrops = [];
+
+    /// <summary>Fondo desenfocado: la portada en su versión más pequeña, ampliada (para YouTube, la miniatura de 120×90).</summary>
+    private ImageSource? Backdrop(MediaCard card)
+    {
+        if (_backdrops.TryGetValue(card.Id, out var cached)) return cached;
+        ImageSource? img = card.YouTubeId is { } y ? new BitmapImage(new Uri($"https://i.ytimg.com/vi/{y}/default.jpg")) : card.Artwork;
+        if (img is not null) _backdrops[card.Id] = img;
+        return img;
+    }
+
+    /// <summary>Al cambiar de canción, la portada y el título de la barra entran con un pequeño desliz.</summary>
+    private void AnimateTrackChange()
+    {
+        NowImage.Opacity = 0;
+        NowText.Opacity = 0;
+        NowText.Translation = new Vector3(0, 8, 0);
+        DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () =>
+        {
+            NowImage.Opacity = 1;
+            NowText.Opacity = 1;
+            NowText.Translation = Vector3.Zero;
+        });
     }
 
     private void StartKenBurns()
@@ -1875,27 +1976,44 @@ public sealed partial class MainWindow : Window
         DispatcherQueue.TryEnqueue(() => Browse.Opacity = 1);
     }
 
+    /// <summary>
+    /// Mientras suena: barras del ecualizador, la portada «respira», el botón de reproducir lanza ondas, el brillo de fondo late
+    /// despacio y la portada grande de «Reproduciendo» se mueve un poco. En pausa todo vuelve a su sitio. «Clásico» no anima nada.
+    /// </summary>
     private void SetBars(bool playing)
     {
         var show = playing && _palette.Id != "clasico";
         PlayingBars.Visibility = Vis(show);
         if (show == _barsOn) return;
         _barsOn = show;
+        NowGlow.Opacity = show ? 0.55 : 0;
         if (!show) { _bars?.Stop(); return; }
         if (_bars is null)
         {
             _bars = new Storyboard();
-            foreach (var (scale, secs) in new[] { (Bar1, 0.9), (Bar2, 0.7), (Bar3, 1.1) })
+            void Add(DependencyObject target, string prop, double from, double to, double secs, bool reverse = true, double begin = 0)
             {
                 var a = new DoubleAnimation
                 {
-                    From = 0.25, To = 1, Duration = TimeSpan.FromSeconds(secs), AutoReverse = true,
+                    From = from, To = to, Duration = TimeSpan.FromSeconds(secs), AutoReverse = reverse, BeginTime = TimeSpan.FromSeconds(begin),
                     RepeatBehavior = RepeatBehavior.Forever, EnableDependentAnimation = true,
+                    EasingFunction = new SineEase { EasingMode = EasingMode.EaseInOut },
                 };
-                Storyboard.SetTarget(a, scale);
-                Storyboard.SetTargetProperty(a, "ScaleY");
+                Storyboard.SetTarget(a, target);
+                Storyboard.SetTargetProperty(a, prop);
                 _bars.Children.Add(a);
             }
+            foreach (var (scale, secs) in new[] { (Bar1, 0.45), (Bar2, 0.62), (Bar3, 0.38), (Bar4, 0.53) })
+                Add(scale, "ScaleY", 0.2, 1, secs);
+            foreach (var prop in new[] { "ScaleX", "ScaleY" })
+            {
+                Add(NowArtScale, prop, 1, 1.05, 1.4);
+                Add(PlayHaloScale, prop, 1, 1.45, 1.8, reverse: false);
+                Add(NpArtScale, prop, 1, 1.025, 2.6);
+            }
+            Add(PlayHalo, "Opacity", 0.45, 0, 1.8, reverse: false);
+            Add(Ambient, "Opacity", 0.65, 1, 4.5);
+            Add(NowGlow, "Opacity", 0.3, 0.8, 1.4);
         }
         _bars.Begin();
     }
@@ -1950,19 +2068,39 @@ public sealed partial class MainWindow : Window
         NpTitle.Text = card.Title;
         NpArtist.Text = card.YouTubeId is null ? card.Subtitle : $"{card.Subtitle} · YouTube";
         NpImage.Source = card.YouTubeId is { } id ? new BitmapImage(new Uri($"https://i.ytimg.com/vi/{id}/hq720.jpg")) : card.Artwork;
+        NpBackdrop.Source = Backdrop(card);
         NpHeartIcon.Glyph = _library.Contains(card.Source, card.Id) ? "\uEB52" : "\uEB51";
     }
 
+    private static FrameworkElement? FindNamed(DependencyObject root, string name)
+    {
+        for (var k = 0; k < VisualTreeHelper.GetChildrenCount(root); k++)
+        {
+            var child = VisualTreeHelper.GetChild(root, k);
+            if (child is FrameworkElement fe && fe.Name == name) return fe;
+            if (FindNamed(child, name) is { } found) return found;
+        }
+        return null;
+    }
+
+    /// <summary>Al pasar el ratón por una tarjeta: sube un poco, crece y muestra el botón de reproducir.</summary>
     private void Card_PointerEntered(object sender, PointerRoutedEventArgs e)
     {
-        if (_palette.Id == "clasico" || sender is not UIElement ui) return;
+        if (_palette.Id == "clasico" || sender is not FrameworkElement ui) return;
         ui.TranslationTransition ??= new Vector3Transition { Duration = TimeSpan.FromMilliseconds(220) };
+        ui.ScaleTransition ??= new Vector3Transition { Duration = TimeSpan.FromMilliseconds(220) };
+        ui.CenterPoint = new Vector3((float)ui.ActualWidth / 2, (float)ui.ActualHeight / 2, 0);
         ui.Translation = new Vector3(0, -6, 0);
+        ui.Scale = new Vector3(1.03f, 1.03f, 1);
+        if (FindNamed(ui, "HoverPlay") is { } hover) hover.Opacity = 1;
     }
 
     private void Card_PointerExited(object sender, PointerRoutedEventArgs e)
     {
-        if (sender is UIElement ui) ui.Translation = Vector3.Zero;
+        if (sender is not FrameworkElement ui) return;
+        ui.Translation = Vector3.Zero;
+        ui.Scale = Vector3.One;
+        if (FindNamed(ui, "HoverPlay") is { } hover) hover.Opacity = 0;
     }
 
     // ===================== Importar una lista desde un enlace =====================
