@@ -719,8 +719,23 @@ public sealed partial class MainWindow : Window
         var key = $"{genre}|{DateTime.UtcNow:yyyyMMddHH}";
         if (_genreCache.TryGetValue(key, out var cached)) return cached;
         var res = await YouTubeMusic.GenreSongsAsync(_http, genre, ct);
+        // las listas de género de YouTube son iguales en todos los países: primero van los artistas que más suenan en el tuyo
+        try { res = (YouTubeMusic.BoostByArtists(res.Songs, (await CountryArtistsAsync(ct)).Select(a => a.Name).ToList()), res.ListTitle); }
+        catch (Exception ex) when (ex is not OperationCanceledException) { App.LogOnce("Ranking del país para el género", ex); }
         if (res.Songs.Count > 0) _genreCache[key] = res;
         return res;
+    }
+
+    private (string Key, List<MusicArtist> Artists)? _countryArtists;
+
+    /// <summary>Ranking oficial de artistas de tu país (YouTube Music), guardado una hora.</summary>
+    private async Task<List<MusicArtist>> CountryArtistsAsync(CancellationToken ct)
+    {
+        var key = $"{Country}|{DateTime.UtcNow:yyyyMMddHH}";
+        if (_countryArtists is { } c && c.Key == key) return c.Artists;
+        var list = await YouTubeMusic.ChartArtistsAsync(_http, Country, ct);
+        if (list.Count > 0) _countryArtists = (key, list);
+        return list;
     }
 
     // ===================== Búsqueda en YouTube =====================
@@ -1070,7 +1085,7 @@ public sealed partial class MainWindow : Window
     {
         try
         {
-            var list = await YouTubeMusic.ChartArtistsAsync(_http, Country);
+            var list = await CountryArtistsAsync(default);
             if (list.Count < 6) return;
             ArtistsRow.Children.Clear();
             var rank = 0;

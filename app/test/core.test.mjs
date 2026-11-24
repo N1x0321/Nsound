@@ -622,3 +622,40 @@ test('aleatorio: no repite hasta haber sonado todas y respeta repetir la lista',
   assert.equal(LS.pickNextIndex(q, 0, { shuffle: true, rand: () => 0.999 }).index, 4);              // el azar elige entre las que faltan
   assert.equal(LS.pickNextIndex(mk(1), 0, { shuffle: true, repeat: 'all' }).index, 0);               // una sola canción
 });
+
+// ---------- Géneros con listas oficiales de YouTube Music ----------
+test('géneros: cada uno tiene su categoría y «Éxitos» va aparte', () => {
+  for (const g of LS.GENRES.slice(1)) assert.ok(LS.genreSource(g), g);
+  assert.equal(LS.genreSource(LS.GENRES[0]), null);
+  const body = JSON.parse(LS.musicCategoryBody('ggMPabc'));
+  assert.equal(body.browseId, 'FEmusic_moods_and_genres_category');
+  assert.equal(body.params, 'ggMPabc');
+});
+
+test('géneros: categorías de «Moods y géneros»', () => {
+  const nav = (name, id, params) => ({ musicNavigationButtonRenderer: { buttonText: { runs: [{ text: name }] }, clickCommand: { browseEndpoint: { browseId: id, params } } } });
+  const cats = LS.parseYtmMoodCategories({ x: [nav('Dance y electrónica', 'FEmusic_moods_and_genres_category', 'ggMPabc'), nav('Otra', 'FEotro')] });
+  assert.equal(cats.length, 1);
+  assert.equal(LS.findCategory(cats, 'dance y electronica').params, 'ggMPabc');
+  assert.equal(LS.findCategory(cats, 'Jazz'), null);
+  assert.deepEqual(LS.parseYtmMoodCategories('no es json'), []);
+});
+
+test('géneros: la lista oficial actual, nunca clásicos ni de usuarios', () => {
+  const L = (id, title) => ({ id, title });
+  const dance = [L('VLRDCLAK5uy_billion', 'Billion Views Club - EDM'), L('VLPLcomunidad', 'Éxitos actuales del dance de un usuario'), L('VLRDCLAK5uy_actual', 'Éxitos actuales del dance'), L('VLRDCLAK5uy_hits', 'Dance Hits')];
+  assert.equal(LS.pickGenrePlaylist(dance, LS.genreSource('Electrónica').prefer).id, 'VLRDCLAK5uy_actual');
+  const rock = [L('VLRDCLAK5uy_a', 'Rock clásico para sentirse bien'), L('VLRDCLAK5uy_b', 'Grandes clásicos del rock'), L('VLRDCLAK5uy_c', "Maximum Decibels: Today's Rock Hits")];
+  assert.equal(LS.pickGenrePlaylist(rock, LS.genreSource('Rock').prefer).id, 'VLRDCLAK5uy_c');
+  const latin = [L('VLRDCLAK5uy_1', 'Latin Now'), L('VLRDCLAK5uy_2', 'Hot Reggaeton')];
+  assert.equal(LS.pickGenrePlaylist(latin, LS.genreSource('Reggaetón').prefer).id, 'VLRDCLAK5uy_2');
+  assert.equal(LS.pickGenrePlaylist(latin, LS.genreSource('Latino').prefer).id, 'VLRDCLAK5uy_1');
+  assert.equal(LS.pickGenrePlaylist([L('VLRDCLAK5uy_old', 'Hip hop de los 2000'), L('VLRDCLAK5uy_new', 'Street Bangers')], ['nada']).id, 'VLRDCLAK5uy_new');
+  assert.equal(LS.pickGenrePlaylist([L('VLPLx', 'Solo comunidad')], ['x']), null);
+});
+
+test('géneros: primero los artistas que más suenan en tu país', () => {
+  const songs = [{ id: '1', artist: 'Shakira' }, { id: '2', artist: 'Blessd' }, { id: '3', artist: 'Quevedo' }, { id: '4', artist: 'Ryan Castro y Blessd' }, { id: '5', channel: 'Otro' }];
+  assert.deepEqual(LS.boostByArtists(songs, ['Ryan Castro', 'Blessd', 'Feid']).map((s) => s.id), ['4', '2', '1', '3', '5']);
+  assert.deepEqual(LS.boostByArtists(songs, []).map((s) => s.id), ['1', '2', '3', '4', '5']);
+});

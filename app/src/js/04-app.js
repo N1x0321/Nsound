@@ -225,6 +225,26 @@
     return ytmTracksOf(pick.id, {});
   }
 
+  // Géneros siempre al día: la lista oficial de YouTube Music de su categoría («Éxitos actuales del dance», «Hot Reggaeton»…), que YouTube
+  // renueva cada semana. Esas listas son iguales en todos los países: primero van los artistas del ranking de tu país.
+  async function genreSongs(genre, cc) {
+    const src = LS.genreSource(genre);
+    if (!src) return { songs: [], title: '' };
+    const hour = new Date().toISOString().slice(0, 13);
+    const cats = await ytmPost(LS.MUSIC_BROWSE_URL, LS.musicBrowseBody(LS.MOODS_BROWSE_ID), 'moods|' + hour.slice(0, 10), LS.parseYtmMoodCategories);
+    const cat = LS.findCategory(cats, src.category);
+    if (!cat) return { songs: [], title: '' };
+    const lists = await ytmPost(LS.MUSIC_BROWSE_URL, LS.musicCategoryBody(cat.params), 'categoria|' + cat.params + '|' + hour, LS.parseYtmChartLists);
+    const pick = LS.pickGenrePlaylist(lists, src.prefer);
+    if (!pick) return { songs: [], title: '' };
+    let songs = await ytmTracksOf(pick.id, {});
+    try {
+      const ranking = await ytmPost(LS.MUSIC_BROWSE_URL, LS.musicBrowseBody(LS.CHARTS_BROWSE_ID, cc), 'ranking|' + cc + '|' + hour, LS.parseYtmChartArtists);
+      songs = LS.boostByArtists(songs, ranking.map((a) => a.name));
+    } catch (e) { /* sin ranking del país: se queda el orden de la lista */ }
+    return { songs, title: pick.title };
+  }
+
   // «Artistas de la semana»: el ranking real de YouTube Music («Artistas principales»), que se actualiza solo; si no está disponible, la lista fija
   async function loadTopArtists(renderId) {
     try {
@@ -306,14 +326,28 @@
           return;
         }
       }
+      if (!q && S.page === 'music' && S.genre !== LS.GENRES[0]) {
+        let g = { songs: [], title: '' };
+        try { g = await genreSongs(S.genre, cc); } catch (e) { /* si falla, la búsqueda de siempre */ }
+        const songs = g.songs.filter((m) => m.duration === 0 || LS.isSong({ title: m.title, duration: m.duration }));
+        if (songs.length >= 10) {
+          if (id !== S.renderId) return;
+          const its = setList(listId, songs.slice(0, 80).map(sc === 'track' ? musicItem : (m) => ytItem({ id: m.id, title: m.title, channel: m.channel, duration: m.duration, published: '' })));
+          box.innerHTML = grid(listId, its, sc === 'track' ? 'track' : 'video');
+          const h = $('#hitsTitle'); if (h && g.title) h.textContent = S.genre + ' · ' + g.title;
+          return;
+        }
+      }
+      // El país solo se añade a la búsqueda de «Éxitos»: con los géneros desviaba los resultados (Electrónica salía rock en español)
+      const near = S.page === 'music' && S.genre !== LS.GENRES[0] ? '' : ' ' + cName;
       let recent = [];
       if (!q) {
-        try { recent = (await ytSearch(LS.recentQuery(S.page === 'music' ? S.genre : LS.GENRES[0], new Date().getFullYear()) + ' ' + cName, { thisWeek: true })).filter((v) => LS.isSong(v) && !LS.isLive(v) && v.duration <= 480).slice(0, 8); } catch (e) { recent = []; }
+        try { recent = (await ytSearch(LS.recentQuery(S.page === 'music' ? S.genre : LS.GENRES[0], new Date().getFullYear()) + near, { thisWeek: true })).filter((v) => LS.isSong(v) && !LS.isLive(v) && v.duration <= 480).slice(0, 8); } catch (e) { recent = []; }
       }
       const withRecent = (arr, mk) => { const ids = new Set(recent.map((v) => v.id)); return recent.map(mk).concat(arr.filter((x) => !ids.has(x.id))); };
       if (sc === 'track') {
         try {
-          const songs = await musicSearch(q || (LS.genreQuery(S.page === 'music' ? S.genre : LS.GENRES[0], new Date().getFullYear()) + ' ' + cName));
+          const songs = await musicSearch(q || (LS.genreQuery(S.page === 'music' ? S.genre : LS.GENRES[0], new Date().getFullYear()) + near));
           items = songs.filter((m) => LS.isSong({ title: m.title, duration: m.duration })).map(musicItem);
           if (!items.length) items = null;
         } catch (e) { items = null; }   // si YouTube Music falla, se usa la búsqueda normal
@@ -416,7 +450,7 @@
     const q = S.query;
     v.innerHTML = `<h1>Música</h1><p class="hint">${q ? `Canciones para «${esc(q)}». Solo música, sin vídeo.` : 'Elige un género o busca un artista. Aquí solo hay música y suena sin vídeo.'}</p>
       ${q ? '' : chips(LS.GENRES.map((g) => [g, g]), S.genre, 'genre')}
-      <section><h2>${q ? 'Música en YouTube' : esc(S.genre)}</h2><div id="hits">${skeleton()}</div></section>`;
+      <section><h2 id="hitsTitle">${q ? 'Música en YouTube' : esc(S.genre)}</h2><div id="hits">${skeleton()}</div></section>`;
     await showResults('#hits', id, 'music');
   }
 

@@ -353,6 +353,81 @@ var LS = globalThis.LS = globalThis.LS || {};
     return l.find((x) => /100|m[aá]s populares|most popular/i.test(x.title)) || l.find((x) => /top diario|daily/i.test(x.title)) || l.find((x) => /tendencias|trending/i.test(x.title)) || l[0] || null;
   };
 
+  // ---------- Géneros siempre al día: listas oficiales de «Moods y géneros» de YouTube Music ----------
+  LS.MOODS_BROWSE_ID = 'FEmusic_moods_and_genres';
+  LS.MOOD_CATEGORY_BROWSE_ID = 'FEmusic_moods_and_genres_category';
+  /** Página de una categoría de «Moods y géneros» («Dance y electrónica», «Latina»…). */
+  LS.musicCategoryBody = (params) => JSON.stringify({ context: ytmContext, browseId: LS.MOOD_CATEGORY_BROWSE_ID, params: String(params || '') });
+
+  /** Categoría de cada género de la app y palabras para elegir su lista (de mejor a peor). «Éxitos» va por la lista del país. */
+  const GENRE_SOURCES = {
+    'Reggaetón': ['Latina', ['hot reggaet', 'reggaet', 'perreo', 'dembow']],
+    'Latino': ['Latina', ['latin now', 'éxitos latinos', 'latin', 'latino']],
+    'Pop': ['Pop', ['pop hotlist', 'pop certified', 'hotlist', 'pop']],
+    'Rock': ['Rock', ["today's rock hits", 'rock hits', 'hotlist', 'rock']],
+    'Electrónica': ['Dance y electrónica', ['actuales del dance', 'dance hits', 'house + techno', 'dance', 'edm']],
+    'Hip hop': ['Hip hop', ['actuales de hiphop', 'actuales de hip hop', 'rap bangers', 'hip hop', 'rap']],
+    'Lo-fi': ['Concentración', ['lo-fi', 'lofi']],
+  };
+  LS.genreSource = (genre) => (GENRE_SOURCES[genre] ? { category: GENRE_SOURCES[genre][0], prefer: GENRE_SOURCES[genre][1] } : null);
+
+  /** Página de «Moods y géneros» → [{ name, params }] */
+  LS.parseYtmMoodCategories = function (json) {
+    const data = ytmParse(json), out = [];
+    if (!data) return out;
+    ytmWalk(data, (k, v) => {
+      if (k !== 'musicNavigationButtonRenderer') return false;
+      const name = v && v.buttonText && Array.isArray(v.buttonText.runs) ? v.buttonText.runs.map((r) => r.text || '').join('').trim() : '';
+      const be = v && v.clickCommand && v.clickCommand.browseEndpoint;
+      if (name && be && be.browseId === LS.MOOD_CATEGORY_BROWSE_ID && be.params) out.push({ name, params: String(be.params) });
+      return true;
+    });
+    return out;
+  };
+
+  /** Categoría por nombre, sin tildes ni mayúsculas. */
+  LS.findCategory = function (cats, name) {
+    const want = LS.fold(name), l = cats || [];
+    return l.find((c) => LS.fold(c.name) === want) || l.find((c) => LS.fold(c.name).includes(want)) || null;
+  };
+
+  const OLD_LIST = /cl[aá]sic|classic|billion|esencial|essential|\b(50|60|70|80|90)s?\b|años? (50|60|70|80|90)|00s|\d0s|de los \d|retro|viej|throwback|instrumental/i;
+  /**
+   * De las listas de una categoría, la mejor para el género: solo listas oficiales de YouTube Music (VLRDCLAK…, se renuevan solas), la
+   * primera que tenga una palabra preferida; nunca clásicos, décadas o instrumentales si hay otra.
+   */
+  LS.pickGenrePlaylist = function (lists, prefer) {
+    const official = (lists || []).filter((l) => /^VLRDCLAK/.test(l.id));
+    const fresh = official.filter((l) => !OLD_LIST.test(l.title));
+    for (const pool of [fresh, official]) {
+      for (const word of prefer || []) {
+        const w = LS.fold(word), hit = pool.find((l) => LS.fold(l.title).includes(w));
+        if (hit) return hit;
+      }
+    }
+    return fresh[0] || official[0] || null;
+  };
+
+  /**
+   * Toque del país: de la lista del género (igual en todos los países), primero las canciones de los artistas del ranking de tu país,
+   * en el orden del ranking; luego el resto en el orden de la lista. songs: [{ artist | channel }], countryArtists: ['Nombre', …]
+   */
+  LS.boostByArtists = function (songs, countryArtists) {
+    const rank = new Map();
+    (countryArtists || []).forEach((n, i) => { const f = LS.fold(n); if (f && !rank.has(f)) rank.set(f, i); });
+    const rankOf = (s) => {
+      let best = Infinity;
+      for (const part of String(s.artist || s.channel || '').split(' · ')[0].split(/,| y | & | x /i)) {
+        const r = rank.get(LS.fold(part));
+        if (r !== undefined && r < best) best = r;
+      }
+      return best;
+    };
+    return (songs || []).map((s, i) => ({ s, i, r: rankOf(s) }))
+      .sort((a, b) => (a.r === Infinity) - (b.r === Infinity) || (a.r === Infinity ? a.i - b.i : a.r - b.r) || a.i - b.i)
+      .map((x) => x.s);
+  };
+
   /** De varios álbumes encontrados, el que mejor encaja con título (y artista): igual > contiene; el primero si ninguno encaja del todo. */
   LS.pickAlbum = function (albums, title, artist) {
     const want = LS.normName(title), who = LS.normName(artist || '');

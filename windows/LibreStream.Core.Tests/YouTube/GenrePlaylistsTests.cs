@@ -55,4 +55,14 @@ public class GenrePlaylistsTests
         Assert.Equal("VLRDCLAK5uy_new", YouTubeMusic.PickGenrePlaylist(lists, ["nada que coincida"])!.Id);
         Assert.Null(YouTubeMusic.PickGenrePlaylist([L("VLPLx", "Solo comunidad")], ["x"]));
     }
+
+    [Fact]
+    public void CountryArtistsGoFirstInRankingOrder()
+    {
+        YouTubeVideo V(string id, string channel) => new(id, "t" + id, channel, 200);
+        var songs = new[] { V("1", "Shakira"), V("2", "Blessd · Álbum"), V("3", "Quevedo"), V("4", "Ryan Castro y Blessd"), V("5", "Otro") };
+        var colombia = new[] { "Ryan Castro", "Blessd", "Feid" };
+        Assert.Equal(["4", "2", "1", "3", "5"], YouTubeMusic.BoostByArtists(songs, colombia).Select(v => v.Id));
+        Assert.Equal(["1", "2", "3", "4", "5"], YouTubeMusic.BoostByArtists(songs, []).Select(v => v.Id));
+    }
 }

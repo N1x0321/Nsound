@@ -88,6 +88,24 @@ public static partial class YouTubeMusic
         return fresh.FirstOrDefault() ?? official.FirstOrDefault();
     }
 
+    /// <summary>
+    /// Toque del país: de la lista del género, primero las canciones de los artistas del ranking de tu país (en su orden), luego el resto
+    /// en el orden de la lista. Así en Colombia salen antes los artistas que suenan en Colombia, y en España los de España.
+    /// </summary>
+    public static List<YouTubeVideo> BoostByArtists(IReadOnlyList<YouTubeVideo> songs, IReadOnlyList<string> countryArtists)
+    {
+        var rank = new Dictionary<string, int>();
+        for (var i = 0; i < countryArtists.Count; i++) rank.TryAdd(MetadataMatcher.Fold(countryArtists[i]), i);
+        int RankOf(YouTubeVideo v)
+        {
+            var best = int.MaxValue;
+            foreach (var part in v.Channel.Split(" · ")[0].Split([",", " y ", " & ", " x ", " X "], StringSplitOptions.RemoveEmptyEntries))
+                if (rank.TryGetValue(MetadataMatcher.Fold(part), out var r)) best = Math.Min(best, r);
+            return best;
+        }
+        return songs.Select((v, i) => (v, i, r: RankOf(v))).OrderBy(x => x.r == int.MaxValue ? 1 : 0).ThenBy(x => x.r == int.MaxValue ? x.i : x.r).ThenBy(x => x.i).Select(x => x.v).ToList();
+    }
+
     /// <summary>Canciones actuales de un género (lista oficial de su categoría) y el nombre de esa lista; vacío si no se encuentra.</summary>
     public static async Task<(List<YouTubeVideo> Songs, string ListTitle)> GenreSongsAsync(HttpClient http, string genre, CancellationToken ct = default)
     {
