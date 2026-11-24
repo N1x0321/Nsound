@@ -153,6 +153,7 @@ public sealed partial class MainWindow : Window
         BuildChips(MusicChips, ["Canciones", "Álbumes", "Artistas"], MusicFilter_Click, ["songs", "albums", "artists"]);
         BuildEqUi();
         PaintModes();
+        RadioToggle.IsOn = _settings.Current.Radio;
         LookBox.ItemsSource = Themes.Names;
         ApplyLook(_settings.Current.Look);
         StartKenBurns();
@@ -986,6 +987,7 @@ public sealed partial class MainWindow : Window
             _player.Play(natives.Select(c => Resolve(c.Item!)), Math.Max(0, natives.IndexOf(card)));
         }
         UpdateNowPlayingBar();
+        if (RadioWanted && !_shuffle && _index == _queue.Count - 1) PrefetchRadio(card);   // última de la cola: la radio se pide ya
     }
 
     private static string Key(MediaCard c) => $"{c.Source}:{c.Id}";
@@ -1008,8 +1010,94 @@ public sealed partial class MainWindow : Window
 
     private void Next()
     {
-        if (!AppDriven) { _player.Next(); return; }
-        if (!AdvanceAuto() && _mode == Mode.YouTube) RunPlayerScript("cmd('pause')");
+        var atEnd = !_shuffle && _index >= _queue.Count - 1;
+        if (!AppDriven && !(atEnd && RadioWanted)) { _player.Next(); return; }
+        if (AppDriven && AdvanceAuto()) return;
+        _ = EndOfQueueAsync();
+    }
+
+    // ----- Radio automática: al acabarse la cola, canciones parecidas -----
+
+    private bool RadioWanted => _settings.Current.Radio && _repeat != QueueOps.RepeatAll;
+    private Task<List<YouTubeVideo>>? _radioPrefetch;
+    private string? _radioSeed;
+    private bool _radioBusy;
+
+    private async Task EndOfQueueAsync()
+    {
+        if (await ContinueWithRadioAsync()) return;
+        if (_mode == Mode.YouTube) RunPlayerScript("cmd('pause')");
+    }
+
+    /// <summary>La radio de YouTube Music de esa canción; si es un archivo, la de la misma canción encontrada en YouTube Music.</summary>
+    private async Task<List<YouTubeVideo>> FetchRadioAsync(MediaCard seed)
+    {
+        try
+        {
+            var id = seed.YouTubeId;
+            if (id is null)
+            {
+                var query = seed.Item is { } item ? $"{item.Artist} {item.Title}" : CoverArt.Query(seed.Title, seed.Subtitle);
+                id = (await YouTubeMusic.SearchSongsAsync(_http, query)).FirstOrDefault()?.Id;
+            }
+            return id is null ? [] : await YouTubeMusic.RadioAsync(_http, id);
+        }
+        catch (Exception ex) { App.LogOnce("Radio automática", ex); return []; }
+    }
+
+    private void PrefetchRadio(MediaCard seed)
+    {
+        if (_radioSeed == Key(seed)) return;
+        _radioSeed = Key(seed);
+        _radioPrefetch = FetchRadioAsync(seed);
+    }
+
+    /// <summary>Añade a la cola canciones parecidas a la última y sigue sonando. False si está desactivada o no hay nada que añadir.</summary>
+    private async Task<bool> ContinueWithRadioAsync()
+    {
+        if (!RadioWanted || _radioBusy || _now is not { } seed) return false;
+        _radioBusy = true;
+        try
+        {
+            var radio = _radioSeed == Key(seed) && _radioPrefetch is { } pending ? await pending : await FetchRadioAsync(seed);
+            if (!ReferenceEquals(_now, seed)) return false;   // mientras tanto se eligió otra canción
+            var played = _hist.Select(k => k[(k.IndexOf(':') + 1)..]);
+            var add = YouTubeMusic.PickRadio(radio, _queue.Select(c => c.Id).Concat(played));
+            if (add.Count == 0) return false;
+            _queue.AddRange(add.Select(v => new MediaCard(v)));
+            var (artist, title) = seed.Item is { } it ? (it.Artist, it.Title) : LyricsService.GuessTrack(seed.Title, seed.Subtitle.Split(" · ")[0]);
+            ShowToast("\uE93E", $"Radio: canciones parecidas a «{title}»" + (artist.Length > 0 ? $" de {artist}" : ""));
+            return AdvanceAuto();
+        }
+        finally { _radioBusy = false; }
+    }
+
+    // ----- Avisos breves -----
+
+    private readonly DispatcherTimer _toastTimer = new() { Interval = TimeSpan.FromSeconds(3.2) };
+    private bool _toastHooked;
+
+    /// <summary>Aviso que aparece un momento encima de la barra y se va solo.</summary>
+    private void ShowToast(string glyph, string text)
+    {
+        if (!_toastHooked)
+        {
+            _toastHooked = true;
+            _toastTimer.Tick += (_, _) => { _toastTimer.Stop(); Toast.Opacity = 0; Toast.Translation = new Vector3(0, 10, 0); };
+        }
+        ToastIcon.Glyph = glyph;
+        ToastText.Text = text;
+        Toast.Translation = new Vector3(0, 10, 0);
+        DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () => { Toast.Opacity = 1; Toast.Translation = Vector3.Zero; });
+        _toastTimer.Stop(); _toastTimer.Start();
+    }
+
+    private void Radio_Toggled(object sender, RoutedEventArgs e)
+    {
+        if (_settings.Current.Radio == RadioToggle.IsOn) return;
+        _settings.Current.Radio = RadioToggle.IsOn;
+        ScheduleSave();
+        ShowToast("\uE93E", RadioToggle.IsOn ? "Radio automática activada" : "Radio automática desactivada");
     }
 
     private void Previous()
@@ -1037,7 +1125,9 @@ public sealed partial class MainWindow : Window
 
     private void OnNativeQueueEnded()
     {
-        if (_mode == Mode.Native && AppDriven) OnEnded();
+        if (_mode != Mode.Native) return;
+        if (AppDriven) OnEnded();
+        else if (RadioWanted) _ = EndOfQueueAsync();   // cola solo de archivos terminada: sigue la radio
     }
 
     private static readonly string[] RepeatLabels = ["Repetir: desactivado", "Repetir: la lista", "Repetir: la canción"];
@@ -1062,6 +1152,7 @@ public sealed partial class MainWindow : Window
         _repeat = QueueOps.NextRepeat(_repeat);
         _settings.Current.Repeat = _repeat; ScheduleSave();
         ApplyNativeModes(); PaintModes();
+        ShowToast(_repeat == QueueOps.RepeatOne ? "\uE8ED" : "\uE8EE", _repeat == QueueOps.RepeatAll ? "Repetir la lista" : _repeat == QueueOps.RepeatOne ? "Repetir la canción" : "Repetición desactivada");
     }
 
     private void Shuffle_Click(object sender, RoutedEventArgs e)
@@ -1070,6 +1161,7 @@ public sealed partial class MainWindow : Window
         _seen = _now is not null ? [Key(_now)] : []; _hist.Clear();
         _settings.Current.Shuffle = _shuffle; ScheduleSave();
         ApplyNativeModes(); PaintModes();
+        ShowToast("\uE8B1", _shuffle ? "Aleatorio activado" : "Aleatorio desactivado");
     }
 
     private void OnNativeStateChanged()

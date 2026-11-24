@@ -18,6 +18,8 @@ public sealed class AppSettings
     /// <summary>Repetir: off (apagado), all (la lista) u one (la canción).</summary>
     public string Repeat { get; set; } = QueueOps.RepeatOff;
     public bool Shuffle { get; set; }
+    /// <summary>Radio automática: al acabarse la cola, sigue con canciones parecidas (la radio de YouTube Music).</summary>
+    public bool Radio { get; set; } = true;
     /// <summary>Color elegido por el usuario («#RRGGBB») para el estilo «Tu color».</summary>
     public string? CustomAccent { get; set; }
 

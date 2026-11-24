@@ -356,6 +356,12 @@
                                            Text="Cambia colores, brillo y animaciones al momento. «Clásico» es el aspecto de siempre. En «Elegir mi color» puedes poner el color que quieras: el texto de los botones se adapta solo para que siempre se lea." />
                             </StackPanel>
                             <StackPanel Spacing="8">
+                                <TextBlock Text="Reproducción" Style="{StaticResource SubtitleTextBlockStyle}" />
+                                <ToggleSwitch x:Name="RadioToggle" Header="Radio automática" OnContent="Activada" OffContent="Desactivada" Toggled="Radio_Toggled" />
+                                <TextBlock Opacity="0.55" FontSize="12" TextWrapping="Wrap"
+                                           Text="Cuando se acaba la lista, la música no se para: sigue con canciones parecidas a la última (la radio de YouTube Music). Con «Repetir la lista» activado no se añade nada." />
+                            </StackPanel>
+                            <StackPanel Spacing="8">
                                 <TextBlock Text="Ecualizador" Style="{StaticResource SubtitleTextBlockStyle}" />
                                 <TextBlock Opacity="0.7" TextWrapping="Wrap" Text="En mantenimiento: se retiró temporalmente mientras se arregla un fallo. Volverá en una próxima versión." />
                             </StackPanel>
@@ -540,6 +546,18 @@
                 <Slider x:Name="Volume" Width="110" Margin="8,0,0,0" Minimum="0" Maximum="100" Value="80" VerticalAlignment="Center" ValueChanged="Volume_ValueChanged" />
             </StackPanel>
         </Grid>
+
+        <!-- Aviso breve (radio, repetir, aleatorio) encima de la barra -->
+        <Border x:Name="Toast" Grid.Row="1" HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,14" Padding="16,9"
+                CornerRadius="20" Background="{StaticResource NsBarBrush}" BorderBrush="{StaticResource NsLineBrush}" BorderThickness="1"
+                Opacity="0" IsHitTestVisible="False">
+            <Border.OpacityTransition><ScalarTransition Duration="0:0:0.25" /></Border.OpacityTransition>
+            <Border.TranslationTransition><Vector3Transition Duration="0:0:0.25" /></Border.TranslationTransition>
+            <StackPanel Orientation="Horizontal" Spacing="10">
+                <FontIcon x:Name="ToastIcon" Glyph="&#xE8D6;" FontSize="15" Foreground="{StaticResource NsAccentBrush}" />
+                <TextBlock x:Name="ToastText" FontWeight="SemiBold" />
+            </StackPanel>
+        </Border>
 
         <!-- Pantalla «Reproduciendo» -->
         <Grid x:Name="NowSheet" Grid.RowSpan="3" Visibility="Collapsed" Background="{StaticResource NsBgBrush}">
