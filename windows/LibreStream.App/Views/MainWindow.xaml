@@ -219,13 +219,52 @@
                                     <TextBlock Text="Volver" />
                                 </StackPanel>
                             </Button>
-                            <Button x:Name="ArtistPlay" Style="{StaticResource AccentButtonStyle}" Click="ArtistPlay_Click" AutomationProperties.Name="Reproducir las canciones del artista" Visibility="Collapsed">
-                                <StackPanel Orientation="Horizontal" Spacing="8">
-                                    <SymbolIcon Symbol="Play" />
-                                    <TextBlock Text="Reproducir" FontWeight="SemiBold" />
-                                </StackPanel>
-                            </Button>
                         </StackPanel>
+
+                        <!-- Cabecera de la página de artista: foto ancha, nombre, oyentes y botones -->
+                        <Grid x:Name="ArtistHero" Height="320" CornerRadius="26" Visibility="Collapsed">
+                            <Border x:Name="ArtistHeroTile" Background="{StaticResource NsPanelBrush}" />
+                            <Image x:Name="ArtistBanner" Stretch="UniformToFill" VerticalAlignment="Top">
+                                <Image.OpacityTransition><ScalarTransition Duration="0:0:0.4" /></Image.OpacityTransition>
+                            </Image>
+                            <Border>
+                                <Border.Background>
+                                    <LinearGradientBrush StartPoint="0,0" EndPoint="0.85,0.6">
+                                        <GradientStop Color="#E0000000" Offset="0.05" />
+                                        <GradientStop Color="#00000000" Offset="1" />
+                                    </LinearGradientBrush>
+                                </Border.Background>
+                            </Border>
+                            <Border>
+                                <Border.Background>
+                                    <LinearGradientBrush StartPoint="0.5,0.35" EndPoint="0.5,1">
+                                        <GradientStop Color="#00000000" Offset="0" />
+                                        <GradientStop Color="#CC000000" Offset="1" />
+                                    </LinearGradientBrush>
+                                </Border.Background>
+                            </Border>
+                            <StackPanel VerticalAlignment="Bottom" HorizontalAlignment="Left" Margin="34,0,34,30" Spacing="2" MaxWidth="760">
+                                <TextBlock Text="ARTISTA" Foreground="White" FontSize="12" CharacterSpacing="140" Opacity="0.85" />
+                                <TextBlock x:Name="ArtistName" Foreground="White" FontSize="56" FontWeight="Bold" TextTrimming="CharacterEllipsis" />
+                                <TextBlock x:Name="ArtistListeners" Foreground="White" Opacity="0.85" />
+                                <StackPanel Orientation="Horizontal" Spacing="10" Margin="0,14,0,0">
+                                    <Button x:Name="ArtistPlay" Style="{StaticResource AccentButtonStyle}" Click="ArtistPlay_Click" AutomationProperties.Name="Reproducir las canciones del artista" Visibility="Collapsed">
+                                        <StackPanel Orientation="Horizontal" Spacing="8">
+                                            <SymbolIcon Symbol="Play" />
+                                            <TextBlock Text="Reproducir" FontWeight="SemiBold" />
+                                        </StackPanel>
+                                    </Button>
+                                    <Button Click="ArtistRadio_Click" Padding="16,6" AutomationProperties.Name="Radio del artista: sus canciones y otras parecidas" ToolTipService.ToolTip="Sus canciones y otras parecidas">
+                                        <StackPanel Orientation="Horizontal" Spacing="8">
+                                            <FontIcon Glyph="&#xE93E;" FontSize="15" />
+                                            <TextBlock Text="Radio" FontWeight="SemiBold" />
+                                        </StackPanel>
+                                    </Button>
+                                </StackPanel>
+                            </StackPanel>
+                        </Grid>
+                        <TextBlock x:Name="ArtistBio" Margin="8,0,8,0" Opacity="0.8" TextWrapping="Wrap" MaxLines="3" TextTrimming="WordEllipsis" MaxWidth="980" HorizontalAlignment="Left"
+                                   Visibility="Collapsed" Tapped="ArtistBio_Tapped" ToolTipService.ToolTip="Pulsa para leer más o menos" />
 
                         <!-- Destacado -->
                         <Grid x:Name="Hero" Height="300" CornerRadius="26" Visibility="Collapsed">
@@ -313,6 +352,13 @@
                                     <UniformGridLayout MinColumnSpacing="4" MinRowSpacing="8" />
                                 </ItemsRepeater.Layout>
                             </ItemsRepeater>
+                        </StackPanel>
+
+                        <StackPanel x:Name="RelatedSection" Spacing="6" Visibility="Collapsed">
+                            <TextBlock Text="Artistas parecidos" Style="{StaticResource SectionTitle}" />
+                            <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled" HorizontalScrollMode="Enabled">
+                                <StackPanel x:Name="RelatedRow" Orientation="Horizontal" Spacing="14" Margin="8,0,0,8" />
+                            </ScrollViewer>
                         </StackPanel>
 
                         <StackPanel x:Name="ArtistsSection" Spacing="6" Visibility="Collapsed">

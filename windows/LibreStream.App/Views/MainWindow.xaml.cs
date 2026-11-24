@@ -260,10 +260,12 @@ public sealed partial class MainWindow : Window
             PageTitle.Text = playlist.Name;
             hint = playlist.Items.Count == 1 ? "Lista · 1 elemento" : $"Lista · {playlist.Items.Count} elementos";
         }
-        if (artistView) { PageTitle.Text = _artist!.Name; hint = "Canciones y discografía de YouTube Music."; }
+        if (artistView) { PageTitle.Text = _artist!.Name; hint = ""; }
         else if (entriesMode) hint = _musicFilter == "albums" ? $"Álbumes para «{raw}». Pulsa uno y suena entero." : $"Artistas para «{raw}». Pulsa uno para ver sus canciones y discos.";
         PageHint.Text = hint;
         PageHint.Visibility = Vis(hint.Length > 0);
+        PageTitle.Visibility = Vis(!artistView);
+        ShowArtistHero(artistView);
 
         if (special)
         {
@@ -885,6 +887,7 @@ public sealed partial class MainWindow : Window
         try
         {
             var page = await YouTubeMusic.BrowseArtistAsync(_http, artist.Id, artist.Name);
+            if (_artist == artist) { _artistPage = page; _artistPageArtist = artist.Id; }
             var songs = page.Songs;
             if (page.AllSongsId.Length > 0)
             {
@@ -910,6 +913,60 @@ public sealed partial class MainWindow : Window
         {
             if (_artist == artist) YouTubeBusy.IsActive = false;
         }
+    }
+
+    private MusicArtistPage? _artistPage;
+    private string? _artistHeroFor;
+
+    /// <summary>Cabecera de la página de artista (foto ancha, oyentes, biografía) y la fila de artistas parecidos.</summary>
+    private void ShowArtistHero(bool artistView)
+    {
+        ArtistHero.Visibility = Vis(artistView);
+        var page = artistView && _artistPageArtist == _artist?.Id ? _artistPage : null;
+        ArtistBio.Visibility = Vis(page is { Description.Length: > 0 });
+        RelatedSection.Visibility = Vis(page is { Related.Count: > 0 });
+        if (!artistView || _artist is not { } artist) return;
+        ArtistName.Text = artist.Name;
+        ArtistListeners.Text = page?.Listeners ?? "";
+        var key = $"{artist.Id}|{page is not null}";
+        if (_artistHeroFor == key) return;
+        _artistHeroFor = key;
+        var hue = Math.Abs(artist.Name.Aggregate(17, (a, c) => a * 31 + c)) % 360;
+        ArtistHeroTile.Background = new LinearGradientBrush
+        {
+            StartPoint = new Windows.Foundation.Point(0, 0), EndPoint = new Windows.Foundation.Point(1, 1),
+            GradientStops = { new GradientStop { Color = HsvToColor(hue, 0.6, 0.55), Offset = 0 }, new GradientStop { Color = HsvToColor((hue + 40) % 360, 0.7, 0.2), Offset = 1 } },
+        };
+        // foto ancha si la hay; si no, su foto cuadrada (a la derecha) sobre el degradado
+        var url = page?.Banner ?? artist.Art;
+        ArtistBanner.HorizontalAlignment = page?.Banner is null ? HorizontalAlignment.Right : HorizontalAlignment.Stretch;
+        ArtistBanner.Width = page?.Banner is null ? 320 : double.NaN;
+        ArtistBanner.Opacity = 0;
+        ArtistBanner.Source = url is null ? null : new BitmapImage(new Uri(url));
+        if (url is not null) DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () => ArtistBanner.Opacity = 1);
+        ArtistBio.Text = page?.Description ?? "";
+        ArtistBio.MaxLines = 3;
+        RelatedRow.Children.Clear();
+        foreach (var r in page?.Related ?? [])
+        {
+            var rel = r;
+            AddArtistButton(r.Name, r.Art, null, RelatedRow, (_, _) => _ = OpenArtistAsync(rel));
+        }
+    }
+
+    private string? _artistPageArtist;
+
+    private void ArtistBio_Tapped(object sender, TappedRoutedEventArgs e) => ArtistBio.MaxLines = ArtistBio.MaxLines == 3 ? 0 : 3;
+
+    /// <summary>Radio del artista: su canción más escuchada y la radio de YouTube Music a partir de ella.</summary>
+    private async void ArtistRadio_Click(object sender, RoutedEventArgs e)
+    {
+        if (_youtube.FirstOrDefault() is not { } seed) return;
+        ShowToast("\uE93E", $"Radio de {_artist?.Name ?? seed.Subtitle}");
+        var radio = await FetchRadioAsync(seed);
+        var list = new List<MediaCard> { seed };
+        list.AddRange(YouTubeMusic.PickRadio(radio, [seed.Id], 40).Select(v => new MediaCard(v)));
+        Play(seed, list);
     }
 
     private void ArtistBack_Click(object sender, RoutedEventArgs e)
@@ -956,7 +1013,7 @@ public sealed partial class MainWindow : Window
     }
 
     /// <summary>Un artista de la fila: círculo con su foto (o la inicial) y su nombre; pulsarlo abre sus canciones y discos.</summary>
-    private Border AddArtistButton(string name, string? photo, int? rank)
+    private Border AddArtistButton(string name, string? photo, int? rank, Panel? host = null, RoutedEventHandler? click = null)
     {
         var h = Math.Abs(name.Aggregate(17, (a, c) => a * 31 + c)) % 360;
         var circle = new Border
@@ -977,8 +1034,8 @@ public sealed partial class MainWindow : Window
             Content = new StackPanel { Spacing = 6, Children = { circle, label } },
         };
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(button, (rank is { } r ? $"Puesto {r}: " : "Artista ") + $"{name}: ver canciones y discografía");
-        button.Click += Artist_Click;
-        ArtistsRow.Children.Add(button);
+        button.Click += click ?? Artist_Click;
+        (host ?? ArtistsRow).Children.Add(button);
         return circle;
     }
 
