@@ -565,7 +565,12 @@
                     Click="NowSheetClose_Click" AutomationProperties.Name="Cerrar">
                 <FontIcon Glyph="&#xE70D;" />
             </Button>
-            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="10" MaxWidth="560" Padding="24">
+            <Grid x:Name="NpLayout" Margin="0,40,0,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition x:Name="NpLyricsCol" Width="0" />
+                </Grid.ColumnDefinitions>
+            <StackPanel x:Name="NpMain" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="10" MaxWidth="560" Padding="24">
                 <Grid Width="340" Height="340" HorizontalAlignment="Center">
                     <Rectangle Margin="-70" IsHitTestVisible="False">
                         <Rectangle.Fill>
@@ -601,10 +606,20 @@
                         <Button.Flyout><MenuFlyout x:Name="PlaylistMenu2" Opening="PlaylistMenu_Opening" /></Button.Flyout>
                     </Button>
                     <Button Click="Queue_Click" Content="Cola" CornerRadius="14" MinWidth="56" MinHeight="46" />
-                    <Button Click="NowSheetLyrics_Click" Content="Letra" CornerRadius="14" MinWidth="56" MinHeight="46" />
+                    <ToggleButton x:Name="NpLyricsToggle" Click="NowSheetLyrics_Click" Content="Letra" CornerRadius="14" MinWidth="56" MinHeight="46" AutomationProperties.Name="Letra a pantalla completa" />
                     <Button Click="NowSheetVideo_Click" CornerRadius="14" MinWidth="56" MinHeight="46" AutomationProperties.Name="Mostrar vídeo"><SymbolIcon Symbol="SlideShow" /></Button>
                 </StackPanel>
             </StackPanel>
+
+            <!-- Letra a pantalla completa (tipo karaoke): la línea que suena, grande; las demás, apagadas. Pulsar una línea salta a ella -->
+            <Grid x:Name="NpLyricsHost" Grid.Column="1" Visibility="Collapsed" Margin="0,0,48,24">
+                <Grid.OpacityTransition><ScalarTransition Duration="0:0:0.3" /></Grid.OpacityTransition>
+                <ScrollViewer x:Name="NpLyricsScroll" VerticalScrollBarVisibility="Hidden" HorizontalScrollMode="Disabled">
+                    <StackPanel x:Name="NpLyricsLines" Spacing="18" Padding="8,260,24,420" />
+                </ScrollViewer>
+                <TextBlock x:Name="NpLyricsInfo" FontSize="20" Opacity="0.7" TextWrapping="Wrap" VerticalAlignment="Center" Margin="8,0,24,0" />
+            </Grid>
+            </Grid>
         </Grid>
     </Grid>
 </Window>

@@ -50,10 +50,12 @@ public sealed class MiniPlayerWindow : Window
     private readonly Grid _root = new();
     private readonly Storyboard _pulse = new();
     private bool _setting, _scrubbing, _small, _pulsing;
+    private readonly bool _live;   // la ventana principal manda los niveles del sonido real (barritas y carátula siguen la música)
     private string? _trackId;
 
-    public MiniPlayerWindow(Action previous, Action playPause, Action next, Action expand, Action<double> seek, Action save, ElementTheme theme)
+    public MiniPlayerWindow(Action previous, Action playPause, Action next, Action expand, Action<double> seek, Action save, ElementTheme theme, bool live = false)
     {
+        _live = live;
         Title = "Nsound";
         _root.Width = DesignW; _root.Height = DesignH;
 
@@ -227,12 +229,10 @@ public sealed class MiniPlayerWindow : Window
             Storyboard.SetTargetProperty(a, prop);
             _pulse.Children.Add(a);
         }
-        foreach (var prop in new[] { "ScaleX", "ScaleY" })
-        {
-            Add(_artScale, prop, 1, 1.04, 2.2);
-            Add(_haloScale, prop, 1, 1.5, 1.8, reverse: false);
-        }
+        foreach (var prop in new[] { "ScaleX", "ScaleY" }) Add(_haloScale, prop, 1, 1.5, 1.8, reverse: false);
         Add(_halo, "Opacity", 0.45, 0, 1.8, reverse: false);
+        if (_live) return;   // con niveles en vivo, la carátula y las barritas las mueve SetLevels
+        foreach (var prop in new[] { "ScaleX", "ScaleY" }) Add(_artScale, prop, 1, 1.04, 2.2);
         var secs = new[] { 0.42, 0.58, 0.36 };
         for (var i = 0; i < _eq.Children.Count; i++)
             Add(((FrameworkElement)_eq.Children[i]).RenderTransform, "ScaleY", 0.2, 1, secs[i]);
@@ -253,6 +253,26 @@ public sealed class MiniPlayerWindow : Window
             DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () => _art.Opacity = 1);
         }
         SetPlaying(playing);
+    }
+
+    /// <summary>La portada cuadrada oficial, cuando se encuentra después de empezar la canción.</summary>
+    public void SetCover(ImageSource art, ImageSource? backdrop)
+    {
+        _art.Opacity = 0;
+        _art.Source = art;
+        if (backdrop is not null) _backdrop.Source = backdrop;
+        DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () => _art.Opacity = 1);
+    }
+
+    /// <summary>Niveles del sonido (graves → agudos, 0–1); null = en pausa (todo en reposo).</summary>
+    public void SetLevels(IReadOnlyList<double>? levels)
+    {
+        if (!_live) return;
+        var bass = levels is null ? 0 : levels[0];
+        _artScale.ScaleX = _artScale.ScaleY = 1 + 0.06 * bass;
+        for (var i = 0; i < _eq.Children.Count; i++)
+            if (((FrameworkElement)_eq.Children[i]).RenderTransform is ScaleTransform st)
+                st.ScaleY = levels is null ? 0.4 : 0.2 + 0.8 * levels[Math.Min(i + 1, levels.Count - 1)];
     }
 
     /// <summary>Color de la canción (sale de la portada): tiñe el brillo de detrás de la carátula y las barritas.</summary>

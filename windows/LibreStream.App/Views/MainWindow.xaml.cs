@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Numerics;
 using System.Text.Json;
 using LibreStream.Core;
+using LibreStream.Core.Services.Audio;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
@@ -1100,7 +1101,7 @@ public sealed partial class MainWindow : Window
             () => Safe("Mini: volver", ShowMainFromMini),
             seconds => Safe("Mini: saltar", () => Progress.Value = Math.Clamp(seconds, 0, Progress.Maximum)),   // reutiliza el salto de la barra principal
             () => Safe("Mini: guardar", () => Save_Click(this, null!)),
-            Root.RequestedTheme);
+            Root.RequestedTheme, _analyzer.Running);
         _mini.Closed += (_, _) => _mini = null;
         SyncMini();
         _mini.SetProgress(TimeSpan.FromSeconds(Math.Max(0, Progress.Value)), TimeSpan.FromSeconds(Math.Max(1, Progress.Maximum)));
@@ -1122,7 +1123,7 @@ public sealed partial class MainWindow : Window
     private void SyncMini()
     {
         if (_mini is null) return;
-        _mini.SetTrack(_now?.Id ?? "", _now?.Title ?? "", _now is null ? "" : _now.YouTubeId is null ? _now.Subtitle : $"{_now.Subtitle} · YouTube", _now?.Artwork, _now?.Tile, _now is null ? null : Backdrop(_now), IsPlaying);
+        _mini.SetTrack(_now?.Id ?? "", _now?.Title ?? "", _now is null ? "" : _now.YouTubeId is null ? _now.Subtitle : $"{_now.Subtitle} · YouTube", _now is null ? null : BestArt(_now), _now?.Tile, _now is null ? null : Backdrop(_now), IsPlaying);
         _mini.SetGlow(_songColor);
         _mini.SetSaved(_now is not null && _library.Contains(_now.Source, _now.Id));
     }
@@ -1150,10 +1151,10 @@ public sealed partial class MainWindow : Window
         NowArtist.Text = _now.YouTubeId is null ? _now.Subtitle : $"{_now.Subtitle} · YouTube";
         ShowKeyBpm();
         NowTile.Background = _now.Tile;
-        NowImage.Source = _now.Artwork;
+        NowImage.Source = BestArt(_now);
         if (changed && _palette.Id != "clasico") AnimateTrackChange();
         SaveIcon.Glyph = _library.Contains(_now.Source, _now.Id) ? "" : "";
-        if (LyricsPanel.Visibility == Visibility.Visible) _ = LoadLyricsAsync();
+        if (LyricsPanel.Visibility == Visibility.Visible || KaraokeOn) _ = LoadLyricsAsync();
         UpdateAmbient();
         UpdateNowSheet();
     }
@@ -1171,6 +1172,7 @@ public sealed partial class MainWindow : Window
         _lyrics = null; _lyricIndex = -1;
         LyricsList.ItemsSource = null;
         LyricsInfo.Text = "Buscando la letra…";
+        BuildKaraoke("Buscando la letra…");
 
         var (artist, title) = card.Item is { } item
             ? (item.Artist, item.Title)
@@ -1183,22 +1185,97 @@ public sealed partial class MainWindow : Window
             LyricsList.ItemsSource = found?.Lines;
             LyricsInfo.Text = found is null ? $"No hay letra para «{title}»."
                 : found.Synced ? $"{artist} — {title}" : $"{artist} — {title} (sin sincronizar)";
+            BuildKaraoke(found is null ? $"No hay letra para «{title}»." : null);
         }
         catch (OperationCanceledException) { }
         catch (Exception ex)
         {
             LyricsInfo.Text = $"No se pudo cargar la letra: {ex.Message}";
+            BuildKaraoke("No se pudo cargar la letra.");
         }
     }
 
     private void FollowLyrics(double position)
     {
-        if (_lyrics is not { Synced: true } lyrics || LyricsPanel.Visibility != Visibility.Visible) return;
+        if (_lyrics is not { Synced: true } lyrics || (LyricsPanel.Visibility != Visibility.Visible && !KaraokeOn)) return;
         var index = LyricsService.IndexAt(lyrics.Lines, position + 0.3);
         if (index == _lyricIndex) return;
         _lyricIndex = index;
-        LyricsList.SelectedIndex = index;
-        if (index >= 0) LyricsList.ScrollIntoView(lyrics.Lines[Math.Min(index + 3, lyrics.Lines.Count - 1)]);
+        if (LyricsPanel.Visibility == Visibility.Visible)
+        {
+            LyricsList.SelectedIndex = index;
+            if (index >= 0) LyricsList.ScrollIntoView(lyrics.Lines[Math.Min(index + 3, lyrics.Lines.Count - 1)]);
+        }
+        if (KaraokeOn) HighlightKaraoke(index);
+    }
+
+    // ----- Letra a pantalla completa en «Reproduciendo» -----
+
+    private bool KaraokeOn => NowSheet.Visibility == Visibility.Visible && NpLyricsHost.Visibility == Visibility.Visible;
+
+    private void SetKaraoke(bool on)
+    {
+        NpLyricsToggle.IsChecked = on;
+        NpLyricsHost.Visibility = Vis(on);
+        NpLyricsCol.Width = on ? new GridLength(1.25, GridUnitType.Star) : new GridLength(0);
+        if (!on) return;
+        if (_now is null) { BuildKaraoke("Reproduce una canción para ver su letra."); return; }
+        _lyricIndex = -1;
+        if (_lyricsFor == $"{_now.Source}:{_now.Id}") BuildKaraoke(_lyrics is null ? LyricsInfo.Text : null);
+        else _ = LoadLyricsAsync();
+    }
+
+    /// <summary>Una línea por renglón, grande; la que suena se enciende. Sin letra sincronizada se ve entera y fija.</summary>
+    private void BuildKaraoke(string? message)
+    {
+        NpLyricsLines.Children.Clear();
+        NpLyricsInfo.Text = message ?? "";
+        NpLyricsInfo.Visibility = Vis(message is not null);
+        if (message is not null || _lyrics is not { } lyrics) return;
+        foreach (var line in lyrics.Lines)
+        {
+            var tb = new TextBlock
+            {
+                Text = line.Text.Length == 0 ? "♪" : line.Text, FontSize = 30, FontWeight = Microsoft.UI.Text.FontWeights.Bold,
+                TextWrapping = TextWrapping.Wrap, Opacity = lyrics.Synced ? 0.32 : 0.9, Tag = line,
+                OpacityTransition = new ScalarTransition { Duration = TimeSpan.FromMilliseconds(280) },
+                ScaleTransition = new Vector3Transition { Duration = TimeSpan.FromMilliseconds(280) },
+            };
+            if (lyrics.Synced && line.Time >= 0)
+            {
+                tb.Tapped += (_, _) => SeekTo(line.Time);
+                ToolTipService.SetToolTip(tb, "Saltar a esta línea");
+            }
+            NpLyricsLines.Children.Add(tb);
+        }
+        NpLyricsScroll.ChangeView(null, 0, null, true);
+        _lyricIndex = -2;   // en la siguiente actualización (≈0,5 s, ya colocadas las líneas) se enciende la que suena
+    }
+
+    private void HighlightKaraoke(int index)
+    {
+        for (var i = 0; i < NpLyricsLines.Children.Count; i++)
+        {
+            if (NpLyricsLines.Children[i] is not TextBlock tb) continue;
+            var on = i == index;
+            tb.Opacity = on ? 1 : i < index ? 0.22 : 0.38;
+            tb.CenterPoint = new Vector3(0, (float)tb.ActualHeight / 2, 0);
+            tb.Scale = on ? new Vector3(1.06f, 1.06f, 1) : Vector3.One;
+        }
+        if (index < 0 || index >= NpLyricsLines.Children.Count) return;
+        var target = (FrameworkElement)NpLyricsLines.Children[index];
+        var y = target.TransformToVisual(NpLyricsLines).TransformPoint(new Windows.Foundation.Point(0, 0)).Y;
+        NpLyricsScroll.ChangeView(null, Math.Max(0, y - NpLyricsScroll.ViewportHeight * 0.38), null, false);   // la línea queda algo por encima del centro
+    }
+
+    private void SeekTo(double seconds)
+    {
+        if (_mode == Mode.YouTube)
+        {
+            _ytTime = seconds;
+            RunPlayerScript($"cmd('seek', {seconds.ToString("0.##", CultureInfo.InvariantCulture)})");
+        }
+        else if (_mode == Mode.Native) _player.Seek(TimeSpan.FromSeconds(seconds));
     }
 
     private void Lyrics_Click(object sender, RoutedEventArgs e)
@@ -1863,7 +1940,7 @@ public sealed partial class MainWindow : Window
         if (_now is not { } n) { ApplySongColor(Hex(_palette.Accent)); return; }
         ApplySongColor(_artColors.TryGetValue(n.Id, out var known) ? known : MediaCard.Hsl(MediaCard.HueOf(n.Id), 0.75, 0.52));
         if (_artColors.ContainsKey(n.Id) || !_artColorTried.Add(n.Id)) return;
-        _ = LoadArtColorAsync(n);
+        _ = EnrichAsync(n);
     }
 
     private void ApplySongColor(Windows.UI.Color c)
@@ -1903,12 +1980,58 @@ public sealed partial class MainWindow : Window
         sb.Begin();
     }
 
-    /// <summary>Lee el color dominante de la portada (miniatura reducida a 24×24); la miniatura pequeña de YouTube basta.</summary>
+    private readonly Dictionary<string, string?> _covers = [];          // id → portada cuadrada de YouTube Music (null: no hay)
+    private readonly Dictionary<string, ImageSource> _coverImages = [];
+
+    /// <summary>Portada cuadrada de la canción, si se conoce: la propia (YouTube Music) o la encontrada para el vídeo.</summary>
+    private string? CoverUrl(MediaCard card)
+        => CoverArt.IsSquare(card.ArtworkUrl?.AbsoluteUri) ? card.ArtworkUrl!.AbsoluteUri : _covers.GetValueOrDefault(card.Id);
+
+    private ImageSource? CoverImage(MediaCard card)
+    {
+        if (CoverUrl(card) is not { } url) return null;
+        if (!_coverImages.TryGetValue(url, out var img)) _coverImages[url] = img = new BitmapImage(new Uri(url));
+        return img;
+    }
+
+    /// <summary>Portada para la barra, «Reproduciendo» y el mini: la cuadrada oficial si la hay; si no, la de la tarjeta.</summary>
+    private ImageSource? BestArt(MediaCard card) => CoverImage(card) ?? card.Artwork;
+
+    /// <summary>Al empezar una canción: busca su portada cuadrada (si el vídeo no la trae) y después lee su color.</summary>
+    private async Task EnrichAsync(MediaCard card)
+    {
+        if (card.YouTubeId is { } vid && CoverUrl(card) is null && !_covers.ContainsKey(card.Id))
+        {
+            try
+            {
+                var songs = await YouTubeMusic.SearchSongsAsync(_http, CoverArt.Query(card.Title, card.Subtitle.Split(" · ")[0]));
+                _covers[card.Id] = CoverArt.PickSong(songs, vid, card.Title, card.Subtitle.Split(" · ")[0])?.Art;
+                if (_covers[card.Id] is not null && _now?.Id == card.Id) ShowCover(card);
+            }
+            catch (Exception ex) { App.LogOnce("Portada cuadrada", ex); }   // sin conexión: se queda el fotograma del vídeo
+        }
+        await LoadArtColorAsync(card);
+    }
+
+    /// <summary>Cambia a la portada cuadrada en la barra, «Reproduciendo» y el mini (con un fundido).</summary>
+    private void ShowCover(MediaCard card)
+    {
+        if (CoverImage(card) is not { } img) return;
+        NowImage.Opacity = 0;
+        NowImage.Source = img;
+        DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () => NowImage.Opacity = 1);
+        NpImage.Source = img;
+        NpBackdrop.Source = Backdrop(card);
+        _mini?.SetCover(img, Backdrop(card));
+    }
+
+    /// <summary>Lee el color dominante de la portada (reducida a 24×24): la cuadrada si se encontró; si no, la miniatura del vídeo.</summary>
     private async Task LoadArtColorAsync(MediaCard card)
     {
         try
         {
-            var uri = card.YouTubeId is { } y ? new Uri($"https://i.ytimg.com/vi/{y}/mqdefault.jpg") : card.ArtworkUrl;
+            var uri = CoverUrl(card) is { } cover ? new Uri(cover)
+                : card.YouTubeId is { } y ? new Uri($"https://i.ytimg.com/vi/{y}/mqdefault.jpg") : card.ArtworkUrl;
             if (uri is null) return;
             var bytes = uri.IsFile ? await File.ReadAllBytesAsync(uri.LocalPath) : await _http.GetByteArrayAsync(uri);
             using var stream = new Windows.Storage.Streams.InMemoryRandomAccessStream();
@@ -1932,9 +2055,12 @@ public sealed partial class MainWindow : Window
     /// <summary>Fondo desenfocado: la portada en su versión más pequeña, ampliada (para YouTube, la miniatura de 120×90).</summary>
     private ImageSource? Backdrop(MediaCard card)
     {
-        if (_backdrops.TryGetValue(card.Id, out var cached)) return cached;
-        ImageSource? img = card.YouTubeId is { } y ? new BitmapImage(new Uri($"https://i.ytimg.com/vi/{y}/default.jpg")) : card.Artwork;
-        if (img is not null) _backdrops[card.Id] = img;
+        var tiny = CoverArt.Tiny(CoverUrl(card));
+        var key = tiny ?? card.Id;
+        if (_backdrops.TryGetValue(key, out var cached)) return cached;
+        ImageSource? img = tiny is not null ? new BitmapImage(new Uri(tiny))
+            : card.YouTubeId is { } y ? new BitmapImage(new Uri($"https://i.ytimg.com/vi/{y}/default.jpg")) : card.Artwork;
+        if (img is not null) _backdrops[key] = img;
         return img;
     }
 
@@ -1980,6 +2106,33 @@ public sealed partial class MainWindow : Window
     /// Mientras suena: barras del ecualizador, la portada «respira», el botón de reproducir lanza ondas, el brillo de fondo late
     /// despacio y la portada grande de «Reproduciendo» se mueve un poco. En pausa todo vuelve a su sitio. «Clásico» no anima nada.
     /// </summary>
+    private readonly DispatcherTimer _vizTimer = new() { Interval = TimeSpan.FromMilliseconds(33) };
+    private readonly double[] _levels = new double[BandMeter.Count];
+    private bool _live;   // con el analizador en marcha, barras, portada y brillo siguen al sonido real
+
+    /// <summary>Unas 30 veces por segundo: lleva los niveles del sonido a las barras, la portada, el brillo y el mini.</summary>
+    private void VizTick()
+    {
+        _analyzer.Meter.Read(_levels);
+        double bass = _levels[0], body = Math.Max(_levels[0], _levels[1]);
+        var bars = new[] { Bar1, Bar2, Bar3, Bar4 };
+        for (var i = 0; i < bars.Length; i++) bars[i].ScaleY = 0.15 + 0.85 * _levels[i];
+        NowArtScale.ScaleX = NowArtScale.ScaleY = 1 + 0.07 * bass;
+        NpArtScale.ScaleX = NpArtScale.ScaleY = 1 + 0.035 * bass;
+        NowGlow.Opacity = 0.2 + 0.75 * body;
+        Ambient.Opacity = 0.55 + 0.45 * bass;
+        _mini?.SetLevels(_levels);
+    }
+
+    private void StopViz()
+    {
+        _vizTimer.Stop();
+        NowArtScale.ScaleX = NowArtScale.ScaleY = NpArtScale.ScaleX = NpArtScale.ScaleY = 1;
+        NowGlow.Opacity = 0;
+        Ambient.Opacity = 1;
+        _mini?.SetLevels(null);
+    }
+
     private void SetBars(bool playing)
     {
         var show = playing && _palette.Id != "clasico";
@@ -1987,9 +2140,11 @@ public sealed partial class MainWindow : Window
         if (show == _barsOn) return;
         _barsOn = show;
         NowGlow.Opacity = show ? 0.55 : 0;
-        if (!show) { _bars?.Stop(); return; }
+        if (!show) { _bars?.Stop(); StopViz(); return; }
         if (_bars is null)
         {
+            _live = _analyzer.Running;
+            if (_live) _vizTimer.Tick += (_, _) => Safe("Visualizador", VizTick);
             _bars = new Storyboard();
             void Add(DependencyObject target, string prop, double from, double to, double secs, bool reverse = true, double begin = 0)
             {
@@ -2003,19 +2158,23 @@ public sealed partial class MainWindow : Window
                 Storyboard.SetTargetProperty(a, prop);
                 _bars.Children.Add(a);
             }
-            foreach (var (scale, secs) in new[] { (Bar1, 0.45), (Bar2, 0.62), (Bar3, 0.38), (Bar4, 0.53) })
-                Add(scale, "ScaleY", 0.2, 1, secs);
-            foreach (var prop in new[] { "ScaleX", "ScaleY" })
-            {
-                Add(NowArtScale, prop, 1, 1.05, 1.4);
-                Add(PlayHaloScale, prop, 1, 1.45, 1.8, reverse: false);
-                Add(NpArtScale, prop, 1, 1.025, 2.6);
-            }
+            foreach (var prop in new[] { "ScaleX", "ScaleY" }) Add(PlayHaloScale, prop, 1, 1.45, 1.8, reverse: false);
             Add(PlayHalo, "Opacity", 0.45, 0, 1.8, reverse: false);
-            Add(Ambient, "Opacity", 0.65, 1, 4.5);
-            Add(NowGlow, "Opacity", 0.3, 0.8, 1.4);
+            if (!_live)   // sin acceso al sonido del PC: animación fija
+            {
+                foreach (var (scale, secs) in new[] { (Bar1, 0.45), (Bar2, 0.62), (Bar3, 0.38), (Bar4, 0.53) })
+                    Add(scale, "ScaleY", 0.2, 1, secs);
+                foreach (var prop in new[] { "ScaleX", "ScaleY" })
+                {
+                    Add(NowArtScale, prop, 1, 1.05, 1.4);
+                    Add(NpArtScale, prop, 1, 1.025, 2.6);
+                }
+                Add(Ambient, "Opacity", 0.65, 1, 4.5);
+                Add(NowGlow, "Opacity", 0.3, 0.8, 1.4);
+            }
         }
         _bars.Begin();
+        if (_live) _vizTimer.Start();
     }
 
     private void SyncSheetAndBars(TimeSpan pos, TimeSpan total)
@@ -2045,15 +2204,15 @@ public sealed partial class MainWindow : Window
         NowSheet.Visibility = Visibility.Visible;
     }
 
-    private void CloseNowSheet() => NowSheet.Visibility = Visibility.Collapsed;
+    private void CloseNowSheet()
+    {
+        NowSheet.Visibility = Visibility.Collapsed;
+        if (NpLyricsHost.Visibility == Visibility.Visible) SetKaraoke(false);
+    }
 
     private void NowSheetClose_Click(object sender, RoutedEventArgs e) => CloseNowSheet();
 
-    private void NowSheetLyrics_Click(object sender, RoutedEventArgs e)
-    {
-        CloseNowSheet();
-        Lyrics_Click(sender, e);
-    }
+    private void NowSheetLyrics_Click(object sender, RoutedEventArgs e) => SetKaraoke(NpLyricsToggle.IsChecked == true);
 
     private void NowSheetVideo_Click(object sender, RoutedEventArgs e)
     {
@@ -2067,7 +2226,7 @@ public sealed partial class MainWindow : Window
         if (_now is not { } card) return;
         NpTitle.Text = card.Title;
         NpArtist.Text = card.YouTubeId is null ? card.Subtitle : $"{card.Subtitle} · YouTube";
-        NpImage.Source = card.YouTubeId is { } id ? new BitmapImage(new Uri($"https://i.ytimg.com/vi/{id}/hq720.jpg")) : card.Artwork;
+        NpImage.Source = CoverImage(card) ?? (card.YouTubeId is { } id ? new BitmapImage(new Uri($"https://i.ytimg.com/vi/{id}/hq720.jpg")) : card.Artwork);
         NpBackdrop.Source = Backdrop(card);
         NpHeartIcon.Glyph = _library.Contains(card.Source, card.Id) ? "\uEB52" : "\uEB51";
     }
