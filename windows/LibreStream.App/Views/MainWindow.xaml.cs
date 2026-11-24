@@ -296,7 +296,7 @@ public sealed partial class MainWindow : Window
 
         YouTubeTitle.Text = (_kind, q.Length > 0) switch
         {
-            ("track", false) => _genre == GenreNames[0] ? $"Éxitos del momento en {CountryLabel}" : _genre,
+            ("track", false) => _genre == GenreNames[0] ? $"Éxitos del momento en {CountryLabel}" : _genreTitles.TryGetValue(_genre, out var gt) ? $"{_genre} · {gt}" : _genre,
             ("track", true) => "Música en YouTube",
             ("all", false) => scope switch { "track" => "Canciones del momento", "video" => "Videoclips del momento", _ => $"Éxitos del momento en {CountryLabel}" },
             _ => scope == "track" ? "Música en YouTube" : scope == "video" ? "Vídeos de YouTube" : "Resultados en YouTube",
@@ -710,6 +710,19 @@ public sealed partial class MainWindow : Window
         WeekSection.Children.Add(chart);
     }
 
+    private readonly Dictionary<string, (List<YouTubeVideo> Songs, string Title)> _genreCache = [];
+    private readonly Dictionary<string, string> _genreTitles = [];   // género → nombre de su lista oficial (para el título)
+
+    /// <summary>Lista oficial del género, guardada una hora (las listas de YouTube Music cambian como mucho a diario).</summary>
+    private async Task<(List<YouTubeVideo> Songs, string Title)> GenreSongsAsync(string genre, CancellationToken ct)
+    {
+        var key = $"{genre}|{DateTime.UtcNow:yyyyMMddHH}";
+        if (_genreCache.TryGetValue(key, out var cached)) return cached;
+        var res = await YouTubeMusic.GenreSongsAsync(_http, genre, ct);
+        if (res.Songs.Count > 0) _genreCache[key] = res;
+        return res;
+    }
+
     // ===================== Búsqueda en YouTube =====================
 
     private async Task SearchYouTubeAsync(string? text)
@@ -739,8 +752,20 @@ public sealed partial class MainWindow : Window
         try
         {
             List<YouTubeVideo>? results = null;
-            // Sin búsqueda, «Éxitos»: el top oficial del país (YouTube Music). Los demás géneros se buscan con el nombre del país.
+            // Sin búsqueda, «Éxitos»: el top oficial del país (YouTube Music). Los demás géneros: la lista oficial de YouTube Music
+            // de ese género («Éxitos actuales del dance», «Hot Reggaeton»…), que YouTube renueva cada semana.
             var fromHits = false;
+            string? curatedTitle = null;
+            if (typed.Length == 0 && kind == "track" && _genre != GenreNames[0])
+            {
+                try
+                {
+                    var (songs, title) = await GenreSongsAsync(_genre, cts.Token);
+                    var list = songs.Where(v => v.DurationSec == 0 || ContentFilter.IsSong(v)).ToList();
+                    if (list.Count >= 10) { results = list.Take(80).ToList(); fromHits = true; curatedTitle = title; }
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException) { App.LogOnce("Lista del género", ex); }
+            }
             if (typed.Length == 0 && (kind == "track" ? _genre == GenreNames[0] : kind == "all"))
             {
                 try
@@ -755,7 +780,7 @@ public sealed partial class MainWindow : Window
             if (scope == "track")
             {
                 // Música: solo canciones de YouTube Music (versiones de audio: sin intros ni charla)
-                var musicQuery = typed.Length > 0 ? typed : $"{YouTubeMusic.GenreQuery(kind == "track" ? _genre : "Éxitos", DateTime.Now.Year)} {CountryLabel}";
+                var musicQuery = typed.Length > 0 ? typed : YouTubeMusic.GenreQuery(kind == "track" ? _genre : "Éxitos", DateTime.Now.Year) + (kind == "track" && _genre != GenreNames[0] ? "" : " " + CountryLabel);   // el país solo para «Éxitos»: con los géneros desviaba la búsqueda
                 try { results = (await YouTubeMusic.SearchSongsAsync(_http, musicQuery, cts.Token)).Where(ContentFilter.IsSong).ToList(); }
                 catch (Exception ex) when (ex is not OperationCanceledException) { App.LogOnce("YouTube Music", ex); }
                 if (results is { Count: 0 }) results = null;   // si YouTube Music no da nada, se usa la búsqueda normal
@@ -766,7 +791,7 @@ public sealed partial class MainWindow : Window
                 // Sin búsqueda: primero lo publicado esta semana del género (se actualiza solo), después el fondo de catálogo
                 try
                 {
-                    var fresh = (await YouTubeSearch.SearchAsync(_http, $"{YouTubeMusic.RecentQuery(kind == "track" ? _genre : "Éxitos", DateTime.Now.Year)} {CountryLabel}", cts.Token, thisWeek: true))
+                    var fresh = (await YouTubeSearch.SearchAsync(_http, YouTubeMusic.RecentQuery(kind == "track" ? _genre : "Éxitos", DateTime.Now.Year) + (kind == "track" && _genre != GenreNames[0] ? "" : " " + CountryLabel), cts.Token, thisWeek: true))
                         .Where(v => ContentFilter.IsSong(v) && !v.IsLive && v.DurationSec <= 480).Take(8).ToList();
                     var seen = fresh.Select(v => v.Id).ToHashSet();
                     results = fresh.Concat(results.Where(v => !seen.Contains(v.Id))).ToList();
@@ -785,6 +810,7 @@ public sealed partial class MainWindow : Window
             _youtube = results.Select(v => new MediaCard(v)).ToList();
             YouTubeRepeater.ItemsSource = _youtube;
             YouTubeInfo.Text = _youtube.Count == 0 ? "Sin resultados en YouTube." : "";
+            if (curatedTitle is { Length: > 0 }) { _genreTitles[_genre] = curatedTitle; YouTubeTitle.Text = $"{_genre} · {curatedTitle}"; }
         }
         catch (OperationCanceledException) { }
         catch (Exception ex)
