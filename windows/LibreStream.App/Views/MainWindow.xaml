@@ -143,6 +143,9 @@
                 <NavigationViewItemSeparator />
                 <NavigationViewItem Content="Mi biblioteca" Icon="Library" Tag="library" />
                 <NavigationViewItem Content="Descargas" Icon="Download" Tag="downloads" />
+                <NavigationViewItem Content="Tu semana" Tag="week">
+                    <NavigationViewItem.Icon><FontIcon Glyph="&#xE81C;" /></NavigationViewItem.Icon>
+                </NavigationViewItem>
                 <NavigationViewItemHeader Content="Tus listas" />
                 <NavigationViewItem x:Name="NewListItem" Content="Nueva lista" Icon="Add" Tag="newlist" SelectsOnInvoked="False" />
             </NavigationView.MenuItems>
@@ -334,6 +337,9 @@
                                 </ItemsRepeater.Layout>
                             </ItemsRepeater>
                         </StackPanel>
+
+                        <!-- «Tu semana»: se construye en código con el historial de este PC -->
+                        <StackPanel x:Name="WeekSection" Spacing="18" Visibility="Collapsed" Margin="8,4,0,0" />
 
                         <StackPanel x:Name="DownloadsSection" Spacing="10" Visibility="Collapsed">
                             <TextBlock Text="Descargado" Style="{StaticResource SectionTitle}" />

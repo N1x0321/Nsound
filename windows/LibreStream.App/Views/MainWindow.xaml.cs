@@ -224,7 +224,8 @@ public sealed partial class MainWindow : Window
         bool Match(string text) => q.Length == 0 || MetadataMatcher.Fold(text).Contains(q);
         var playlist = _kind.StartsWith("pl:", StringComparison.Ordinal) ? _playlists.Find(_kind[3..]) : null;
         var library = _kind == "library" || playlist is not null;
-        var special = _kind is "settings" or "downloads";
+        var special = _kind is "settings" or "downloads" or "week";
+        WeekSection.Visibility = Vis(_kind == "week");
         var scope = Scope;
 
         SettingsSection.Visibility = Vis(_kind == "settings");
@@ -250,6 +251,7 @@ public sealed partial class MainWindow : Window
             "video" => ("Vídeos", q.Length > 0 ? $"Vídeos para «{raw}». Solo vídeos." : "Eventos, series, YouTubers y más. Busca para encontrar cualquier vídeo."),
             "library" => ("Mi biblioteca", q.Length > 0 ? $"Guardados que coinciden con «{raw}»." : "Todo lo que has guardado con el corazón."),
             "downloads" => ("Descargas", "Contenido libre que puedes ver sin conexión."),
+            "week" => ("Tu semana", "Lo que has escuchado en los últimos 7 días. Se calcula solo en este PC."),
             "settings" => ("Ajustes", "Ecualizador, descargas y privacidad."),
             _ => ("Inicio", q.Length > 0 ? $"{(scope == "track" ? "Canciones" : scope == "video" ? "Vídeos" : "Resultados")} para «{raw}»." : ""),
         };
@@ -271,7 +273,7 @@ public sealed partial class MainWindow : Window
             MixesSection.Visibility = RecentSection.Visibility = Visibility.Collapsed;
             Hero.Visibility = Visibility.Collapsed;
             _featured = null;
-            if (_kind == "downloads") BuildDownloads(); else RefreshSettingsUi();
+            if (_kind == "downloads") BuildDownloads(); else if (_kind == "week") BuildWeek(); else RefreshSettingsUi();
             return;
         }
 
@@ -531,6 +533,181 @@ public sealed partial class MainWindow : Window
         }
     }
 
+    // ===================== Tu semana =====================
+
+    private static readonly string[] DayNames = ["domingo", "lunes", "martes", "miércoles", "jueves", "viernes", "sábado"];
+
+    private static Brush Ink(string key) => (Brush)Application.Current.Resources[key];
+
+    /// <summary>Resumen de los últimos 7 días: cifras, artista de la semana, ranking de artistas y canciones, y minutos por día.</summary>
+    private void BuildWeek()
+    {
+        WeekSection.Children.Clear();
+        var w = WeekSummary.Build(_history.Entries, DateTime.Now);
+        var accent = (SolidColorBrush)Application.Current.Resources["NsAccentBrush"];
+        if (w.IsEmpty)
+        {
+            WeekSection.Children.Add(new TextBlock
+            {
+                Text = "Aún no hay escuchas esta semana. Pon música (cuenta a partir de 30 segundos por canción) y vuelve por aquí.",
+                Opacity = 0.7, TextWrapping = TextWrapping.Wrap, FontSize = 16,
+            });
+            return;
+        }
+
+        MediaCard Card(SavedItem s) => new(s, _catalog.Items.FirstOrDefault(i => i.Id == s.Id));
+        var topCards = w.TopSongs.Select(s => Card(s.Song)).Where(c => c.IsPlayable).ToList();
+
+        // Cifras principales
+        var tiles = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 12 };
+        Border Tile(string value, string label, string? note = null)
+        {
+            var p = new StackPanel { Spacing = 2 };
+            p.Children.Add(new TextBlock { Text = value, FontSize = 34, FontWeight = Microsoft.UI.Text.FontWeights.Bold });
+            p.Children.Add(new TextBlock { Text = label, Opacity = 0.7 });
+            if (note is not null) p.Children.Add(new TextBlock { Text = note, FontSize = 12, Opacity = 0.6 });
+            return new Border { Child = p, Padding = new Thickness(20, 14, 28, 16), CornerRadius = new CornerRadius(16), Background = Ink("NsPanelBrush"), BorderBrush = Ink("NsLineBrush"), BorderThickness = new Thickness(1) };
+        }
+        var change = w.Change is { } ch ? (ch >= 0 ? $"+{ch:P0}" : $"{ch:P0}").Replace(" ", "") + " que la semana anterior" : null;
+        tiles.Children.Add(Tile($"≈ {Math.Round(w.Minutes):0}", "minutos escuchados", change));
+        tiles.Children.Add(Tile(w.Songs.ToString(CultureInfo.CurrentCulture), w.Songs == 1 ? "canción distinta" : "canciones distintas"));
+        tiles.Children.Add(Tile(w.Artists.ToString(CultureInfo.CurrentCulture), w.Artists == 1 ? "artista" : "artistas"));
+        WeekSection.Children.Add(tiles);
+
+        // Tu artista de la semana
+        if (w.TopArtists.FirstOrDefault() is { } star)
+        {
+            var hue = Math.Abs(star.Artist.Aggregate(17, (a, c) => a * 31 + c)) % 360;
+            var tint = HsvToColor(hue, 0.65, 0.7);
+            var banner = new Grid { Height = 190, CornerRadius = new CornerRadius(22), Background = new SolidColorBrush(HsvToColor(hue, 0.55, 0.3)) };
+            var starCard = Card(star.TopSong);
+            if (starCard.Artwork is { } art)
+                banner.Children.Add(new Image { Source = art, Stretch = Stretch.UniformToFill, Opacity = 0.55, HorizontalAlignment = HorizontalAlignment.Right, Width = 420 });
+            banner.Children.Add(new Border
+            {
+                Background = new LinearGradientBrush
+                {
+                    StartPoint = new Windows.Foundation.Point(0, 0.5), EndPoint = new Windows.Foundation.Point(1, 0.5),
+                    GradientStops =
+                    {
+                        new GradientStop { Color = Windows.UI.Color.FromArgb(0xF2, (byte)(tint.R * 0.35), (byte)(tint.G * 0.35), (byte)(tint.B * 0.35)), Offset = 0.35 },
+                        new GradientStop { Color = Windows.UI.Color.FromArgb(0x20, tint.R, tint.G, tint.B), Offset = 1 },
+                    },
+                },
+            });
+            var text = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(28, 0, 0, 0), Spacing = 4 };
+            var white = new SolidColorBrush(Microsoft.UI.Colors.White);
+            text.Children.Add(new TextBlock { Text = "TU ARTISTA DE LA SEMANA", FontSize = 12, CharacterSpacing = 140, Opacity = 0.85, Foreground = white });
+            text.Children.Add(new TextBlock { Text = star.Artist, FontSize = 40, FontWeight = Microsoft.UI.Text.FontWeights.Bold, Foreground = white, TextTrimming = TextTrimming.CharacterEllipsis });
+            text.Children.Add(new TextBlock { Text = $"{star.Plays} {(star.Plays == 1 ? "escucha" : "escuchas")} · lo que más sonó: «{star.TopSong.Title}»", Foreground = white, Opacity = 0.85, TextTrimming = TextTrimming.CharacterEllipsis });
+            var go = new Button { Margin = new Thickness(0, 10, 0, 0), Style = (Style)Application.Current.Resources["AccentButtonStyle"], Padding = new Thickness(18, 7, 18, 7) };
+            go.Content = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { new FontIcon { Glyph = "\uE768", FontSize = 14 }, new TextBlock { Text = "Escuchar", FontWeight = Microsoft.UI.Text.FontWeights.SemiBold } } };
+            go.Click += (_, _) => { if (starCard.IsPlayable) Play(starCard, [starCard]); };
+            text.Children.Add(go);
+            banner.Children.Add(text);
+            WeekSection.Children.Add(banner);
+        }
+
+        // Rankings: artistas y canciones, uno al lado del otro
+        var lists = new Grid { ColumnSpacing = 28 };
+        lists.ColumnDefinitions.Add(new ColumnDefinition()); lists.ColumnDefinitions.Add(new ColumnDefinition());
+
+        FrameworkElement Row(int rank, ImageSource? art, Brush tile, string title, string sub, double size, bool round)
+        {
+            var g = new Grid { ColumnSpacing = 14, Padding = new Thickness(6) };
+            g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(26) });
+            g.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            g.ColumnDefinitions.Add(new ColumnDefinition());
+            g.Children.Add(new TextBlock { Text = rank.ToString(CultureInfo.InvariantCulture), FontSize = 18, FontWeight = Microsoft.UI.Text.FontWeights.Bold, Opacity = 0.55, VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Right });
+            var pic = new Grid { Width = size, Height = size, CornerRadius = new CornerRadius(round ? size / 2 : 10), Background = tile };
+            if (art is not null) pic.Children.Add(new Image { Source = art, Stretch = Stretch.UniformToFill });
+            Grid.SetColumn(pic, 1); g.Children.Add(pic);
+            var t = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Spacing = 2 };
+            t.Children.Add(new TextBlock { Text = title, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis });
+            t.Children.Add(new TextBlock { Text = sub, FontSize = 12, Opacity = 0.65, TextTrimming = TextTrimming.CharacterEllipsis });
+            Grid.SetColumn(t, 2); g.Children.Add(t);
+            return g;
+        }
+
+        var artistsPanel = new StackPanel { Spacing = 2 };
+        artistsPanel.Children.Add(new TextBlock { Text = "Artistas más escuchados", Style = (Style)Root.Resources["SectionTitle"], Margin = new Thickness(0, 0, 0, 6) });
+        var rank = 0;
+        foreach (var a in w.TopArtists)
+        {
+            var c = Card(a.TopSong);
+            var row = Row(++rank, c.Artwork, c.Tile, a.Artist, $"{a.Plays} {(a.Plays == 1 ? "escucha" : "escuchas")}", 52, true);
+            var b = new Button { Content = row, Tag = a.Artist, Style = (Style)Root.Resources["CardButton"], HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Stretch, Padding = new Thickness(0) };
+            ToolTipService.SetToolTip(b, $"Ver canciones y discografía de {a.Artist}");
+            b.Click += Artist_Click;
+            artistsPanel.Children.Add(b);
+        }
+        lists.Children.Add(artistsPanel);
+
+        var songsPanel = new StackPanel { Spacing = 2 };
+        var songsHead = new Grid { ColumnSpacing = 12 };
+        songsHead.ColumnDefinitions.Add(new ColumnDefinition());
+        songsHead.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        songsHead.Children.Add(new TextBlock { Text = "Canciones más escuchadas", Style = (Style)Root.Resources["SectionTitle"], Margin = new Thickness(0, 0, 0, 6), TextTrimming = TextTrimming.CharacterEllipsis });
+        if (topCards.Count > 0)
+        {
+            var all = new Button { HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center, Content = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, Children = { new FontIcon { Glyph = "\uE768", FontSize = 12 }, new TextBlock { Text = "Reproducir todas" } } } };
+            all.Click += (_, _) => Play(topCards[0], topCards);
+            Grid.SetColumn(all, 1);
+            songsHead.Children.Add(all);
+        }
+        songsPanel.Children.Add(songsHead);
+        rank = 0;
+        foreach (var s in w.TopSongs)
+        {
+            var c = Card(s.Song);
+            var row = Row(++rank, c.Artwork, c.Tile, s.Song.Title, $"{s.Artist} · {s.Plays} {(s.Plays == 1 ? "vez" : "veces")}", 52, false);
+            var b = new Button { Content = row, Tag = c, Style = (Style)Root.Resources["CardButton"], HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Stretch, Padding = new Thickness(0) };
+            b.Click += (_, _) => { if (c.IsPlayable) Play(c, topCards.Contains(c) ? topCards : [c]); };
+            songsPanel.Children.Add(b);
+        }
+        Grid.SetColumn(songsPanel, 1);
+        lists.Children.Add(songsPanel);
+        WeekSection.Children.Add(lists);
+
+        // Día a día: una barra por día (un solo color), hoy marcado; el valor de cada día en su etiqueta emergente
+        var chart = new StackPanel { Spacing = 8 };
+        chart.Children.Add(new TextBlock { Text = "Día a día", Style = (Style)Root.Resources["SectionTitle"], Margin = new Thickness(0) });
+        var max = Math.Max(1, w.MinutesByDay.Max());
+        var bars = new Grid { Height = 170, ColumnSpacing = 2, MaxWidth = 640, HorizontalAlignment = HorizontalAlignment.Left };
+        for (var i = 0; i < 7; i++)
+        {
+            bars.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(80) });
+            var day = w.Days[i];
+            var minutes = w.MinutesByDay[i];
+            var isToday = day == DateTime.Now.Date;
+            var col = new Grid { Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent) };   // zona de ratón más grande que la barra
+            col.RowDefinitions.Add(new RowDefinition());
+            col.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            var barHeight = minutes <= 0 ? 3 : Math.Max(6, 130 * minutes / max);
+            var bar = new Border
+            {
+                Width = 34, Height = barHeight, VerticalAlignment = VerticalAlignment.Bottom, CornerRadius = new CornerRadius(4, 4, 0, 0),
+                Background = minutes <= 0 ? Ink("NsLineBrush") : accent, Opacity = isToday || minutes <= 0 ? 1 : 0.55,
+            };
+            col.Children.Add(bar);
+            if (minutes > 0 && (minutes >= max || isToday))   // solo se rotulan el día más alto y hoy
+                col.Children.Add(new TextBlock { Text = $"{Math.Round(minutes):0} min", FontSize = 11, Opacity = 0.75, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Bottom, Margin = new Thickness(0, 0, 0, barHeight + 4) });
+            var label = new TextBlock
+            {
+                Text = isToday ? "hoy" : DayNames[(int)day.DayOfWeek][..3], FontSize = 12, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 6, 0, 0),
+                FontWeight = isToday ? Microsoft.UI.Text.FontWeights.Bold : Microsoft.UI.Text.FontWeights.Normal, Opacity = isToday ? 1 : 0.65,
+            };
+            Grid.SetRow(label, 1);
+            col.Children.Add(label);
+            ToolTipService.SetToolTip(col, $"{(isToday ? "Hoy" : char.ToUpper(DayNames[(int)day.DayOfWeek][0]) + DayNames[(int)day.DayOfWeek][1..])} {day:d MMM}: {(minutes <= 0 ? "nada" : $"≈ {Math.Round(minutes):0} min")}");
+            Grid.SetColumn(col, i);
+            bars.Children.Add(col);
+        }
+        chart.Children.Add(bars);
+        chart.Children.Add(new TextBlock { Text = "Minutos aproximados: cada escucha cuenta la duración de la canción.", FontSize = 12, Opacity = 0.5 });
+        WeekSection.Children.Add(chart);
+    }
+
     // ===================== Búsqueda en YouTube =====================
 
     private async Task SearchYouTubeAsync(string? text)
@@ -538,7 +715,7 @@ public sealed partial class MainWindow : Window
         var typed = (text ?? "").Trim();
         var kind = _kind;
         var scope = Scope;
-        if (kind is "library" or "settings" or "downloads" || kind.StartsWith("pl:", StringComparison.Ordinal) || typed.Length == 1) return;
+        if (kind is "library" or "settings" or "downloads" or "week" || kind.StartsWith("pl:", StringComparison.Ordinal) || typed.Length == 1) return;
         if (kind == "video" && typed.Length == 0) { _ = LoadShelvesAsync(); return; }
         if (kind == "track" && _artist is not null) return;   // página de artista abierta: sus canciones ya están
         if (kind == "track" && typed.Length > 1 && _musicFilter != "songs") { _ = LoadEntriesAsync(typed); return; }
