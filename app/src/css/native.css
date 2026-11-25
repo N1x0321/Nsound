@@ -122,3 +122,71 @@ body.fx .np { background:
 @media (prefers-reduced-motion: reduce) { .np-glow { display: none; } }
 
 .np > * { flex-shrink: 0; }
+
+
+/* ---------- Hecho para ti (mezclas con mosaico de portadas) ---------- */
+.shelf.mixes { gap: 14px; }
+.mixcard { flex: 0 0 172px; width: 172px; min-width: 0; scroll-snap-align: start; }
+.mixbtn { display: block; width: 100%; background: none; border: 0; padding: 0; text-align: left; color: inherit; cursor: pointer; }
+.mosaic { position: relative; aspect-ratio: 1; border-radius: 18px; overflow: hidden; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+  background: linear-gradient(135deg, hsl(var(--mh) 60% 40%), hsl(calc(var(--mh) + 40) 65% 18%)); }
+.mosaic.one { grid-template-columns: 1fr; grid-template-rows: 1fr; }
+.mosaic img { width: 100%; height: 100%; min-width: 0; min-height: 0; object-fit: cover; display: block; }
+.mosaic::after { content: ''; position: absolute; inset: 0; background: linear-gradient(transparent 35%, hsl(var(--mh) 60% 12% / .95)); }
+.mosaic .lab { position: absolute; left: 12px; right: 12px; bottom: 12px; z-index: 1; color: #fff; }
+.mosaic .lab small { display: block; font-size: 10px; letter-spacing: .14em; opacity: .85; }
+.mosaic .lab b { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; font-size: 18px; line-height: 1.15; }
+.mosaic .strip { position: absolute; left: 0; right: 0; bottom: 0; height: 4px; background: hsl(var(--mh) 75% 55%); z-index: 1; }
+.mixcard .t { margin-top: 8px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mixcard .s { color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.weekcta { display: flex; align-items: center; gap: 14px; width: 100%; text-align: left; border-radius: 16px; padding: 14px 16px; margin: 6px 0 10px;
+  background: linear-gradient(120deg, hsl(var(--h, 350) 55% 30% / .9), var(--surface)); border: 1px solid var(--line); color: inherit; }
+.weekcta b { font-size: 16px; } .weekcta span { color: var(--muted); font-size: 13px; display: block; }
+
+/* ---------- Tu semana ---------- */
+.wtiles { display: flex; flex-wrap: wrap; gap: 10px; margin: 6px 0 16px; }
+.wtile { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 12px 18px; min-width: 120px; }
+.wtile b { display: block; font-size: 30px; font-weight: 800; }
+.wtile span { color: var(--muted); font-size: 13px; } .wtile small { display: block; color: var(--muted); font-size: 11px; margin-top: 2px; }
+.wstar { position: relative; border-radius: 22px; overflow: hidden; min-height: 170px; display: flex; align-items: center; padding: 22px; margin-bottom: 16px; color: #fff;
+  background: linear-gradient(120deg, hsl(var(--sh) 60% 16%), hsl(var(--sh) 60% 32%)); }
+.wstar img { position: absolute; right: 0; top: 0; height: 100%; width: 55%; object-fit: cover; opacity: .55; -webkit-mask-image: linear-gradient(90deg, transparent, #000 40%); mask-image: linear-gradient(90deg, transparent, #000 40%); }
+.wstar .in { position: relative; display: flex; flex-direction: column; gap: 4px; align-items: flex-start; max-width: 70%; }
+.wstar small { font-size: 11px; letter-spacing: .14em; opacity: .85; } .wstar b { font-size: 34px; line-height: 1.05; } .wstar span { opacity: .85; font-size: 13px; }
+.wcols { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 8px 26px; }
+.wrow { display: grid; grid-template-columns: 22px 52px 1fr; gap: 12px; align-items: center; width: 100%; background: transparent; border: 0; color: inherit; text-align: left; padding: 6px 4px; border-radius: 12px; }
+.wrow:hover { background: var(--surface); }
+.wrow .n { font-weight: 800; color: var(--muted); text-align: right; }
+.wrow .p { width: 52px; height: 52px; border-radius: 10px; overflow: hidden; background: linear-gradient(135deg, hsl(var(--ph) 60% 40%), #2a2a38); }
+.wrow .p.round { border-radius: 50%; } .wrow .p img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.wrow .x { min-width: 0; } .wrow .x b, .wrow .x span { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; } .wrow .x span { color: var(--muted); font-size: 12px; }
+.wdays { display: flex; align-items: flex-end; gap: 6px; height: 170px; max-width: 520px; margin-top: 8px; }
+.wday { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; gap: 4px; font-size: 11px; color: var(--muted); }
+.wday i { display: block; width: min(34px, 80%); border-radius: 4px 4px 0 0; background: var(--accent); opacity: .55; min-height: 3px; }
+.wday.today i { opacity: 1; } .wday.today { color: var(--text); font-weight: 700; } .wday.zero i { background: var(--line); opacity: 1; }
+
+/* ---------- Página de artista: cabecera grande, biografía y parecidos ---------- */
+.ahero { position: relative; border-radius: 22px; overflow: hidden; min-height: 230px; display: flex; align-items: flex-end; margin: 6px 0 12px; color: #fff;
+  background: linear-gradient(135deg, hsl(var(--ah) 60% 42%), hsl(calc(var(--ah) + 40) 70% 16%)); }
+.ahero > img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: center 25%; }
+.ahero > img.side { left: auto; width: 45%; -webkit-mask-image: linear-gradient(90deg, transparent, #000 45%); mask-image: linear-gradient(90deg, transparent, #000 45%); }
+.ahero::after { content: ''; position: absolute; inset: 0; background: linear-gradient(transparent 25%, rgba(0, 0, 0, .82)), linear-gradient(90deg, rgba(0, 0, 0, .55), transparent 70%); }
+.ahero .in { position: relative; z-index: 1; padding: 20px 22px; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.ahero small { font-size: 11px; letter-spacing: .14em; opacity: .85; }
+.ahero h1 { margin: 0; font-size: clamp(30px, 7vw, 54px); line-height: 1.05; overflow-wrap: anywhere; }
+.ahero .row-actions { margin: 10px 0 0; } .ahero .row-actions button { color: inherit; }
+.abio { color: var(--muted); margin: 0 0 12px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; cursor: pointer; max-width: 900px; }
+.abio.open { -webkit-line-clamp: unset; display: block; }
+
+/* ---------- Letra a pantalla completa en «Reproduciendo» ---------- */
+.np-lyrics { display: none; }
+.np.karaoke .np-stage { display: none; }
+.np.karaoke .np-lyrics { display: block; width: min(640px, 100%); flex: 1 1 auto; min-height: 220px; max-height: 52vh; overflow-y: auto; padding: 30vh 4px 30vh; margin: 4px 0 8px;
+  -webkit-mask-image: linear-gradient(transparent, #000 18%, #000 82%, transparent); mask-image: linear-gradient(transparent, #000 18%, #000 82%, transparent); scroll-behavior: smooth; scrollbar-width: none; }
+.np-lyrics::-webkit-scrollbar { display: none; }
+#npLyricsInfo { color: var(--muted); text-align: center; }
+#npLyricsLines p { margin: 0 0 18px; font-size: 26px; font-weight: 800; line-height: 1.2; opacity: .32; transition: opacity .3s, transform .3s; transform-origin: left center; cursor: pointer; }
+#npLyricsLines p.past { opacity: .2; } #npLyricsLines p.on { opacity: 1; transform: scale(1.04); }
+#npLyricsLines.static p { opacity: .9; cursor: default; }
+#npLyrics.on { background: var(--accent); color: #1a0505; }
+@media (prefers-reduced-motion: reduce) { #npLyricsLines p { transition: none; } .np.karaoke .np-lyrics { scroll-behavior: auto; } }
