@@ -828,7 +828,7 @@
         <div class="row-actions"><button class="chip" data-act="bgcopy" id="bgCopy" style="display:none">Copiar informe</button></div>
         <p class="note">Muchos móviles (Oppo, Xiaomi, Vivo, Huawei, a veces Samsung) cierran las apps en segundo plano aunque suene música. Estos ajustes se lo impiden a Nsound; sin ellos el móvil puede parar la música al apagar la pantalla. Más información: <a href="https://dontkillmyapp.com" target="_blank" rel="noopener">dontkillmyapp.com</a>.</p></section>` : ''}
       <!-- Privacidad (bloqueo de anuncios): oculto en la interfaz; el bloqueo sigue activo por defecto -->
-      <section class="panel"><h2>Acerca de</h2><p class="note">Nsound es gratuita, sin ánimo de lucro y sin suscripciones; su código es visible para uso no comercial. YouTube se reproduce con su reproductor oficial y no se descarga. Letras: LRCLIB. Plataforma: ${esc(Native.platform)}.</p></section>`;
+      <section class="panel"><h2>Acerca de</h2><p class="note">Nsound es gratuita, sin ánimo de lucro y sin suscripciones; su código es visible para uso no comercial. YouTube se reproduce con su reproductor oficial y no se descarga. Letras: LRCLIB. Plataforma: ${esc(Native.platform)}.${LS.parseVersion(appVersion) ? ` Versión ${esc(appVersion.split('+')[0])}.` : ''}</p></section>`;
     refreshEqStatus();
     if (Native.platform === 'android') refreshBgInfo();
   }
@@ -1691,6 +1691,30 @@
   $('#q').addEventListener('blur', () => document.body.classList.remove('kb'));
   window.addEventListener('hashchange', route);
 
+  // ---------- Versión instalada y aviso de versiones nuevas ----------
+  let appVersion = '', updates = null, update = null;
+  function paintUpdate(u) {
+    update = u;
+    $('#update').hidden = !u;
+    $('#updateText').textContent = u ? `Hay una versión nueva (${u.version})` : '';
+  }
+  const checkUpdates = () => { if (updates) updates.check().then(paintUpdate).catch(() => { /* sin aviso */ }); };
+  async function startUpdates() {
+    try { appVersion = Native.platform === 'web' ? LS.BUILD_VERSION : String(await Native.call('appVersion', {})); } catch (e) { return; }
+    updates = LS.createUpdateChecker({ storage: safeStorage(), installed: appVersion, platform: Native.platform, fetchJson: LS.fetchReleases, online: () => navigator.onLine !== false });
+    if (S.page === 'settings') render();
+    paintUpdate(updates.current());
+    checkUpdates();
+  }
+  $('#updateGet').onclick = () => {
+    if (!update) return;
+    if (Native.platform === 'web') { window.open(update.url, '_blank', 'noopener'); return; }
+    Native.call('openUrl', { url: update.url }).catch(() => toast('No se pudo abrir el navegador. Descárgala en github.com/N1x0321/Nsound/releases', 7000));
+  };
+  $('#updateClose').onclick = () => { if (update) updates.dismiss(update.version); paintUpdate(null); };
+  // Las apps móviles pueden pasar días abiertas: se vuelve a mirar al regresar (como mucho una vez al día)
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) checkUpdates(); });
+
   // ---------- Arranque ----------
   Player.init();
   const s0 = store.settings.get();
@@ -1726,4 +1750,5 @@
   Native.call('setAdBlock', { enabled: s0.adBlock }).catch(() => {});
   loadCatalog();
   route();
+  startUpdates();
 })();

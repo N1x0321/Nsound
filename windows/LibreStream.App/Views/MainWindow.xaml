@@ -181,6 +181,24 @@
                 <ScrollViewer x:Name="Browse" VerticalScrollBarVisibility="Auto">
                     <StackPanel Padding="28,20,28,28" Spacing="14">
 
+                        <!-- Aviso discreto de versión nueva (se descarta por versión) -->
+                        <Border x:Name="UpdateNotice" Visibility="Collapsed" Margin="8,0,0,0" Padding="16,4,6,4" CornerRadius="12" HorizontalAlignment="Left"
+                                Background="{StaticResource NsPanelBrush}" BorderBrush="{StaticResource NsLineBrush}" BorderThickness="1">
+                            <Grid ColumnSpacing="8">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock x:Name="UpdateText" TextWrapping="Wrap" VerticalAlignment="Center" />
+                                <HyperlinkButton Grid.Column="1" Content="Descargar" Click="UpdateDownload_Click" />
+                                <Button Grid.Column="2" Style="{StaticResource BarIcon}" Width="32" Height="32" Click="UpdateDismiss_Click"
+                                        AutomationProperties.Name="Descartar este aviso" ToolTipService.ToolTip="Descartar este aviso">
+                                    <FontIcon Glyph="&#xE711;" FontSize="12" />
+                                </Button>
+                            </Grid>
+                        </Border>
+
                         <TextBlock x:Name="PageTitle" Text="Inicio" FontSize="36" FontWeight="Bold" Margin="8,0,0,0" />
                         <TextBlock x:Name="PageHint" Opacity="0.7" Margin="8,-8,0,0" TextWrapping="Wrap" Visibility="Collapsed" />
 
@@ -456,6 +474,7 @@
                                 <TextBlock Opacity="0.55" FontSize="12" TextWrapping="Wrap"
                                            Text="Corta las conexiones a servidores de publicidad conocidos. Los anuncios que YouTube sirve desde sus propios servidores de vídeo pueden seguir apareciendo." />
                             </StackPanel>
+                            <TextBlock x:Name="VersionText" Opacity="0.55" FontSize="12" />
                         </StackPanel>
                     </StackPanel>
                 </ScrollViewer>

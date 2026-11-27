@@ -19,7 +19,8 @@
     <EnableMsixTooling>true</EnableMsixTooling>
     <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
     <SelfContained>true</SelfContained>
-    <Version>0.6.0</Version>
+    <!-- La versión publicada la pone build-windows.yml con -p:Version=<etiqueta>. Con «dev» la app no avisa de versiones nuevas. -->
+    <Version>0.0.0-dev</Version>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.6.241114003" />

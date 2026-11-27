@@ -160,6 +160,7 @@ public sealed partial class MainWindow : Window
         foreach (var r in PlayingBars.Children.OfType<Microsoft.UI.Xaml.Shapes.Rectangle>()) r.Fill = _songBrush;
         _ = LoadAsync();
         _ = InitYouTubePlayerAsync();
+        StartUpdateChecks();
     }
 
     /// <summary>Ejecuta una acción de interfaz anotando cualquier fallo en vez de cerrar la app.</summary>
