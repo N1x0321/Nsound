@@ -146,8 +146,7 @@ public sealed partial class MainWindow
             var start = new ProcessStartInfo(file.Path) { UseShellExecute = false, WorkingDirectory = Path.GetDirectoryName(file.Path)! };
             foreach (var argument in DownloadedUpdate.SetupArguments) start.ArgumentList.Add(argument);
             using (Process.Start(start)) { }
-            Close();                       // el instalador sustituye los ficheros y vuelve a abrir Nsound
-            Application.Current.Exit();
+            ExitApp();                     // el instalador sustituye los ficheros y vuelve a abrir Nsound
         }
         catch (OperationCanceledException) when (cancel.IsCancellationRequested) { /* aviso descartado o app cerrándose */ }
         catch (UpdateException ex)

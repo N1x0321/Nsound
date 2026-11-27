@@ -455,6 +455,9 @@
                                 <ToggleSwitch x:Name="RadioToggle" Header="Radio automática" OnContent="Activada" OffContent="Desactivada" Toggled="Radio_Toggled" />
                                 <TextBlock Opacity="0.55" FontSize="12" TextWrapping="Wrap"
                                            Text="Cuando se acaba la lista, la música no se para: sigue con canciones parecidas a la última (la radio de YouTube Music). Con «Repetir la lista» activado no se añade nada." />
+                                <ToggleSwitch x:Name="TrayToggle" Header="Seguir en segundo plano al cerrar" OnContent="Activado" OffContent="Desactivado" Toggled="Tray_Toggled" Margin="0,8,0,0" />
+                                <TextBlock Opacity="0.55" FontSize="12" TextWrapping="Wrap"
+                                           Text="Al cerrar la ventana, la música sigue y Nsound se queda junto al reloj (puede estar en los iconos ocultos, la flecha ^). Haz clic en su icono para volver; para cerrarlo del todo, botón derecho → «Salir de Nsound»." />
                             </StackPanel>
                             <StackPanel Spacing="8">
                                 <TextBlock Text="Ecualizador" Style="{StaticResource SubtitleTextBlockStyle}" />

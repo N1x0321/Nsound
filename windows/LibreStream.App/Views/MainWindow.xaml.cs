@@ -161,6 +161,7 @@ public sealed partial class MainWindow : Window
         _ = LoadAsync();
         _ = InitYouTubePlayerAsync();
         StartUpdateChecks();
+        StartTray();
     }
 
     /// <summary>Ejecuta una acción de interfaz anotando cualquier fallo en vez de cerrar la app.</summary>
@@ -1641,8 +1642,7 @@ public sealed partial class MainWindow : Window
     /// <summary>«Volver a Nsound» desde el mini reproductor: restaura la ventana principal y cierra la pequeña.</summary>
     private void ShowMainFromMini()
     {
-        (AppWindow.Presenter as Microsoft.UI.Windowing.OverlappedPresenter)?.Restore();
-        Activate();
+        ShowMainWindow();
         _mini?.Close();
     }
 
@@ -1653,6 +1653,7 @@ public sealed partial class MainWindow : Window
         PlayIcon.Symbol = IsPlaying ? Symbol.Pause : Symbol.Play;
         _thumb?.Update(IsPlaying, _now is not null, _now is not null && _library.Contains(_now.Source, _now.Id));
         SyncMini();
+        _tray?.Update(IsPlaying, _now is not null, _now?.Title);
         if (_now is null) return;
         if (_analyzedId != _now.Id) { _analyzedId = _now.Id; _keyBpm = ""; _analyzer.Reset(); }
         var changed = _barTrackId != _now.Id;
@@ -2624,6 +2625,7 @@ public sealed partial class MainWindow : Window
     /// <summary>Unas 30 veces por segundo: lleva los niveles del sonido a las barras, la portada, el brillo y el mini.</summary>
     private void VizTick()
     {
+        if (!AppWindow.IsVisible && _mini is null) return;   // escondida junto al reloj: nada que animar
         _analyzer.Meter.Read(_levels);
         double bass = _levels[0], body = Math.Max(_levels[0], _levels[1]);
         var bars = new[] { Bar1, Bar2, Bar3, Bar4 };

@@ -40,6 +40,23 @@ public class SettingsDownloadsTests
     }
 
     [Fact]
+    public void KeepingInTheTrayIsOffUntilAskedAndIsRemembered()
+    {
+        var dir = TempDir();
+        try
+        {
+            var store = new SettingsStore(dir);
+            Assert.False(store.Current.KeepInTray);
+            store.Current.KeepInTray = true;
+            store.Save();
+            Assert.True(new SettingsStore(dir).Current.KeepInTray);
+            File.WriteAllText(Path.Combine(dir, "settings.json"), """{ "volume": 50 }""");   // ajustes de una versión anterior
+            Assert.False(new SettingsStore(dir).Current.KeepInTray);
+        }
+        finally { Directory.Delete(dir, true); }
+    }
+
+    [Fact]
     public void CorruptSettingsFallBackToDefaults()
     {
         var dir = TempDir();
