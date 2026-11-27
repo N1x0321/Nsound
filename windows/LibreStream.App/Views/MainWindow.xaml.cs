@@ -890,6 +890,7 @@ public sealed partial class MainWindow : Window
     private void Entry_Click(object sender, RoutedEventArgs e)
     {
         if ((sender as FrameworkElement)?.Tag is not MusicEntry entry) return;
+        RememberSearch();
         if (entry.Album is { } album) _ = PlayAlbumAsync(album, _artist?.Name ?? "");
         else if (entry.Artist is { } artist) _ = OpenArtistAsync(artist);
     }
@@ -3017,17 +3018,32 @@ public sealed partial class MainWindow : Window
         ApplyFilter();
         _searchDelay.Stop();
         _searchDelay.Start();
+        if (e.Reason == AutoSuggestionBoxTextChangeReason.UserInput)
+        {
+            _typedQuery = s.Text;
+            Safe("Búsquedas recientes", () => ShowRecentSearches(s.Text));
+        }
     }
 
     private void Search_QuerySubmitted(AutoSuggestBox s, AutoSuggestBoxQuerySubmittedEventArgs e)
     {
         _searchDelay.Stop();
+        if (e.ChosenSuggestion is string chosen)
+        {
+            s.IsSuggestionListOpen = false;
+            if (chosen == ClearSearches) { _searches.Clear(); s.ItemsSource = null; return; }
+            s.Text = _typedQuery = chosen;
+        }
+        else _typedQuery = s.Text;
+        s.IsSuggestionListOpen = false;
+        RememberSearch();
         _ = SearchYouTubeAsync(s.Text);
     }
 
     private void Card_Click(object sender, RoutedEventArgs e)
     {
         if ((sender as FrameworkElement)?.Tag is not MediaCard card) return;
+        RememberSearch();
         var list = _saved.Contains(card) ? _saved
             : _recent.Contains(card) ? _recent
             : _youtube.Contains(card) ? _youtube
