@@ -65,6 +65,7 @@
     clearTimeout(toast.t);
     toast.t = setTimeout(() => t.classList.remove('show'), ms || 4500);
   }
+  const bgPanel = LS.createBgPanel({ call: Native.call, $, esc, toast, storage: safeStorage() });
 
   const persistent = LS.createCache(safeStorage(), { ttl: 30 * 60 * 1000, max: 24 });
   let running = 0;
@@ -830,27 +831,9 @@
       <!-- Privacidad (bloqueo de anuncios): oculto en la interfaz; el bloqueo sigue activo por defecto -->
       <section class="panel"><h2>Acerca de</h2><p class="note">Nsound es gratuita, sin ánimo de lucro y sin suscripciones; su código es visible para uso no comercial. YouTube se reproduce con su reproductor oficial y no se descarga. Letras: LRCLIB. Plataforma: ${esc(Native.platform)}.${LS.parseVersion(appVersion) ? ` Versión ${esc(appVersion.split('+')[0])}.` : ''}</p></section>`;
     refreshEqStatus();
-    if (Native.platform === 'android') refreshBgInfo();
+    if (Native.platform === 'android') bgPanel.refresh();
   }
 
-  // Android: datos del móvil, estado de la restricción de batería y pasos según el fabricante
-  async function refreshBgInfo() {
-    const info = $('#bgInfo'), steps = $('#bgSteps');
-    if (!info) return;
-    try {
-      const b = JSON.parse(await Native.call('batteryInfo', {}));
-      const guide = LS.bgSteps(b.manufacturer, b.brand);
-      if (!$('#bgInfo')) return;
-      info.innerHTML = `<b>${esc(b.manufacturer)} ${esc(b.model)}</b> · Android ${esc(b.release)} · Restricción de batería: <b>${b.ignoring ? 'quitada ✓' : 'activa (puede cerrar la música en segundo plano)'}</b>`;
-      steps.innerHTML = `<b>Pasos para ${esc(guide.name)}</b> (orientativos; cambian según el modelo):<br>${guide.steps.map((t, i) => `${i + 1}. ${esc(t)}`).join('<br>')}`;
-    } catch (e) { info.textContent = 'No se pudo leer la información del móvil.'; }
-  }
-  async function bgAction(name, okMsg) {
-    try {
-      const r = JSON.parse(await Native.call(name, {}));
-      toast(r === 'ninguna' ? 'No se pudo abrir esa pantalla en tu móvil: ve a Ajustes → Aplicaciones → Nsound.' : okMsg(r), 6000);
-    } catch (e) { toast('No se pudo abrir: ' + e.message, 5000); }
-  }
   const fmtGain = (n) => (n > 0 ? '+' + n : String(n));
 
   async function refreshEqStatus() {
@@ -1152,11 +1135,7 @@
     if (st.playing && !S.userPause) S.wantPlay = true;
     if (st.playing && Native.platform === 'android' && !S.bgHinted) {
       S.bgHinted = true;
-      Native.call('batteryInfo', {}).then((t) => {
-        const b = JSON.parse(t);
-        let seen = false; try { seen = localStorage.getItem('ls.bgHint') === '1'; } catch (e) { /* sin almacenamiento */ }
-        if (!b.ignoring && !seen) { try { localStorage.setItem('ls.bgHint', '1'); } catch (e) { /* ya */ } toast('Para que suene con la pantalla apagada, revisa Ajustes → Música en segundo plano.', 9000); }
-      }).catch(() => {});
+      bgPanel.hint();
     }
     S.playing = st.playing; S.time = st.time; if (st.duration > 0) S.duration = st.duration;
     if (S.now && S.counted !== S.now.key && S.time >= LS.countsAfter(S.duration)) { S.counted = S.now.key; historyAdd(S.now); }
@@ -1590,12 +1569,12 @@
     if (d.sub) { go(d.sub === 'saved' ? '#/library' : d.sub === 'downloads' ? '#/library/downloads' : '#/library/pl/' + d.sub.slice(3)); return; }
     switch (d.act) {
       case 'play': play(d.key, d.list); break;
-      case 'bgbattery': bgAction('batteryRequest', (r) => r === 'peticion' ? 'Pulsa «Permitir» en el aviso del sistema.' : 'Busca Nsound en la lista y elige «Sin restricciones».'); break;
-      case 'bgauto': bgAction('autostartSettings', (r) => r === 'fabricante' ? 'Activa Nsound en esa pantalla.' : 'No hay pantalla de inicio automático en tu móvil: se abrieron los ajustes de la app (Batería → Sin restricciones).'); break;
-      case 'bgreport': Native.call('bgReport', {}).then((t) => { const el = $('#bgReport'); if (!el) return; el.value = JSON.parse(t); el.style.display = 'block'; $('#bgCopy').style.display = ''; el.scrollTop = el.scrollHeight; }).catch((e) => toast('No se pudo generar el informe: ' + e.message, 5000)); break;
+      case 'bgbattery': bgPanel.battery(); break;
+      case 'bgauto': bgPanel.autostart(); break;
+      case 'bgreport': bgPanel.report(); break;
       case 'bgclear': Native.call('bgClear', {}).then(() => { const el = $('#bgReport'); if (el) { el.value = ''; el.style.display = 'none'; } toast('Informe borrado.', 2500); }).catch(() => {}); break;
       case 'bgcopy': { const el = $('#bgReport'); if (!el) break; el.focus(); el.select(); let ok = false; try { ok = document.execCommand('copy'); } catch (e) { /* sin permiso */ } toast(ok ? 'Informe copiado.' : 'Selecciona el texto y cópialo a mano.', 3500); break; }
-      case 'bgapp': bgAction('appSettings', () => 'En Batería, elige «Sin restricciones».'); break;
+      case 'bgapp': bgPanel.appSettings(); break;
       case 'artist': go(LS.artistHash(d.name)); break;
       case 'back': if (history.length > 1) history.back(); else go('#/music'); break;
       case 'playartist': { const k = lists.get('artist') || []; if (k.length) play(k[0], 'artist'); break; }

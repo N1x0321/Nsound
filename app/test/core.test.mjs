@@ -1,6 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
+import { readFileSync } from 'node:fs';
+import vm from 'node:vm';
 const require = createRequire(import.meta.url);
 require('../src/js/00-core.js');
 require('../src/js/00-import.js');
@@ -728,4 +730,58 @@ test('carátulas: cuadradas de YouTube Music y la misma canción', () => {
   const songs = [{ id: 'zzzzzzzzzzz', title: 'Otra', channel: 'Shakira', art: sq }, { id: 'yyyyyyyyyyy', title: 'Dai Dai', channel: 'Shakira', art: 'https://i.ytimg.com/vi/y/hq.jpg' }, { id: 'xxxxxxxxxxx', title: 'Dai Dai', channel: 'Shakira & Burna Boy', art: sq }];
   assert.equal(LS.pickCoverSong(songs, 'abcdefghijk', 'Shakira - Dai Dai (Official Video)', 'shakiraVEVO').id, 'xxxxxxxxxxx');
   assert.equal(LS.pickCoverSong([{ id: 'x', title: 'Hips Dont Lie', channel: 'Shakira', art: sq }], 'a', 'Shakira - Dai Dai', 'shakiraVEVO'), null);
+});
+
+// Panel «Música en segundo plano (Android)» con el puente real (02-native.js) y un AndroidBridge que responde como NativeBridge.kt:
+// la respuesta llega como código JavaScript, así que la página recibe objetos y cadenas ya decodificados, no JSON en texto.
+require('../src/js/00-bgpanel.js');
+const bgSetup = (answers = {}) => {
+  const phone = { manufacturer: 'samsung', brand: 'samsung', model: 'SM-A356B', sdk: 36, release: '16', ignoring: false };
+  const replies = Object.assign({ batteryInfo: phone, batteryRequest: 'peticion', autostartSettings: 'fabricante', appSettings: 'detalles',
+    bgReport: 'Móvil: samsung SM-A356B\nAndroid: 16 (API 36)\n' }, answers);
+  const ctx = vm.createContext({});
+  ctx.window = { AndroidBridge: { call: (id, name) => {
+    const ok = name in replies;
+    const literal = JSON.stringify(ok ? replies[name] : 'Orden desconocida: ' + name);
+    queueMicrotask(() => vm.runInContext(`window.__nativeResolve(${id},${ok},${literal})`, ctx));
+  } } };
+  vm.runInContext(readFileSync(new URL('../src/js/02-native.js', import.meta.url), 'utf8'), ctx);
+  const els = Object.fromEntries(['#bgInfo', '#bgSteps', '#bgReport', '#bgCopy'].map((k) => [k, { style: {}, innerHTML: '', textContent: '', value: '' }]));
+  const toasts = [], saved = new Map();
+  const panel = LS.createBgPanel({ call: ctx.LS.Native.call, $: (s) => els[s], esc: String, toast: (m) => toasts.push(m),
+    storage: { getItem: (k) => saved.get(k) ?? null, setItem: (k, v) => saved.set(k, v) } });
+  return { panel, els, toasts };
+};
+
+test('segundo plano: muestra los datos del móvil y los pasos del fabricante', async () => {
+  const { panel, els } = bgSetup();
+  await panel.refresh();
+  assert.match(els['#bgInfo'].innerHTML, /samsung SM-A356B.*Android 16.*activa/);
+  assert.match(els['#bgSteps'].innerHTML, /Pasos para Samsung \(One UI\)/);
+});
+
+test('segundo plano: cada botón avisa según la pantalla que se haya abierto', async () => {
+  const { panel, toasts } = bgSetup();
+  await panel.battery(); await panel.autostart(); await panel.appSettings();
+  assert.deepEqual(toasts, ['Pulsa «Permitir» en el aviso del sistema.', 'Activa Nsound en esa pantalla.', 'En Batería, elige «Sin restricciones».']);
+  const none = bgSetup({ batteryRequest: 'ninguna' });
+  await none.panel.battery();
+  assert.match(none.toasts[0], /^No se pudo abrir esa pantalla/);
+});
+
+test('segundo plano: el informe se escribe tal cual en el cuadro de texto', async () => {
+  const { panel, els, toasts } = bgSetup();
+  await panel.report();
+  assert.equal(els['#bgReport'].value, 'Móvil: samsung SM-A356B\nAndroid: 16 (API 36)\n');
+  assert.equal(els['#bgReport'].style.display, 'block');
+  assert.deepEqual(toasts, []);
+});
+
+test('segundo plano: el aviso de batería sale una vez y solo si sigue restringida', async () => {
+  const { panel, toasts } = bgSetup();
+  await panel.hint(); await panel.hint();
+  assert.equal(toasts.length, 1);
+  const free = bgSetup({ batteryInfo: { ignoring: true } });
+  await free.panel.hint();
+  assert.deepEqual(free.toasts, []);
 });
