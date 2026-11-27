@@ -324,7 +324,7 @@
     v.innerHTML = `<h1>${greet}</h1>${chips([['all', 'Todo'], ['track', 'Música'], ['video', 'Vídeos']], sc, 'scope')}
       ${q ? `<p class="hint">${sc === 'track' ? 'Canciones' : sc === 'video' ? 'Vídeos' : 'Resultados'} para «${esc(q)}».</p>` : ''}
       <section id="hero" class="hero" hidden></section>
-      <section id="mixRow" hidden><h2>Hecho para ti</h2><div class="shelf mixes" id="mixGrid"></div></section>
+      <section id="mixRow" hidden><h2>Hecho para ti: tus radios</h2><div class="shelf mixes" id="mixGrid"></div></section>
       <section id="recentRow" hidden><h2>Seguir escuchando</h2><div id="recentGrid"></div></section>
       <div id="weekCta"></div>
       ${q ? '' : topArtistsHtml()}
@@ -334,6 +334,10 @@
     if (!q) { renderHero(); setTimeout(() => loadReleases(id), 1500); setTimeout(() => loadArtistCovers(id), 800); loadTopArtists(id); }
     const hist = historyList();
     const recent = (hist.length ? LS.recentDistinct(hist, 14) : recentList()).map(savedItem);
+    if (!q && !LS.mixesFrom(hist, Date.now()).length) {   // aún sin historial: se explica qué saldrá aquí
+      $('#mixRow').hidden = false;
+      $('#mixGrid').outerHTML = '<p class="hint" id="mixGrid">Aquí aparecerán radios hechas con lo que escuchas: «Mezcla de» tus artistas favoritos y «Porque escuchaste» tus últimas canciones. Escucha unas cuantas canciones (al menos 30 segundos cada una) y vuelve a Inicio.</p>';
+    }
     if (!q && hist.length) {
       const w = LS.weekSummary(hist, Date.now());
       if (w.plays) $('#weekCta').innerHTML = `<button class="weekcta" data-page="week">${LS.icon('music')}<div><b>Tu semana</b><span>≈ ${Math.round(w.minutes)} min · ${w.songs} canciones · ${w.artists} artistas</span></div></button>`;
@@ -364,6 +368,7 @@
       mixCache.data = built;
     }
     if (id !== S.renderId || !$('#mixGrid') || !mixCache.data.length) return;
+    if ($('#mixGrid').tagName !== 'DIV') $('#mixGrid').outerHTML = '<div class="shelf mixes" id="mixGrid"></div>';
     $('#mixGrid').innerHTML = mixCache.data.map(({ mix, songs }, i) => {
       const items = setList('mix' + i, songs.map(musicItem));
       const arts = [...new Set(items.map((x) => x.thumb).filter(Boolean))].slice(0, 4);
