@@ -60,6 +60,12 @@ No necesita instalador ni permisos de administrador. Para desinstalar, borra la 
 
 ### En los dos casos
 
+- **Seguir en segundo plano** (*Ajustes → Reproducción*, viene desactivado): al cerrar la ventana la música sigue y Nsound se queda
+  junto al reloj, a veces dentro de los *iconos ocultos* (la flecha `^`). Un clic en el icono vuelve a abrirlo; botón derecho →
+  **Salir de Nsound** lo cierra del todo.
+- **Búsquedas recientes:** al pinchar en *Buscar* salen las últimas 10 que hayas usado (al pulsar Intro o al reproducir un resultado).
+  Se guardan solo en tu PC y se pueden borrar desde la misma lista.
+- **Ecualizador** (*Ajustes*): apagado no procesa el sonido; encendido gasta algo más de procesador. Si el equipo se calienta, apágalo.
 - Tus datos (biblioteca, listas, ajustes) están en `%LocalAppData%\LibreStream`.
 - Las descargas van por defecto a `Vídeos\LibreStream` (se cambia en *Ajustes*).
 - Si algo falla, mira `%LocalAppData%\LibreStream\crash.log` y cuéntalo.

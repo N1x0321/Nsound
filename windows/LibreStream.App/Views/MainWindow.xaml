@@ -134,7 +134,8 @@
                         IsBackButtonVisible="Collapsed" IsSettingsVisible="False" IsPaneToggleButtonVisible="False"
                         SelectionChanged="Nav_SelectionChanged" ItemInvoked="Nav_ItemInvoked">
             <NavigationView.AutoSuggestBox>
-                <AutoSuggestBox x:Name="Search" PlaceholderText="Buscar" QueryIcon="Find" TextChanged="Search_TextChanged" QuerySubmitted="Search_QuerySubmitted" />
+                <AutoSuggestBox x:Name="Search" PlaceholderText="Buscar" QueryIcon="Find" TextChanged="Search_TextChanged" QuerySubmitted="Search_QuerySubmitted" UpdateTextOnSelect="False"
+                                GotFocus="Search_GotFocus" Tapped="Search_Tapped" />
             </NavigationView.AutoSuggestBox>
             <NavigationView.MenuItems>
                 <NavigationViewItem Content="Inicio" Icon="Home" Tag="all" IsSelected="True" />
@@ -461,16 +462,12 @@
                             </StackPanel>
                             <StackPanel Spacing="8">
                                 <TextBlock Text="Ecualizador" Style="{StaticResource SubtitleTextBlockStyle}" />
-                                <TextBlock Opacity="0.7" TextWrapping="Wrap" Text="Versión de prueba reparada: el ecualizador ya no procesa el sonido cuando está apagado. Si notas que el equipo se calienta, apágalo y avísanos." />
-                            </StackPanel>
-                            <StackPanel Spacing="8">
-                                <TextBlock Text="Ecualizador" Style="{StaticResource SubtitleTextBlockStyle}" />
                                 <ToggleSwitch x:Name="EqToggle" Header="Activar ecualizador" OnContent="Activado" OffContent="Desactivado" Toggled="EqToggle_Toggled" />
                                 <ComboBox x:Name="EqPresetBox" Header="Ajuste" Width="220" SelectionChanged="EqPreset_Changed" />
                                 <StackPanel x:Name="EqBandsHost" Orientation="Horizontal" Spacing="16" Margin="0,8,0,0" />
                                 <TextBlock x:Name="EqStatus" Opacity="0.8" TextWrapping="Wrap" />
                                 <TextBlock Opacity="0.55" FontSize="12" TextWrapping="Wrap"
-                                           Text="Actúa sobre el sonido de YouTube dentro de la app. Los vídeos del catálogo libre no admiten ecualizador." />
+                                           Text="Actúa sobre el sonido de YouTube dentro de la app. Los vídeos del catálogo libre no admiten ecualizador. Apagado no procesa nada; encendido gasta algo más de procesador: si el equipo se calienta, apágalo." />
                             </StackPanel>
                             <StackPanel Spacing="8">
                                 <TextBlock Text="Descargas" Style="{StaticResource SubtitleTextBlockStyle}" />

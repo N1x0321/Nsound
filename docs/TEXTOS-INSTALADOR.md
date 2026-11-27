@@ -24,6 +24,16 @@ Sustituye «Aviso de versiones nuevas» por:
 - 🔔 **Aviso de versiones nuevas** dentro de la app; en Windows instalado, **«Actualizar ahora»** la pone al día.
 ```
 
+### Lista «Solo en Windows»
+
+Sustituye la línea del ecualizador («en mantenimiento») y añade las otras dos:
+
+```markdown
+- 🎚️ **Ecualizador de 10 bandas** para el sonido de YouTube dentro de la app.
+- 🔽 **En segundo plano:** al cerrar, si quieres, la música sigue y Nsound se queda junto al reloj.
+- 🕘 **Búsquedas recientes** al pinchar en «Buscar», guardadas solo en tu PC.
+```
+
 ### «Empezar en 3 pasos», paso 2
 
 ```markdown
@@ -60,7 +70,16 @@ Sustituye la lista y la nota de debajo por (conserva el `<div>` y sus atributos 
 
 (La respuesta «Windows dice “protegió su PC”» de la sección de ayuda sigue valiendo.)
 
+### Tarjeta «Ecualizador» (sección `#funciones`)
+
+```html
+<div class="card rv" style="--d:.1s"><div class="ic"><svg><use href="#i-eq"/></svg></div><h3>Ecualizador</h3><p><b>En la app de Windows:</b> 10 bandas para el sonido de YouTube. En móvil y navegador sigue en mantenimiento.</p></div>
+```
+
 ## Notas de esa Release
 
+> **Windows:** vuelve el ecualizador, hay búsquedas recientes y, si lo activas en Ajustes, Nsound sigue sonando junto al reloj al
+> cerrar la ventana.
+>
 > **Windows:** ahora hay un instalador de un solo archivo. Si usabas el zip, instala el `.exe` una vez (tu biblioteca se conserva) y,
 > desde la siguiente versión, Nsound se actualizará con el botón «Actualizar ahora». Después puedes borrar la carpeta antigua.
