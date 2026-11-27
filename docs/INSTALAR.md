@@ -12,6 +12,15 @@ En Windows: `Get-FileHash .\archivo -Algorithm SHA256` y compara el resultado co
 
 ---
 
+## Actualizar
+
+Desde la beta 11, Nsound avisa dentro de la app cuando hay una versión nueva («Descargar» abre la página de la descarga); no instala nada
+por su cuenta. Las betas anteriores no avisan: hay que instalar la 11 a mano una vez.
+
+- **Windows:** cierra Nsound, extrae el zip nuevo y ábrelo (puedes borrar la carpeta antigua). Tu biblioteca se conserva.
+- **Android:** abre el APK nuevo encima del instalado.
+- **iPhone:** actualiza desde SideStore / AltStore si añadiste la fuente de Nsound, o instala el `.ipa` nuevo encima con el mismo Apple ID.
+
 ## Windows 10 / 11
 
 Necesitas: Windows 10 (1809) o superior y el *WebView2 Runtime* (ya viene con Windows 11 y con Windows 10 actualizado).
@@ -34,8 +43,11 @@ No necesita instalador ni permisos de administrador. Para desinstalar, borra la 
 2. Ábrelo. Android te pedirá permitir instalar apps desde esa fuente (el navegador o el gestor de archivos que uses):
    **Ajustes → Permitir de esta fuente**. Es un permiso que puedes quitar después.
 3. Si Google Play Protect dice *«App no verificada»* o *«Bloqueada»*: pulsa **Más detalles → Instalar de todas formas**
-   (es un APK de depuración firmado con una clave de pruebas).
+   (el APK no pasa por Play Store: va firmado con la clave propia del proyecto).
 4. Pulsa **Instalar** y luego **Abrir**.
+
+> **Si tienes la beta 10 o una anterior**, la beta 11 no se instala encima («No se ha instalado la aplicación»). Antes de desinstalarla,
+> **exporta tu biblioteca** (Biblioteca → Exportar); después instala la nueva e importa el archivo. Solo pasa esta vez.
 
 Para desinstalar: mantén pulsado el icono → *Desinstalar*. Se borra también la biblioteca y las descargas de la app.
 
