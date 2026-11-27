@@ -1,135 +1,109 @@
+<div align="center">
+
+<img src="branding/icon-1024.png" width="140" alt="Logo de Nsound">
+
 # Nsound
 
-<p align="center"><img src="branding/icon-1024.png" width="160" alt="Logo de Nsound"></p>
+**Tu música y tus vídeos en un solo sitio. Gratis, sin cuentas y sin suscripciones.**
 
-*Antes «LibreStream Hub». Nsound: la N de su logo (con la corona y el rayo) más «sound», sonido.*
+[![Última versión](https://img.shields.io/github/v/release/N1x0321/Nsound?include_prereleases&label=versi%C3%B3n&color=7c5cff)](https://github.com/N1x0321/Nsound/releases)
+[![Descargas](https://img.shields.io/github/downloads/N1x0321/Nsound/total?label=descargas&color=2ea043)](https://github.com/N1x0321/Nsound/releases)
+![Plataformas](https://img.shields.io/badge/Windows%20%C2%B7%20Android%20%C2%B7%20iPhone-555)
+[![Licencia](https://img.shields.io/badge/licencia-uso%20no%20comercial-orange)](LICENSE)
 
-Reproductor personal de música y vídeo, gratuito, sin ánimo de lucro y sin suscripciones. Código visible para uso no comercial (ver [LICENSE](LICENSE)).
-El cliente iOS se distribuye como `.ipa` **sin firmar** que el usuario firma al instalar
-(Sideloadly / AltStore / TrollStore). En Windows se distribuye como `.zip` portable (x64 y ARM64), sin instalador ni firma.
+[**Descargar**](#-descargar) · [**Cómo instalarlo**](docs/INSTALAR.md) · [**Web del proyecto**](https://n1x0321.github.io/Nsound/) · [**Problemas y sugerencias**](https://github.com/N1x0321/Nsound/issues)
 
-> **Fuentes de contenido:** el catálogo solo debe apuntar a contenido que se tenga derecho a
-> redistribuir (dominio público, Creative Commons, Internet Archive, Jamendo, Free Music Archive,
-> material propio…). El campo `source.provider` admite `youtube` únicamente como *referencia de
-> metadatos/embebido oficial*; este repo **no** incluye extractores de streams de terceros.
+<br>
 
-> **YouTube (Windows):** al buscar, los resultados de YouTube aparecen como tarjetas dentro de la app y se
-> reproducen con el reproductor oficial embebido (IFrame Player API), controlado por la barra de la app
-> (play/pausa, anterior/siguiente, progreso, volumen). Se pueden guardar en «Mi biblioteca».
-> No se extraen ni descargan streams.
+<img src="site/img/nsound/inicio.jpg" width="230" alt="Inicio de Nsound"> &nbsp;
+<img src="site/img/nsound/musica.jpg" width="230" alt="Música por géneros"> &nbsp;
+<img src="site/img/nsound/reproduciendo.jpg" width="230" alt="Reproduciendo">
 
-> **Windows:** Inicio con éxitos del momento, Música por géneros (solo sonido), vídeos libres, letra sincronizada
-> (LRCLIB, base de datos abierta), Mi biblioteca y listas de reproducción propias. Sin cuentas ni suscripciones.
+</div>
 
-> **Windows 0.5:** Vídeos con estanterías (La Velada del Año, series, YouTubers, deporte…), filtros estrictos
-> (Música solo canciones y sin vídeo; Vídeos solo vídeos), anuncio de lanzamientos nuevos en Inicio, ecualizador de 10 bandas,
-> descargas del catálogo libre (Creative Commons) y ajustes guardados. YouTube no se descarga: se reproduce con su reproductor oficial.
+> **Beta.** Nsound está en pruebas: puede fallar y las apps de móvil aún se están afinando en dispositivos reales. Si algo no va bien, [cuéntalo aquí](https://github.com/N1x0321/Nsound/issues) y se arregla.
 
-> **iOS y Android (0.5):** una única interfaz web (`app/`) con todas las funciones —Inicio con lanzamientos de la semana,
-> Música por géneros, Vídeos con estanterías, Biblioteca y listas, letras sincronizadas, ecualizador, descargas del
-> catálogo libre— dentro de una app nativa pequeña (`ios/` con WKWebView, `android/` con WebView).
-> Windows sigue siendo nativo (WinUI 3) y comparte `app/src/eq.js`. Las apps móviles se compilan en GitHub Actions;
-> aún no se han probado en un dispositivo real.
+## ✨ Qué puedes hacer
 
-> **Licencia:** código visible, no libre de copiar. [PolyForm Noncommercial 1.0.0](LICENSE): puedes usarlo y modificarlo
-> sin fines comerciales, pero no venderlo ni publicar copias comerciales; el nombre y el logo de Nsound son de la marca
-> (ver [NOTICE](NOTICE)). Nsound no está afiliado a YouTube, Spotify, SoundCloud, Deezer ni Apple.
+- 🎵 **Música por géneros y éxitos del momento**, también por país, con los artistas más escuchados.
+- 🎬 **Vídeos** con estanterías (series, YouTubers, deporte…), separados de la música.
+- 🔍 **Búsqueda** de canciones, álbumes y artistas; pulsa un álbum y suena entero.
+- 📚 **Mi biblioteca y tus listas** de reproducción, guardadas en tu dispositivo.
+- 🔁 **Repetir y aleatorio** como en las apps de siempre (en móvil; llegan a Windows en la próxima versión).
+- 🎤 **Letra sincronizada** mientras suena (de [LRCLIB](https://lrclib.net), base de datos abierta).
+- 🎨 **Tu propio color:** varios temas y la opción de elegir el que quieras.
+- 🔒 **Sin cuentas ni anuncios propios.** Lo que guardas (biblioteca, listas) se queda en tu dispositivo.
 
-> **Instalar:** pasos para Windows, Android e iPhone en [docs/INSTALAR.md](docs/INSTALAR.md).
+### Solo en Windows
 
-## Empieza aquí (si no sabes de informática)
+- 🪟 **Mini reproductor:** una tarjeta pequeña, siempre visible, que puedes mover y cambiar de tamaño con el ratón.
+- 🎼 **Tono y BPM (extra, en pruebas):** muestra la tonalidad y el tempo de lo que suena. Se calcula en tu PC, no se guarda ni se envía audio.
+- 🎚️ Ecualizador de 10 bandas: *en mantenimiento* mientras se arregla un fallo.
 
-1. **Elige tu sistema:** Windows, Android o iPhone.
-2. **Sigue los pasos** de [docs/INSTALAR.md](docs/INSTALAR.md) (o de la [web del proyecto](https://n1x0321.github.io/Nsound/)).
-3. **Abre Nsound** y busca una canción. Sin cuentas ni pagos.
-4. Si algo falla, mira «Preguntas frecuentes» en la web o abre una incidencia en GitHub.
+## 📥 Descargar
+
+| Sistema | Archivo | Notas |
+|---|---|---|
+| **Windows 10 / 11** | [`Nsound-0.8.0-beta.10-windows-x64.zip`](https://github.com/N1x0321/Nsound/releases/download/v0.8.0-beta.10/Nsound-0.8.0-beta.10-windows-x64.zip) | Portátil: extrae el zip y abre **Abrir Nsound**. Para PC ARM, [el zip ARM64](https://github.com/N1x0321/Nsound/releases/download/v0.8.0-beta.10/Nsound-0.8.0-beta.10-windows-arm64.zip). |
+| **Android 7+** | [`Nsound-0.8.0-beta.9-android.apk`](https://github.com/N1x0321/Nsound/releases/download/v0.8.0-beta.9/Nsound-0.8.0-beta.9-android.apk) | Permite «instalar apps de este origen» cuando Android lo pida. |
+| **iPhone** | [`Nsound-0.8.0-beta.9-unsigned.ipa`](https://github.com/N1x0321/Nsound/releases/download/v0.8.0-beta.9/Nsound-0.8.0-beta.9-unsigned.ipa) | Sin firmar: se instala con [SideStore, AltStore o Sideloadly](docs/INSTALAR.md). |
+
+Todas las versiones, sumas de control y notas: [**Releases**](https://github.com/N1x0321/Nsound/releases).
+
+> **¿Windows o tu móvil avisan de que no conocen la app?** Es normal: Nsound no pasa por ninguna tienda ni está firmada. Los pasos exactos para cada sistema están en [docs/INSTALAR.md](docs/INSTALAR.md). Cada archivo trae un `.sha256` por si quieres comprobar que no está alterado.
+
+## 🚀 Empezar en 3 pasos
+
+1. **Descarga** el archivo de tu sistema (arriba).
+2. **Instálalo** siguiendo la [guía](docs/INSTALAR.md) (en Windows, solo extraer y abrir).
+3. **Abre Nsound y busca una canción.** Sin registrarte ni pagar.
+
+## ❓ Preguntas rápidas
+
+<details>
+<summary><b>¿De dónde sale la música?</b></summary>
+
+Nsound reproduce con el **reproductor oficial incrustado de YouTube**, controlado desde la propia app. No extrae ni descarga audio de YouTube, y no aloja música ni vídeos. Además hay un catálogo de contenido libre (dominio público, Creative Commons…) que sí se puede descargar.
+</details>
+
+<details>
+<summary><b>¿Por qué se corta un instante la música en iPhone al bloquear la pantalla?</b></summary>
+
+El audio de YouTube viaja dentro de un reproductor de vídeo y iOS lo trata como vídeo, por eso puede haber un pequeño corte al pasar a segundo plano. Se está investigando; es un problema conocido.
+</details>
+
+<details>
+<summary><b>¿Es gratis de verdad?</b></summary>
+
+Sí. Es un proyecto personal, sin ánimo de lucro y sin suscripciones ni cuentas.
+</details>
+
+<details>
+<summary><b>¿Puedo modificarlo?</b></summary>
+
+El código es visible y puedes usarlo y cambiarlo **sin fines comerciales** ([PolyForm Noncommercial 1.0.0](LICENSE)). No se puede vender ni publicar copias comerciales, y el nombre y el logo de Nsound son de la marca ([NOTICE](NOTICE)). Guía: [docs/MODIFICAR.md](docs/MODIFICAR.md).
+</details>
+
+## 🧩 Cómo está hecho
 
 | Carpeta | Para qué sirve |
 |---|---|
-| `app/` | La interfaz que comparten iPhone y Android |
-| `android/`, `ios/`, `windows/` | Cada app, por sistema |
-| `docs/` | Guías: instalar y modificar |
-| `site/` | La web del proyecto |
-| `branding/` | Logo e iconos |
+| [`app/`](app) | La interfaz web que comparten iPhone y Android |
+| [`android/`](android) · [`ios/`](ios) · [`windows/`](windows) | Cada app, por sistema (Kotlin, Swift y C# con WinUI 3) |
+| [`docs/`](docs) | Guías: [instalar](docs/INSTALAR.md), [modificar](docs/MODIFICAR.md) y [desarrollo](docs/DESARROLLO.md) |
+| [`site/`](site) | La [web del proyecto](https://n1x0321.github.io/Nsound/) |
+| [`branding/`](branding) | Logo e iconos |
 
-## Plan por fases
+Las apps se compilan en GitHub Actions y las versiones salen al publicar una etiqueta `v*`. Detalles técnicos, estructura completa y cómo probar: [docs/DESARROLLO.md](docs/DESARROLLO.md).
 
-| Fase | Objetivo | Hitos |
-|------|----------|-------|
-| 0 | Fundaciones | Repo, `.gitignore`, convenciones, JSON Schema del catálogo |
-| 1 | Datos | Catálogo en GitHub Pages, validación en CI, normalizador (`MetadataMatcher`) |
-| 2 | Reproducción | `AudioPlayerManager` (AVPlayer, segundo plano, pantalla de bloqueo) |
-| 3 | UI | SwiftUI: biblioteca, búsqueda, cola, mini‑reproductor, vídeo (AVPlayerViewController) |
-| 4 | Distribución | `build-ipa.yml` → `.ipa` sin firmar en GitHub Releases por tag `v*` |
-| 5 | Windows | Núcleo .NET 8 (mismos 21 casos), app WinUI 3 con controles multimedia del sistema, `build-windows.yml` → `.zip` en la misma Release |
+## 🤝 Avisos
 
-## Estructura
+- Nsound **no está afiliada** a YouTube, Spotify, SoundCloud, Deezer ni Apple.
+- Detección de tono en Windows con el modelo S-KEY de Deezer (MIT) y el proyecto KeyFindTray (MIT): [avisos de terceros](windows/THIRD-PARTY-NOTICES.md).
+- Antes llamada «LibreStream Hub»: Nsound es la N de su logo, con la corona y el rayo, más *sound*.
 
-```
-.
-├── .github/workflows/
-│   ├── build-ipa.yml          # Compila y publica el .ipa
-│   ├── build-windows.yml      # Tests .NET + .zip portable x64/ARM64
-│   └── validate-catalog.yml   # Valida catálogo y tests del normalizador
-├── catalog/catalog.json       # Catálogo de ejemplo (servido por GitHub Pages)
-├── schemas/catalog.schema.json
-├── ios/
-│   ├── project.yml            # XcodeGen
-│   ├── LibreStream/
-│   │   ├── App/               # LibreStreamApp.swift (punto de entrada)
-│   │   ├── Models/            # Models.swift (reflejan el JSON Schema)
-│   │   ├── Services/
-│   │   │   ├── Catalog/       # CatalogService.swift
-│   │   │   ├── Matching/      # MetadataMatcher.swift
-│   │   │   └── Playback/      # AudioPlayerManager.swift
-│   │   ├── Views/{Library,Player}/
-│   │   └── Resources/
-│   └── LibreStreamTests/
-├── app/                       # Interfaz compartida iOS + Android (HTML/CSS/JS, sin dependencias)
-│   ├── src/{js,css,eq.js,index.template.html}
-│   ├── test/core.test.mjs     # Pruebas de Node (node --test app/test)
-│   ├── build.mjs              # Une todo en app/dist/index.html
-│   └── dev/server.mjs         # Servidor local para probar en el navegador
-├── android/                   # WebView + puente nativo (Kotlin) · APK en Releases
-├── windows/
-│   ├── LibreStream.Core/      # Models/, Services/{Catalog,Matching}/
-│   ├── LibreStream.Core.Tests/# Matching/ (xUnit)
-│   └── LibreStream.App/       # Services/AudioPlayerManager.cs, Views/MainWindow
-├── docs/MODIFICAR.md          # Guía: dónde tocar cada cosa
-└── tools/
-    ├── validate_catalog.py    # Validación JSON Schema + dedupe
-    └── test_title_regex.py    # Casos borde de regex (espejo del Swift)
-```
+---
 
-## Flujo de datos
-
-```mermaid
-flowchart LR
-  A[catalog/*.json<br/>repo] -->|push main| B[GitHub Actions<br/>validate-catalog]
-  B -->|deploy| C[GitHub Pages<br/>catalog.json]
-  C -->|HTTPS GET + ETag| D[CatalogService iOS]
-  D --> E[MetadataMatcher<br/>limpieza · ±4s · MD5 dedupe]
-  E --> F[StreamResolver<br/>URL directa por provider]
-  F --> G[AudioPlayerManager<br/>AVPlayer + AVAudioSession]
-  G --> H[MPNowPlayingInfoCenter<br/>MPRemoteCommandCenter]
-  C -->|HTTPS GET + ETag| W[CatalogService .NET<br/>Windows]
-  W --> X[MediaPlayer + SMTC<br/>WinUI 3]
-```
-
-> ¿Quieres modificar algo? Mira [docs/MODIFICAR.md](docs/MODIFICAR.md).
-
-## Desarrollo
-
-```bash
-python tools/test_title_regex.py && python tools/validate_catalog.py catalog/catalog.json
-```
-
-En Windows (requiere .NET 8 SDK): `dotnet test windows/LibreStream.Core.Tests` y `dotnet run --project windows/LibreStream.App -r win-x64 -p:Platform=x64`.
-
-En macOS: `brew install xcodegen && cd ios && xcodegen && open LibreStream.xcodeproj`.
-
-## Release
-
-```bash
-git tag v0.4.0 && git push origin v0.4.0
-```
+<div align="center">
+<sub>Hecho como proyecto personal · <a href="https://n1x0321.github.io/Nsound/">n1x0321.github.io/Nsound</a></sub>
+</div>
