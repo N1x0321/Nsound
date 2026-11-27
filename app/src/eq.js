@@ -72,20 +72,42 @@
   window.__lsEqInstalled = true;
 
   const freqs = [31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
-  let ctx = null, filters = [], analyser = null, attached = false;
-  let gains = new Array(10).fill(0), enabled = false;
+  let ctx = null, source = null, filters = [], analyser = null, attached = false, routed = null;   // routed: 'eq' | 'bypass'
+  let gains = new Array(10).fill(0), enabled = false, levelBuf = null;
+
+  // Un <video> solo admite UN createMediaElementSource en toda su vida y no se puede deshacer: una vez enganchado, el audio pasa siempre por el
+  // AudioContext. Lo que sí se puede es elegir el camino: con el ecualizador APAGADO el sonido va directo de la fuente a la salida (sin 10 filtros
+  // ni analizador procesando en vacío, que era lo que calentaba), y con él ENCENDIDO pasa por los filtros.
+  function route(mode) {
+    if (!attached || routed === mode) return;
+    try {
+      source.disconnect();
+      filters.forEach((f) => f.disconnect());
+      analyser.disconnect();
+      if (mode === 'eq') {
+        let node = source;
+        filters.forEach((f) => { node.connect(f); node = f; });
+        node.connect(analyser);
+        analyser.connect(ctx.destination);
+      } else {
+        source.connect(ctx.destination);
+      }
+      routed = mode;
+    } catch (e) { window.__lsEqError = String(e); }
+  }
 
   function apply() {
     if (!attached) return;
-    filters.forEach((f, i) => { f.gain.value = enabled ? gains[i] : 0; });
+    filters.forEach((f, i) => { f.gain.value = gains[i]; });
+    route(enabled ? 'eq' : 'bypass');
   }
 
   // Solo se engancha al <video> cuando el usuario activa el ecualizador: así no se toca el audio de otro modo.
   function attach(video) {
     if (attached) return;
     try {
-      ctx = new (window.AudioContext || window.webkitAudioContext)();
-      const source = ctx.createMediaElementSource(video);
+      ctx = new (window.AudioContext || window.webkitAudioContext)({ latencyHint: 'playback' });   // «playback»: buffers grandes, menos CPU y menos calor
+      source = ctx.createMediaElementSource(video);
       filters = freqs.map((hz, i) => {
         const f = ctx.createBiquadFilter();
         f.type = i === 0 ? 'lowshelf' : (i === freqs.length - 1 ? 'highshelf' : 'peaking');
@@ -94,13 +116,12 @@
         f.gain.value = 0;
         return f;
       });
-      let node = source;
-      filters.forEach(f => { node.connect(f); node = f; });
       analyser = ctx.createAnalyser();
       analyser.fftSize = 256;
-      node.connect(analyser);
-      analyser.connect(ctx.destination);
+      levelBuf = new Uint8Array(analyser.frequencyBinCount);
       attached = true;
+      routed = null;
+      source.connect(ctx.destination);      // hasta decidir el camino, el sonido nunca queda mudo
       apply();
       if (ctx.state === 'suspended') ctx.resume();
     } catch (e) {
@@ -109,10 +130,10 @@
   }
 
   function level() {
-    if (!analyser) return 0;
-    const d = new Uint8Array(analyser.frequencyBinCount);
-    analyser.getByteFrequencyData(d);
-    return d.reduce((a, b) => a + b, 0) / d.length;
+    if (!analyser || routed !== 'eq') return 0;
+    analyser.getByteFrequencyData(levelBuf);
+    let t = 0; for (let i = 0; i < levelBuf.length; i++) t += levelBuf[i];
+    return t / levelBuf.length;
   }
 
   window.__lsEq = (g, on) => {
@@ -126,7 +147,7 @@
   };
 
   window.__lsEqStatus = () => JSON.stringify({
-    attached, state: ctx ? ctx.state : null, level: level(), error: window.__lsEqError || null
+    attached, routed, state: ctx ? ctx.state : null, level: level(), error: window.__lsEqError || null
   });
 
   // Órdenes desde la página que contiene el iframe (iOS y Android)
@@ -137,19 +158,20 @@
     if (d.lsEqStatusReq && e.source) e.source.postMessage({ lsEqStatus: JSON.parse(window.__lsEqStatus()) }, '*');
   });
 
-  // Con el ecualizador activo ya hay un analizador: se envía el nivel a la página (10 veces por segundo, solo si suena)
+  // Nivel para el visualizador: solo con el ecualizador ENCENDIDO, sonando y 8 veces por segundo (antes 10, aunque estuviera apagado)
   setInterval(() => {
-    if (!attached || !ctx || ctx.state !== 'running' || window.parent === window) return;
+    if (!attached || routed !== 'eq' || !ctx || ctx.state !== 'running' || window.parent === window) return;
     const v = document.querySelector('video');
     if (!v || v.paused) return;
     try { window.parent.postMessage({ lsLevel: Math.min(1, level() / 255) }, '*'); } catch (e) { /* sin página padre */ }
-  }, 100);
+  }, 125);
 
+  // Mantenimiento: engancha si hace falta y reanuda el contexto si el sistema lo suspendió
   setInterval(() => {
     if (enabled && !attached) {
       const v = document.querySelector('video');
       if (v) attach(v);
     }
-    if (enabled && ctx && ctx.state === 'suspended') ctx.resume();
+    if (attached && ctx && ctx.state === 'suspended') ctx.resume();
   }, 1000);
 })();
