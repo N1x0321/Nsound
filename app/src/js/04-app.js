@@ -894,6 +894,20 @@
     if (radioWanted() && !S.shuffle && S.index === S.queue.length - 1) { S.radioSeed = it.key; S.radioP = radioFor(it).catch(() => []); }   // última de la cola: la radio se pide ya
   }
 
+  // Radio a mano (como «Iniciar radio» de Spotify): la canción y, detrás, otras parecidas. Si es la que suena, no se corta.
+  async function startRadio(it) {
+    if (!it) return;
+    const g = it.artist ? { title: it.title } : LS.guessTrack(it.title, it.sub || '');
+    toast('Preparando la radio de «' + g.title + '»…', 2500);
+    try {
+      const items = LS.pickRadio(await radioFor(it), [it.id], 40).map(musicItem);
+      if (!items.length) { toast('YouTube Music no tiene radio para esta canción.', 3500); return; }
+      if (S.now && S.now.key === it.key) { S.queue = [S.now, ...items]; S.index = 0; S.seen = [S.now.key]; S.hist = []; }
+      else { setList('radio', [it, ...items]); play(it.key, 'radio'); }
+      toast('Radio de «' + g.title + '»: ' + items.length + ' canciones a continuación.', 3500);
+    } catch (e) { toast('No se pudo crear la radio: ' + e.message, 4000); }
+  }
+
   // Radio automática: al acabarse la cola, se añaden canciones parecidas a la última y sigue sonando
   const radioWanted = () => store.settings.get().radio && S.repeat !== 'all';
   async function continueWithRadio() {
@@ -1243,6 +1257,7 @@
   $('#npHeart').onclick = toggleHeart;
   $('#npAdd').onclick = (e) => { e.stopPropagation(); openAddMenu(); };
   $('#npQueue').onclick = () => openQueue();
+  $('#npRadio').onclick = () => startRadio(S.now);
   $('#npLyrics').onclick = () => {             // letra grande dentro de «Reproduciendo» (la línea que suena, encendida)
     const np = $('#np'), on = !np.classList.contains('karaoke');
     np.classList.toggle('karaoke', on); $('#npLyrics').classList.toggle('on', on);
@@ -1500,7 +1515,7 @@
     const o = sheet('qm');
     o.innerHTML = `<div class="imp-box" role="dialog" aria-modal="true"><h2>${esc(it.title)}</h2><p class="imp-sub">${esc(it.sub)}</p>
       <div class="imp-btns" style="flex-direction:column"><button data-act="qnext" data-key="${esc(key)}">Reproducir a continuación</button>
-      <button data-act="qend" data-key="${esc(key)}">Añadir al final de la cola</button><button data-act="qmclose">Cancelar</button></div></div>`;
+      <button data-act="qend" data-key="${esc(key)}">Añadir al final de la cola</button><button data-act="qradio" data-key="${esc(key)}">Iniciar radio de esta canción</button><button data-act="qmclose">Cancelar</button></div></div>`;
     o.hidden = false;
     o.onclick = (e) => { if (e.target === o) o.hidden = true; };
   }
@@ -1591,6 +1606,7 @@
       case 'newlist': newList(false); break;
       case 'qnext': queueIt(d.key, 'next'); $('#qm').hidden = true; break;
       case 'qend': queueIt(d.key, 'end'); $('#qm').hidden = true; break;
+      case 'qradio': $('#qm').hidden = true; startRadio(reg.get(d.key)); break;
       case 'qmclose': $('#qm').hidden = true; break;
       case 'qpclose': $('#qp').hidden = true; break;
       case 'qjump': S.index = Number(d.i); S.skips = 0; start(); renderQueue(); break;
