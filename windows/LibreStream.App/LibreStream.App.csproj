@@ -11,8 +11,9 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWinUI>true</UseWinUI>
-    <Platforms>x64;ARM64</Platforms>
-    <RuntimeIdentifiers>win-x64;win-arm64</RuntimeIdentifiers>
+    <!-- x86: Windows 10 de 32 bits. ONNX Runtime no trae binario de 32 bits, así que ahí el tono lo calcula el método propio (sin S-KEY) -->
+    <Platforms>x64;ARM64;x86</Platforms>
+    <RuntimeIdentifiers>win-x64;win-arm64;win-x86</RuntimeIdentifiers>
     <!-- App portable sin MSIX: se distribuye como .zip y no requiere firma -->
     <WindowsPackageType>None</WindowsPackageType>
     <!-- Necesario para compilar WinUI con dotnet CLI (sin Visual Studio) -->

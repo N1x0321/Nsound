@@ -134,7 +134,8 @@
                         IsBackButtonVisible="Collapsed" IsSettingsVisible="False" IsPaneToggleButtonVisible="False"
                         SelectionChanged="Nav_SelectionChanged" ItemInvoked="Nav_ItemInvoked">
             <NavigationView.AutoSuggestBox>
-                <AutoSuggestBox x:Name="Search" PlaceholderText="Buscar" QueryIcon="Find" TextChanged="Search_TextChanged" QuerySubmitted="Search_QuerySubmitted" />
+                <AutoSuggestBox x:Name="Search" PlaceholderText="Buscar" QueryIcon="Find" TextChanged="Search_TextChanged" QuerySubmitted="Search_QuerySubmitted" UpdateTextOnSelect="False"
+                                GotFocus="Search_GotFocus" Tapped="Search_Tapped" />
             </NavigationView.AutoSuggestBox>
             <NavigationView.MenuItems>
                 <NavigationViewItem Content="Inicio" Icon="Home" Tag="all" IsSelected="True" />
@@ -189,13 +190,22 @@
                                     <ColumnDefinition Width="*" />
                                     <ColumnDefinition Width="Auto" />
                                     <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
-                                <TextBlock x:Name="UpdateText" TextWrapping="Wrap" VerticalAlignment="Center" />
-                                <HyperlinkButton Grid.Column="1" Content="Descargar" Click="UpdateDownload_Click" />
-                                <Button Grid.Column="2" Style="{StaticResource BarIcon}" Width="32" Height="32" Click="UpdateDismiss_Click"
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
+                                <TextBlock x:Name="UpdateText" TextWrapping="Wrap" VerticalAlignment="Center" AutomationProperties.LiveSetting="Polite" />
+                                <!-- «Actualizar ahora» en las copias instaladas; «Descargar» en el zip portable -->
+                                <HyperlinkButton x:Name="UpdateAction" Grid.Column="1" Content="Descargar" Click="UpdateAction_Click" />
+                                <HyperlinkButton x:Name="UpdateManual" Grid.Column="2" Content="Descargar a mano" Click="UpdateManual_Click" Visibility="Collapsed" />
+                                <Button Grid.Column="3" Style="{StaticResource BarIcon}" Width="32" Height="32" Click="UpdateDismiss_Click"
                                         AutomationProperties.Name="Descartar este aviso" ToolTipService.ToolTip="Descartar este aviso">
                                     <FontIcon Glyph="&#xE711;" FontSize="12" />
                                 </Button>
+                                <ProgressBar x:Name="UpdateBar" Grid.Row="1" Grid.ColumnSpan="4" Visibility="Collapsed" Maximum="1" Margin="0,2,10,6"
+                                             AutomationProperties.Name="Progreso de la descarga" />
                             </Grid>
                         </Border>
 
@@ -322,6 +332,14 @@
                             <StackPanel x:Name="HeroDots" Orientation="Horizontal" Spacing="6" Margin="32" HorizontalAlignment="Right" VerticalAlignment="Bottom" />
                         </Grid>
 
+                        <!-- Artistas (solo en Inicio): arriba, bajo el destacado -->
+                        <StackPanel x:Name="ArtistsSection" Spacing="6" Visibility="Collapsed">
+                            <TextBlock x:Name="ArtistsTitle" Text="Artistas de la semana" Style="{StaticResource SectionTitle}" />
+                            <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled" HorizontalScrollMode="Enabled">
+                                <StackPanel x:Name="ArtistsRow" Orientation="Horizontal" Spacing="14" Margin="8,0,0,8" />
+                            </ScrollViewer>
+                        </StackPanel>
+
                         <!-- Hecho para ti: mezclas a partir de lo que escuchas (historial solo en este PC) -->
                         <StackPanel x:Name="MixesSection" Spacing="6" Visibility="Collapsed">
                             <TextBlock Text="Hecho para ti" Style="{StaticResource SectionTitle}" />
@@ -376,13 +394,6 @@
                             <TextBlock Text="Artistas parecidos" Style="{StaticResource SectionTitle}" />
                             <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled" HorizontalScrollMode="Enabled">
                                 <StackPanel x:Name="RelatedRow" Orientation="Horizontal" Spacing="14" Margin="8,0,0,8" />
-                            </ScrollViewer>
-                        </StackPanel>
-
-                        <StackPanel x:Name="ArtistsSection" Spacing="6" Visibility="Collapsed">
-                            <TextBlock x:Name="ArtistsTitle" Text="Artistas de la semana" Style="{StaticResource SectionTitle}" />
-                            <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled" HorizontalScrollMode="Enabled">
-                                <StackPanel x:Name="ArtistsRow" Orientation="Horizontal" Spacing="14" Margin="8,0,0,8" />
                             </ScrollViewer>
                         </StackPanel>
 
@@ -446,19 +457,18 @@
                                 <ToggleSwitch x:Name="RadioToggle" Header="Radio automática" OnContent="Activada" OffContent="Desactivada" Toggled="Radio_Toggled" />
                                 <TextBlock Opacity="0.55" FontSize="12" TextWrapping="Wrap"
                                            Text="Cuando se acaba la lista, la música no se para: sigue con canciones parecidas a la última (la radio de YouTube Music). Con «Repetir la lista» activado no se añade nada." />
+                                <ToggleSwitch x:Name="TrayToggle" Header="Seguir en segundo plano al cerrar" OnContent="Activado" OffContent="Desactivado" Toggled="Tray_Toggled" Margin="0,8,0,0" />
+                                <TextBlock Opacity="0.55" FontSize="12" TextWrapping="Wrap"
+                                           Text="Al cerrar la ventana, la música sigue y Nsound se queda junto al reloj (puede estar en los iconos ocultos, la flecha ^). Haz clic en su icono para volver; para cerrarlo del todo, botón derecho → «Salir de Nsound»." />
                             </StackPanel>
                             <StackPanel Spacing="8">
-                                <TextBlock Text="Ecualizador" Style="{StaticResource SubtitleTextBlockStyle}" />
-                                <TextBlock Opacity="0.7" TextWrapping="Wrap" Text="En mantenimiento: se retiró temporalmente mientras se arregla un fallo. Volverá en una próxima versión." />
-                            </StackPanel>
-                            <StackPanel Spacing="8" Visibility="Collapsed">
                                 <TextBlock Text="Ecualizador" Style="{StaticResource SubtitleTextBlockStyle}" />
                                 <ToggleSwitch x:Name="EqToggle" Header="Activar ecualizador" OnContent="Activado" OffContent="Desactivado" Toggled="EqToggle_Toggled" />
                                 <ComboBox x:Name="EqPresetBox" Header="Ajuste" Width="220" SelectionChanged="EqPreset_Changed" />
                                 <StackPanel x:Name="EqBandsHost" Orientation="Horizontal" Spacing="16" Margin="0,8,0,0" />
                                 <TextBlock x:Name="EqStatus" Opacity="0.8" TextWrapping="Wrap" />
                                 <TextBlock Opacity="0.55" FontSize="12" TextWrapping="Wrap"
-                                           Text="Actúa sobre el sonido de YouTube dentro de la app. Los vídeos del catálogo libre no admiten ecualizador." />
+                                           Text="Actúa sobre el sonido de YouTube dentro de la app. Los vídeos del catálogo libre no admiten ecualizador. Apagado no procesa nada; encendido gasta algo más de procesador: si el equipo se calienta, apágalo." />
                             </StackPanel>
                             <StackPanel Spacing="8">
                                 <TextBlock Text="Descargas" Style="{StaticResource SubtitleTextBlockStyle}" />
@@ -630,7 +640,7 @@
                 </Button>
                 <Border Width="1" Height="22" Margin="8,0" Background="{StaticResource NsLineBrush}" />
                 <FontIcon Glyph="&#xE767;" FontSize="16" Opacity="0.8" />
-                <Slider x:Name="Volume" Width="110" Margin="8,0,0,0" Minimum="0" Maximum="100" Value="80" VerticalAlignment="Center" ValueChanged="Volume_ValueChanged" />
+                <Slider x:Name="Volume" Width="110" Margin="8,0,0,0" Minimum="0" Maximum="100" VerticalAlignment="Center" ValueChanged="Volume_ValueChanged" />
             </StackPanel>
         </Grid>
 

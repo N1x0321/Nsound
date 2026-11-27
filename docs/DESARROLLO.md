@@ -20,7 +20,7 @@
 ├── .github/workflows/
 │   ├── build-android.yml      # Compila, firma y publica el .apk
 │   ├── build-ipa.yml          # Compila y publica el .ipa; actualiza site/source.json
-│   ├── build-windows.yml      # Tests .NET + .zip portable x64/ARM64
+│   ├── build-windows.yml      # Tests .NET + zip portable e instalador .exe (x64, ARM64, x86)
 │   └── validate-catalog.yml   # Valida catálogo y tests del normalizador
 ├── catalog/catalog.json       # Catálogo de ejemplo (servido por GitHub Pages)
 ├── schemas/catalog.schema.json
@@ -45,7 +45,8 @@
 ├── windows/
 │   ├── LibreStream.Core/      # Models/, Services/{Catalog,Matching}/
 │   ├── LibreStream.Core.Tests/# Matching/ (xUnit)
-│   └── LibreStream.App/       # Services/AudioPlayerManager.cs, Views/MainWindow
+│   ├── LibreStream.App/       # Services/AudioPlayerManager.cs, Views/MainWindow
+│   └── installer/nsound.iss   # Instalador de Windows (Inno Setup)
 ├── docs/MODIFICAR.md          # Guía: dónde tocar cada cosa
 └── tools/
     ├── validate_catalog.py    # Validación JSON Schema + dedupe
@@ -83,19 +84,45 @@ En macOS: `brew install xcodegen && cd ios && xcodegen && open LibreStream.xcode
 
 Nsound no sale de ninguna tienda: **desde la beta 11**, cada app pregunta como máximo una vez al día a las
 [Releases de GitHub](https://github.com/N1x0321/Nsound/releases) (incluidas las de pre-lanzamiento), compara con su versión y muestra
-«Hay una versión nueva (x.y.z) · Descargar», que abre la página de la Release. El aviso se puede descartar (vuelve con la siguiente).
-No instala nada solo, no usa cuentas ni envía datos del usuario.
+«Hay una versión nueva (x.y.z)». El botón «Descargar» abre la página de la Release; en Windows instalado con el `.exe` es
+«Actualizar ahora» (ver más abajo). El aviso se puede descartar (vuelve con la siguiente).
+No instala nada sin confirmación, no usa cuentas ni envía datos del usuario.
 
 | Plataforma | Cómo se entera | Cómo se instala encima |
 |---|---|---|
-| Windows | Aviso en la app | Descargar el zip, cerrar Nsound, extraer y abrir la carpeta nueva. Los datos están en `%LocalAppData%\LibreStream` |
+| Windows con instalador | Aviso en la app | «Actualizar ahora»: descarga, comprueba, pregunta, instala y vuelve a abrir. Los datos están en `%LocalAppData%\LibreStream` |
+| Windows con zip portable | Aviso en la app | Descargar el zip, cerrar Nsound, extraer y abrir la carpeta nueva |
 | Android | Aviso en la app | Descargar el APK y abrirlo: se instala encima (misma firma y `versionCode` mayor) |
 | iPhone con la fuente en SideStore / AltStore | La tienda (`source.json`) y el aviso | Botón de actualizar en la tienda |
 | iPhone con Sideloadly u otros | Aviso en la app | Descargar el IPA e instalarlo encima con el mismo Apple ID |
 | Navegador | Aviso solo si se compiló con `NSOUND_VERSION` | Volver a desplegar |
 
-La app solo anuncia una versión cuando la Release **ya tiene el fichero de su plataforma** (`-windows-x64.zip`, `-windows-arm64.zip`,
-`-android.apk` o `-unsigned.ipa`), así que no importa que un flujo termine antes que otro.
+La app solo anuncia una versión cuando la Release **ya tiene el fichero de su plataforma** (`-windows-<arch>-setup.exe` si se instaló
+con el instalador, `-windows-<arch>.zip` si es portable, `-android.apk` o `-unsigned.ipa`), así que no importa que un flujo termine
+antes que otro. `<arch>` es `x64`, `arm64` o `x86`, según el proceso que se está ejecutando.
+
+### Windows: instalador y «Actualizar ahora»
+
+`build-windows.yml` compila para cada arquitectura el zip portable y, con Inno Setup (`windows/installer/nsound.iss`), el instalador,
+cada uno con su `.sha256`. No hace falta tener Inno Setup en tu PC: para probar una rama, lanza el flujo y descarga los artefactos.
+
+```powershell
+gh workflow run build-windows.yml -R N1x0321/Nsound --ref <rama>
+```
+
+- **Quién se actualiza solo:** las copias con `unins000.exe` y `unins000.dat` junto a `Nsound.exe`, es decir, las puestas con el instalador.
+- **Qué hace la app** (`UpdateDownloader.cs`): pide primero el `.sha256` y después descarga el instalador a
+  `%LOCALAPPDATA%\LibreStream\updates`. Si la huella falta o no coincide, no ejecuta nada y ofrece la descarga a mano. Solo pide
+  `github.com/N1x0321/Nsound/releases/download/…` y, al redirigir, el almacén de ficheros de GitHub de **este** repositorio (por su número,
+  `1453134198`). Si GitHub cambiara de almacén, la actualización automática fallaría sin instalar nada: habría que publicar una versión
+  con la dirección nueva, y las instaladas tendrían que actualizarse a mano esa vez.
+- **Cómo lanza el instalador:** `/SILENT /CLOSEAPPLICATIONS /RELAUNCH=1 /NORESTART`. Con `/RELAUNCH=1` el instalador vuelve a abrir Nsound.
+- **Instalador:** siempre para el usuario actual (sin administrador) y Windows 10 1809 como mínimo. Si falta WebView2 Runtime, lo descarga
+  de Microsoft y lo instala. Al actualizar y al desinstalar no toca `%LOCALAPPDATA%\LibreStream` (en su carpeta `updates`, la app borra
+  los instaladores ya usados).
+- **Límite:** la huella sale de la misma Release, así que protege de descargas rotas o cambiadas por el camino, **no** de alguien que
+  entrara en la cuenta de GitHub. Eso solo lo resolvería firmar los instaladores. Protege la cuenta con verificación en dos pasos.
+- **x86:** ONNX Runtime no publica binario de Windows de 32 bits, así que no se usa la red S-KEY; el tono lo calcula `KeyBpmAnalyzer`.
 
 ### Una sola vez: la firma de Android
 
@@ -135,7 +162,9 @@ El registro de la compilación muestra la huella SHA-256 del certificado; en las
    de modo que `0.8.0-beta.11` → `0.8.11`, `0.8.0` → `0.8.999` y `0.8.1-beta.1` → `0.8.1001`. Ver `tools/ios_version.py`.
 
 4. Comprueba:
-   - La Release tiene los 8 ficheros (APK, IPA y dos zips, cada uno con su `.sha256`) y **no** está en borrador.
+   - La Release tiene los 16 ficheros (APK, IPA y, de Windows, tres zips y tres instaladores; cada uno con su `.sha256`) y **no** está en borrador.
+   - Desde la versión anterior instalada con el `.exe`, «Actualizar ahora» deja la nueva abierta (el aviso se consulta una vez al día:
+     para verlo al momento, borra `%LOCALAPPDATA%\LibreStream\updates.json`).
    - La huella del certificado en el registro de Android es la de arriba.
    - `site/source.json` en `main` tiene la versión nueva la primera y conserva las anteriores. Si el flujo avisó de que no pudo actualizarla,
      hazlo a mano (con los datos del `.ipa` y su `.sha256`) y súbelo a `main`:
@@ -150,7 +179,7 @@ El registro de la compilación muestra la huella SHA-256 del certificado; en las
 |---|---|
 | [Página de descargas](https://n1x0321.github.io/Nsound/) (`site/index.html`) | A mano: enlaces de descarga, tamaños y recuadro «Beta». Se publica al llegar a `main` |
 | `source.json` y `catalog.json` (misma web) | `source.json` lo actualiza `build-ipa.yml`. **No cambies estas direcciones:** las apps instaladas las usan |
-| [README](../README.md) e [INSTALAR](INSTALAR.md) | A mano: tabla de descargas y versión de cada plataforma |
+| [README](../README.md) e [INSTALAR](INSTALAR.md) | A mano: tabla de descargas y versión de cada plataforma. La primera vez que haya instalador, usa los [textos preparados](TEXTOS-INSTALADOR.md) |
 | [Demo en el navegador](https://nsound-demo.vercel.app/) | Despliegue manual de `app/dist/index.html`. Compílala **sin** `NSOUND_VERSION` para que no pida descargar nada |
 | Servidor de pruebas (`render.yaml`) | Compila sin versión: no muestra el aviso |
 
@@ -167,9 +196,10 @@ Las betas 10 y anteriores **no tienen avisador**: hay que decirlo en la web y en
 ### Para no romper las actualizaciones
 
 - No cambies la clave de Android ni el identificador de las apps.
+- No cambies el `AppId` de `nsound.iss`, el nombre de los instaladores ni el formato de su `.sha256` (`<hex>  <fichero>`): las copias instaladas dependen de ellos.
 - No renombres ni recrees `build-android.yml` o `build-ipa.yml`: su número de ejecución volvería a empezar.
 - No cambies el nombre del repositorio ni de la cuenta: las apps preguntan a `N1x0321/Nsound`.
-- Las compilaciones locales y de rama llevan la versión `0.0.0-dev` y no avisan. Para probar el aviso: `-p:Version=0.8.0-beta.9` (Windows) o
+- Las compilaciones locales y de rama llevan la versión `0.0.0-dev` y no avisan (el instalador de una rama sirve para probar la instalación, no el aviso). Para probar el aviso: `-p:Version=0.8.0-beta.9` (Windows) o
   `NSOUND_VERSION=0.8.0-beta.9 node app/build.mjs` (navegador). Se consulta una vez al día: para repetir, borra `updates.json` (Windows) o la clave `ls.update` (navegador).
 
 ## Notas de versiones anteriores

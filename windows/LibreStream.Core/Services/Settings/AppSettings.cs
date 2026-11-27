@@ -20,6 +20,8 @@ public sealed class AppSettings
     public bool Shuffle { get; set; }
     /// <summary>Radio automática: al acabarse la cola, sigue con canciones parecidas (la radio de YouTube Music).</summary>
     public bool Radio { get; set; } = true;
+    /// <summary>Windows: al cerrar la ventana, seguir en segundo plano con un icono junto al reloj.</summary>
+    public bool KeepInTray { get; set; }
     /// <summary>Color elegido por el usuario («#RRGGBB») para el estilo «Tu color».</summary>
     public string? CustomAccent { get; set; }
 

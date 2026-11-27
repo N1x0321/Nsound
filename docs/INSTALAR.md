@@ -14,18 +14,43 @@ En Windows: `Get-FileHash .\archivo -Algorithm SHA256` y compara el resultado co
 
 ## Actualizar
 
-Desde la beta 11, Nsound avisa dentro de la app cuando hay una versión nueva («Descargar» abre la página de la descarga); no instala nada
-por su cuenta. Las betas anteriores no avisan: hay que instalar la 11 a mano una vez.
+Desde la beta 11, Nsound avisa dentro de la app cuando hay una versión nueva; nunca instala nada sin preguntarte.
+Las betas anteriores no avisan: hay que instalar la 11 o una posterior a mano una vez.
 
-- **Windows:** cierra Nsound, extrae el zip nuevo y ábrelo (puedes borrar la carpeta antigua). Tu biblioteca se conserva.
+- **Windows con instalador:** pulsa **«Actualizar ahora»** en el aviso. Nsound descarga el instalador, comprueba su huella SHA-256,
+  te pide confirmación, se cierra, se actualiza y vuelve a abrirse. Si algo falla no instala nada y ofrece **«Descargar a mano»**.
+- **Windows con zip portable:** «Descargar» abre la página de la descarga. Cierra Nsound, extrae el zip nuevo y ábrelo (puedes borrar
+  la carpeta antigua). Si prefieres que en adelante se actualice solo, instala el `.exe` una vez: tu biblioteca se conserva.
 - **Android:** abre el APK nuevo encima del instalado.
 - **iPhone:** actualiza desde SideStore / AltStore si añadiste la fuente de Nsound, o instala el `.ipa` nuevo encima con el mismo Apple ID.
 
 ## Windows 10 / 11
 
-Necesitas: Windows 10 (1809) o superior y el *WebView2 Runtime* (ya viene con Windows 11 y con Windows 10 actualizado).
+Necesitas: Windows 10 (1809) o superior y el *WebView2 Runtime* (ya viene con Windows 11 y con Windows 10 actualizado;
+el instalador lo descarga de Microsoft si falta).
 
-1. Descarga `Nsound-<versión>-windows-x64.zip` (o `-arm64.zip` si tu PC es ARM).
+**¿Qué archivo es el tuyo?** *Configuración → Sistema → Información → «Tipo de sistema»*:
+
+| Tu Windows | Archivos terminados en |
+|---|---|
+| 64 bits, procesador x64 (Intel o AMD: casi todos los PC) | `-windows-x64-setup.exe` o `-windows-x64.zip` |
+| Procesador ARM (Snapdragon y similares) | `-windows-arm64-setup.exe` o `-windows-arm64.zip` |
+| 32 bits | `-windows-x86-setup.exe` o `-windows-x86.zip` |
+
+Los instaladores y los archivos de 32 bits están **a partir de la primera versión publicada con instalador** (la beta 11 solo trae
+los zip de x64 y ARM64). En 32 bits el tono se calcula con un método más sencillo que en 64 bits y el BPM funciona igual.
+
+### Opción A: instalador (recomendada: se actualiza solo)
+
+1. Descarga `Nsound-<versión>-windows-<tu tipo>-setup.exe` (un solo archivo).
+2. Ábrelo. Si aparece *«Windows protegió su PC»*: **Más información → Ejecutar de todas formas** (el programa no está firmado).
+3. Sigue los pasos. Se instala solo para tu usuario, **sin permisos de administrador**, con acceso en el menú Inicio y, si quieres, en el escritorio.
+
+Para desinstalar: *Configuración → Aplicaciones → Nsound → Desinstalar*. Tus datos no se borran.
+
+### Opción B: zip portable (sin instalar)
+
+1. Descarga `Nsound-<versión>-windows-<tu tipo>.zip`.
 2. **Extrae todo el contenido** del zip en una carpeta (clic derecho → *Extraer todo*). No lo ejecutes desde dentro del zip.
 3. Abre **Abrir Nsound** (o el archivo `Nsound.exe` de la carpeta `app`).
 4. Si aparece *«Windows protegió su PC»*: pulsa **Más información → Ejecutar de todas formas**
@@ -33,6 +58,14 @@ Necesitas: Windows 10 (1809) o superior y el *WebView2 Runtime* (ya viene con Wi
 
 No necesita instalador ni permisos de administrador. Para desinstalar, borra la carpeta.
 
+### En los dos casos
+
+- **Seguir en segundo plano** (*Ajustes → Reproducción*, viene desactivado): al cerrar la ventana la música sigue y Nsound se queda
+  junto al reloj, a veces dentro de los *iconos ocultos* (la flecha `^`). Un clic en el icono vuelve a abrirlo; botón derecho →
+  **Salir de Nsound** lo cierra del todo.
+- **Búsquedas recientes:** al pinchar en *Buscar* salen las últimas 10 que hayas usado (al pulsar Intro o al reproducir un resultado).
+  Se guardan solo en tu PC y se pueden borrar desde la misma lista.
+- **Ecualizador** (*Ajustes*): apagado no procesa el sonido; encendido gasta algo más de procesador. Si el equipo se calienta, apágalo.
 - Tus datos (biblioteca, listas, ajustes) están en `%LocalAppData%\LibreStream`.
 - Las descargas van por defecto a `Vídeos\LibreStream` (se cambia en *Ajustes*).
 - Si algo falla, mira `%LocalAppData%\LibreStream\crash.log` y cuéntalo.
@@ -121,7 +154,10 @@ y la app deja de abrirse, y pasas tus datos por terceros que no controlas.
 - **Android y la batería de cada fabricante:** en Oppo/Realme/OnePlus (ColorOS), Xiaomi, Vivo, Huawei y a veces Samsung, el sistema cierra las apps en segundo plano aunque suene música. Nsound trae en **Ajustes → «Música en segundo plano (Android)»** un asistente que detecta tu móvil, pide quitar la restricción de batería y abre las pantallas de «inicio automático» del fabricante, con los pasos para tu modelo. Los nombres de los menús cambian según el modelo y la versión; hay más información en <https://dontkillmyapp.com>.
 - **Android:** una notificación de reproducción mantiene la música con la pantalla apagada. Si cierras Nsound desde las apps recientes, se para a propósito.
   Algunos móviles con ahorro de batería agresivo pueden cerrarla igualmente: en ese caso quita la restricción de batería para Nsound.
-- El **ecualizador** solo está en la **app de Windows**. En **iPhone, Android y navegador está en mantenimiento** y retirado por ahora: al engancharse al sonido de YouTube, calentaba el móvil y
-  el sistema cortaba la música al salir de la app o bloquear el móvil. Las **descargas sin conexión** son lo menos probado.
+- El **ecualizador** (*Ajustes*) está en las apps de Android e iPhone y viene apagado; en el navegador no está disponible. Apagado o en
+  «Plano» no toca el sonido, y al apagarlo el reproductor se rehace y queda como si no se hubiera usado. Se ha probado en un Android 15
+  (sigue sonando fuera de la app y con la pantalla apagada); en otros móviles puede gastar más batería o cortarse, y **en iPhone no está
+  probado**: iOS puede parar la música al salir o bloquear mientras está encendido. Si pasa, apágalo.
+- Las **descargas sin conexión** son lo menos probado.
 - YouTube no se descarga: solo se reproduce con su reproductor oficial. Las descargas son del contenido libre
   (Creative Commons).

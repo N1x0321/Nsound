@@ -26,6 +26,8 @@ public partial class App : Application
 
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
+        // Ya hay un Nsound esperando junto al reloj: se muestra ese y este no arranca
+        if (RunningInstance.AskToShow()) Environment.Exit(0);
         _window = new MainWindow();
         _window.Activate();
     }

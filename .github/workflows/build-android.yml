@@ -26,7 +26,7 @@ jobs:
           node-version: "20"
       - name: Interfaz compartida (tests y empaquetado)
         run: |
-          node --test app/test/core.test.mjs app/test/update.test.mjs
+          node --test app/test/core.test.mjs app/test/update.test.mjs app/test/equalizer.test.mjs
           node app/build.mjs
 
       - uses: actions/setup-java@v4

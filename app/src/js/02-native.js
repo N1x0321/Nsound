@@ -48,8 +48,8 @@ var LS = globalThis.LS = globalThis.LS || {};
     return webCall(name, payload);
   }
 
-  /** El ecualizador está retirado de la interfaz compartida (móvil y navegador): calentaba el móvil y cortaba la música en segundo plano. Solo queda en la app de Windows, que tiene el suyo. */
-  LS.eqUnavailable = () => true;
+  /** El ecualizador funciona en las apps (eq.js se inyecta en el reproductor de YouTube); en un navegador no se puede entrar en él. */
+  LS.eqUnavailable = () => platform === 'web';
 
   LS.Native = {
     platform,

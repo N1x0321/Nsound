@@ -115,6 +115,7 @@ public sealed partial class MainWindow : Window
         catch (Exception ex) { App.Log("Barra de tareas", ex); }
 
         AdBlock.Enabled = _settings.Current.AdBlock;
+        // El deslizador no lleva valor inicial en el XAML: con él, al cargar la ventana pisaba el volumen guardado con 80
         Volume.Value = _settings.Current.Volume;
         Video.SetMediaPlayer(_player.Player);
         _player.Volume = Volume.Value / 100;
@@ -144,7 +145,7 @@ public sealed partial class MainWindow : Window
         _colorDelay.Tick += (_, _) => Safe("Color", ApplyPendingAccent);
         _searchDelay.Tick += (_, _) => { _searchDelay.Stop(); _ = SearchYouTubeAsync(Search.Text); };
         _saveTimer.Tick += (_, _) => { _saveTimer.Stop(); Safe("Guardar ajustes", _settings.Save); };
-        Closed += (_, _) => Safe("Cierre", () => { _settings.Save(); _timer.Stop(); _heroTimer.Stop(); _thumb?.Dispose(); _mini?.Close(); });
+        Closed += (_, _) => Safe("Cierre", () => { _settings.Save(); _timer.Stop(); _heroTimer.Stop(); _vizTimer.Stop(); _thumb?.Dispose(); _mini?.Close(); });
 
         ShowYouTubeLayer(false);
         RebuildPlaylistNav();
@@ -161,6 +162,7 @@ public sealed partial class MainWindow : Window
         _ = LoadAsync();
         _ = InitYouTubePlayerAsync();
         StartUpdateChecks();
+        StartTray();
     }
 
     /// <summary>Ejecuta una acción de interfaz anotando cualquier fallo en vez de cerrar la app.</summary>
@@ -889,6 +891,7 @@ public sealed partial class MainWindow : Window
     private void Entry_Click(object sender, RoutedEventArgs e)
     {
         if ((sender as FrameworkElement)?.Tag is not MusicEntry entry) return;
+        RememberSearch();
         if (entry.Album is { } album) _ = PlayAlbumAsync(album, _artist?.Name ?? "");
         else if (entry.Artist is { } artist) _ = OpenArtistAsync(artist);
     }
@@ -1641,8 +1644,7 @@ public sealed partial class MainWindow : Window
     /// <summary>«Volver a Nsound» desde el mini reproductor: restaura la ventana principal y cierra la pequeña.</summary>
     private void ShowMainFromMini()
     {
-        (AppWindow.Presenter as Microsoft.UI.Windowing.OverlappedPresenter)?.Restore();
-        Activate();
+        ShowMainWindow();
         _mini?.Close();
     }
 
@@ -1653,6 +1655,7 @@ public sealed partial class MainWindow : Window
         PlayIcon.Symbol = IsPlaying ? Symbol.Pause : Symbol.Play;
         _thumb?.Update(IsPlaying, _now is not null, _now is not null && _library.Contains(_now.Source, _now.Id));
         SyncMini();
+        _tray?.Update(IsPlaying, _now is not null, _now?.Title);
         if (_now is null) return;
         if (_analyzedId != _now.Id) { _analyzedId = _now.Id; _keyBpm = ""; _analyzer.Reset(); }
         var changed = _barTrackId != _now.Id;
@@ -2162,7 +2165,7 @@ public sealed partial class MainWindow : Window
     private void PushEq()
     {
         var s = _settings.Current;
-        const bool EqEnMantenimiento = true;   // retirado hasta arreglar su fallo (calentaba el equipo)
+        const bool EqEnMantenimiento = false;   // prueba reparada: con el ecualizador apagado el sonido va directo (ver app/src/eq.js)
         var script = $"window.__lsEq && window.__lsEq({JsonSerializer.Serialize(s.EqBands)}, {(s.EqEnabled && !EqEnMantenimiento ? "true" : "false")})";
         foreach (var frame in _ytFrames.ToList())
         {
@@ -2175,6 +2178,7 @@ public sealed partial class MainWindow : Window
     {
         if (_kind != "settings") return;
         if (!_settings.Current.EqEnabled) { EqStatus.Text = "Ecualizador desactivado."; return; }
+        if (_settings.Current.EqBands.All(b => b == 0)) { EqStatus.Text = "En «Plano» el sonido no se procesa: elige un ajuste o mueve una banda."; return; }
         var frames = _ytFrames.ToList();
         if (frames.Count == 0) { EqStatus.Text = "Se aplicará cuando reproduzcas algo de YouTube."; return; }
         foreach (var frame in frames)
@@ -2624,6 +2628,7 @@ public sealed partial class MainWindow : Window
     /// <summary>Unas 30 veces por segundo: lleva los niveles del sonido a las barras, la portada, el brillo y el mini.</summary>
     private void VizTick()
     {
+        if (AppWindow is null || (!AppWindow.IsVisible && _mini is null)) return;   // cerrándose, o escondida junto al reloj: nada que animar
         _analyzer.Meter.Read(_levels);
         double bass = _levels[0], body = Math.Max(_levels[0], _levels[1]);
         var bars = new[] { Bar1, Bar2, Bar3, Bar4 };
@@ -3015,17 +3020,32 @@ public sealed partial class MainWindow : Window
         ApplyFilter();
         _searchDelay.Stop();
         _searchDelay.Start();
+        if (e.Reason == AutoSuggestionBoxTextChangeReason.UserInput)
+        {
+            _typedQuery = s.Text;
+            Safe("Búsquedas recientes", () => ShowRecentSearches(s.Text));
+        }
     }
 
     private void Search_QuerySubmitted(AutoSuggestBox s, AutoSuggestBoxQuerySubmittedEventArgs e)
     {
         _searchDelay.Stop();
+        if (e.ChosenSuggestion is string chosen)
+        {
+            s.IsSuggestionListOpen = false;
+            if (chosen == ClearSearches) { _searches.Clear(); s.ItemsSource = null; return; }
+            s.Text = _typedQuery = chosen;
+        }
+        else _typedQuery = s.Text;
+        s.IsSuggestionListOpen = false;
+        RememberSearch();
         _ = SearchYouTubeAsync(s.Text);
     }
 
     private void Card_Click(object sender, RoutedEventArgs e)
     {
         if ((sender as FrameworkElement)?.Tag is not MediaCard card) return;
+        RememberSearch();
         var list = _saved.Contains(card) ? _saved
             : _recent.Contains(card) ? _recent
             : _youtube.Contains(card) ? _youtube
