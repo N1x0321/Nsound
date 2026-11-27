@@ -1,17 +1,18 @@
 name: "PRUEBA TEMPORAL ecualizador en emulador"
 
+# Ahora solo compila el APK de depuración para medir en un móvil real (el emulador se desconectaba)
 on:
   push:
     branches: ["claude/instalador-autoactualizable-6b9922"]
-    paths: [".github/workflows/eq-emu-temporal.yml", "ci/eq-test.mjs", "app/src/**"]
+    paths: [".github/workflows/eq-emu-temporal.yml", "app/src/**"]
 
 permissions:
   contents: read
 
 jobs:
-  emulador:
+  depuracion:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -28,25 +29,7 @@ jobs:
       - name: Compilar el APK
         working-directory: android
         run: gradle --no-daemon assembleDebug
-      - name: Activar KVM (emulador rápido)
-        run: |
-          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
-          sudo udevadm control --reload-rules && sudo udevadm trigger --name-match=kvm
-      - name: Emulador + prueba
-        timeout-minutes: 30
-        uses: reactivecircus/android-emulator-runner@v2
-        with:
-          api-level: 34
-          target: google_apis
-          arch: x86_64
-          profile: pixel_6
-          disable-animations: true
-          ram-size: 3072M
-          emulator-boot-timeout: 600
-          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -camera-front none
-          script: node ci/eq-test.mjs
       - uses: actions/upload-artifact@v4
-        if: always()
         with:
-          name: eq-emulador
-          path: eq-out
+          name: apk-depuracion
+          path: android/app/build/outputs/apk/debug/app-debug.apk
