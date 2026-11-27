@@ -31,7 +31,8 @@
 - 📚 **Mi biblioteca y tus listas** de reproducción, guardadas en tu dispositivo.
 - 🔁 **Repetir y aleatorio** como en las apps de siempre.
 - 📻 **Radio automática**, «Hecho para ti», «Tu semana» y página de cada artista.
-- 🔔 **Aviso de versiones nuevas** dentro de la app (desde la beta 11).
+- 🔔 **Aviso de versiones nuevas** dentro de la app; en Windows instalado, **«Actualizar ahora»** la pone al día.
+- 🎚️ **Ecualizador de 10 bandas** en Windows, Android e iPhone.
 - 🎤 **Letra sincronizada** mientras suena (de [LRCLIB](https://lrclib.net), base de datos abierta).
 - 🎨 **Tu propio color:** varios temas y la opción de elegir el que quieras.
 - 🔒 **Sin cuentas ni anuncios propios.** Lo que guardas (biblioteca, listas) se queda en tu dispositivo.
@@ -40,17 +41,18 @@
 
 - 🪟 **Mini reproductor:** una tarjeta pequeña, siempre visible, que puedes mover y cambiar de tamaño con el ratón.
 - 🎼 **Tono y BPM (extra, en pruebas):** muestra la tonalidad y el tempo de lo que suena. Se calcula en tu PC, no se guarda ni se envía audio.
-- 🎚️ Ecualizador de 10 bandas: *en mantenimiento* mientras se arregla un fallo.
+- 🔽 **En segundo plano:** al cerrar, si quieres, la música sigue y Nsound se queda junto al reloj.
+- 🕘 **Búsquedas recientes** al pinchar en «Buscar», guardadas solo en tu PC.
 
 ## 📥 Descargar
 
 | Sistema | Archivo | Notas |
 |---|---|---|
-| **Windows 10 / 11** | [`Nsound-0.8.0-beta.11-windows-x64.zip`](https://github.com/N1x0321/Nsound/releases/download/v0.8.0-beta.11/Nsound-0.8.0-beta.11-windows-x64.zip) | Portátil: extrae el zip y abre **Abrir Nsound**. Para PC ARM, [el zip ARM64](https://github.com/N1x0321/Nsound/releases/download/v0.8.0-beta.11/Nsound-0.8.0-beta.11-windows-arm64.zip). |
-| **Android 7+** | [`Nsound-0.8.0-beta.11-android.apk`](https://github.com/N1x0321/Nsound/releases/download/v0.8.0-beta.11/Nsound-0.8.0-beta.11-android.apk) | Permite «instalar apps de este origen» cuando Android lo pida. |
-| **iPhone** | [`Nsound-0.8.0-beta.11-unsigned.ipa`](https://github.com/N1x0321/Nsound/releases/download/v0.8.0-beta.11/Nsound-0.8.0-beta.11-unsigned.ipa) | Sin firmar: se instala con [SideStore, AltStore o Sideloadly](docs/INSTALAR.md). |
+| **Windows 10 / 11** | [`Nsound-0.8.0-beta.12-windows-x64-setup.exe`](https://github.com/N1x0321/Nsound/releases/download/v0.8.0-beta.12/Nsound-0.8.0-beta.12-windows-x64-setup.exe) | Un solo archivo: ábrelo e instala. Se actualiza desde la propia app. Otros equipos: [ARM64](https://github.com/N1x0321/Nsound/releases/download/v0.8.0-beta.12/Nsound-0.8.0-beta.12-windows-arm64-setup.exe) · [32 bits](https://github.com/N1x0321/Nsound/releases/download/v0.8.0-beta.12/Nsound-0.8.0-beta.12-windows-x86-setup.exe). Sin instalar: [zip portable](https://github.com/N1x0321/Nsound/releases/download/v0.8.0-beta.12/Nsound-0.8.0-beta.12-windows-x64.zip). |
+| **Android 7+** | [`Nsound-0.8.0-beta.12-android.apk`](https://github.com/N1x0321/Nsound/releases/download/v0.8.0-beta.12/Nsound-0.8.0-beta.12-android.apk) | Permite «instalar apps de este origen» cuando Android lo pida. |
+| **iPhone** | [`Nsound-0.8.0-beta.12-unsigned.ipa`](https://github.com/N1x0321/Nsound/releases/download/v0.8.0-beta.12/Nsound-0.8.0-beta.12-unsigned.ipa) | Sin firmar: se instala con [SideStore, AltStore o Sideloadly](docs/INSTALAR.md). |
 
-> **¿Tienes en Android la beta 10 o una anterior?** La 11 no se instala encima: exporta tu biblioteca (Biblioteca → Exportar), desinstala, instala e importa. Solo esta vez.
+> **¿Tienes en Android la beta 10 o una anterior?** Las nuevas no se instalan encima: exporta tu biblioteca (Biblioteca → Exportar), desinstala, instala e importa. Solo esta vez.
 
 Todas las versiones, sumas de control y notas: [**Releases**](https://github.com/N1x0321/Nsound/releases).
 
@@ -59,7 +61,7 @@ Todas las versiones, sumas de control y notas: [**Releases**](https://github.com
 ## 🚀 Empezar en 3 pasos
 
 1. **Descarga** el archivo de tu sistema (arriba).
-2. **Instálalo** siguiendo la [guía](docs/INSTALAR.md) (en Windows, solo extraer y abrir).
+2. **Instálalo** siguiendo la [guía](docs/INSTALAR.md) (en Windows, abrir el instalador).
 3. **Abre Nsound y busca una canción.** Sin registrarte ni pagar.
 
 ## ❓ Preguntas rápidas

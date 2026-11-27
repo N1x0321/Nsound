@@ -179,7 +179,7 @@ El registro de la compilación muestra la huella SHA-256 del certificado; en las
 |---|---|
 | [Página de descargas](https://n1x0321.github.io/Nsound/) (`site/index.html`) | A mano: enlaces de descarga, tamaños y recuadro «Beta». Se publica al llegar a `main` |
 | `source.json` y `catalog.json` (misma web) | `source.json` lo actualiza `build-ipa.yml`. **No cambies estas direcciones:** las apps instaladas las usan |
-| [README](../README.md) e [INSTALAR](INSTALAR.md) | A mano: tabla de descargas y versión de cada plataforma. La primera vez que haya instalador, usa los [textos preparados](TEXTOS-INSTALADOR.md) |
+| [README](../README.md) e [INSTALAR](INSTALAR.md) | A mano: tabla de descargas y versión de cada plataforma |
 | [Demo en el navegador](https://nsound-demo.vercel.app/) | Despliegue manual de `app/dist/index.html`. Compílala **sin** `NSOUND_VERSION` para que no pida descargar nada |
 | Servidor de pruebas (`render.yaml`) | Compila sin versión: no muestra el aviso |
 

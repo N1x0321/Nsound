@@ -37,8 +37,7 @@ el instalador lo descarga de Microsoft si falta).
 | Procesador ARM (Snapdragon y similares) | `-windows-arm64-setup.exe` o `-windows-arm64.zip` |
 | 32 bits | `-windows-x86-setup.exe` o `-windows-x86.zip` |
 
-Los instaladores y los archivos de 32 bits están **a partir de la primera versión publicada con instalador** (la beta 11 solo trae
-los zip de x64 y ARM64). En 32 bits el tono se calcula con un método más sencillo que en 64 bits y el BPM funciona igual.
+Los instaladores y los archivos de 32 bits están **desde la beta 12**. En 32 bits el tono se calcula con un método más sencillo que en 64 bits y el BPM funciona igual.
 
 ### Opción A: instalador (recomendada: se actualiza solo)
 
@@ -79,7 +78,7 @@ No necesita instalador ni permisos de administrador. Para desinstalar, borra la 
    (el APK no pasa por Play Store: va firmado con la clave propia del proyecto).
 4. Pulsa **Instalar** y luego **Abrir**.
 
-> **Si tienes la beta 10 o una anterior**, la beta 11 no se instala encima («No se ha instalado la aplicación»). Antes de desinstalarla,
+> **Si tienes la beta 10 o una anterior**, las versiones nuevas no se instalan encima («No se ha instalado la aplicación»). Antes de desinstalarla,
 > **exporta tu biblioteca** (Biblioteca → Exportar); después instala la nueva e importa el archivo. Solo pasa esta vez.
 
 Para desinstalar: mantén pulsado el icono → *Desinstalar*. Se borra también la biblioteca y las descargas de la app.
