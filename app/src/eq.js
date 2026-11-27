@@ -73,6 +73,7 @@
 
   const freqs = [31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
   let ctx = null, source = null, filters = [], analyser = null, attached = false, routed = null;   // routed: 'eq' | 'bypass'
+  let swaps = 0, attachedVideo = null; const hooked = new WeakSet();   // el <video> enganchado ahora y los que ya tuvieron fuente (solo se permite una por elemento)
   let gains = new Array(10).fill(0), enabled = false, levelBuf = null;
 
   // Un <video> solo admite UN createMediaElementSource en toda su vida y no se puede deshacer: una vez enganchado, el audio pasa siempre por el
@@ -102,23 +103,39 @@
     route(enabled ? 'eq' : 'bypass');
   }
 
+  // El <video> que suena: YouTube puede cambiarlo (otra canción, un anuncio, recarga del reproductor). Si el ecualizador se quedaba enganchado al
+  // elemento VIEJO, el nuevo sonaba directo y el ecualizador «no hacía nada». Se busca siempre el que está sonando, o el primero.
+  function currentVideo() {
+    const all = document.querySelectorAll('video');
+    for (let i = 0; i < all.length; i++) if (!all[i].paused && all[i].isConnected !== false) return all[i];
+    return all.length ? all[0] : null;
+  }
+
   // Solo se engancha al <video> cuando el usuario activa el ecualizador: así no se toca el audio de otro modo.
+  // Un <video> admite UNA sola fuente en su vida; el contexto y los filtros se reutilizan al cambiar de elemento.
   function attach(video) {
-    if (attached) return;
+    if (!video || video === attachedVideo || hooked.has(video)) return;
     try {
-      ctx = new (window.AudioContext || window.webkitAudioContext)({ latencyHint: 'playback' });   // «playback»: buffers grandes, menos CPU y menos calor
-      source = ctx.createMediaElementSource(video);
-      filters = freqs.map((hz, i) => {
-        const f = ctx.createBiquadFilter();
-        f.type = i === 0 ? 'lowshelf' : (i === freqs.length - 1 ? 'highshelf' : 'peaking');
-        f.frequency.value = hz;
-        f.Q.value = 1.1;
-        f.gain.value = 0;
-        return f;
-      });
-      analyser = ctx.createAnalyser();
-      analyser.fftSize = 256;
-      levelBuf = new Uint8Array(analyser.frequencyBinCount);
+      if (!ctx) {
+        ctx = new (window.AudioContext || window.webkitAudioContext)({ latencyHint: 'playback' });   // «playback»: buffers grandes, menos CPU y menos calor
+        filters = freqs.map((hz, i) => {
+          const f = ctx.createBiquadFilter();
+          f.type = i === 0 ? 'lowshelf' : (i === freqs.length - 1 ? 'highshelf' : 'peaking');
+          f.frequency.value = hz;
+          f.Q.value = 1.1;
+          f.gain.value = 0;
+          return f;
+        });
+        analyser = ctx.createAnalyser();
+        analyser.fftSize = 256;
+        levelBuf = new Uint8Array(analyser.frequencyBinCount);
+      }
+      const next = ctx.createMediaElementSource(video);
+      hooked.add(video);
+      if (source) { try { source.disconnect(); } catch (e) { /* ya suelto */ } }   // el elemento viejo deja de alimentar la cadena
+      source = next;
+      if (attachedVideo) swaps++;
+      attachedVideo = video;
       attached = true;
       routed = null;
       source.connect(ctx.destination);      // hasta decidir el camino, el sonido nunca queda mudo
@@ -139,15 +156,12 @@
   window.__lsEq = (g, on) => {
     gains = Array.isArray(g) ? g.map(Number) : gains;
     enabled = !!on;
-    if (enabled && !attached) {
-      const v = document.querySelector('video');
-      if (v) attach(v);
-    }
+    if (enabled) attach(currentVideo());
     apply();
   };
 
   window.__lsEqStatus = () => JSON.stringify({
-    attached, routed, state: ctx ? ctx.state : null, level: level(), error: window.__lsEqError || null
+    attached, routed, state: ctx ? ctx.state : null, videoSwaps: swaps, level: level(), error: window.__lsEqError || null
   });
 
   // Órdenes desde la página que contiene el iframe (iOS y Android)
@@ -161,16 +175,16 @@
   // Nivel para el visualizador: solo con el ecualizador ENCENDIDO, sonando y 8 veces por segundo (antes 10, aunque estuviera apagado)
   setInterval(() => {
     if (!attached || routed !== 'eq' || !ctx || ctx.state !== 'running' || window.parent === window) return;
-    const v = document.querySelector('video');
+    const v = attachedVideo;
     if (!v || v.paused) return;
     try { window.parent.postMessage({ lsLevel: Math.min(1, level() / 255) }, '*'); } catch (e) { /* sin página padre */ }
   }, 125);
 
   // Mantenimiento: engancha si hace falta y reanuda el contexto si el sistema lo suspendió
   setInterval(() => {
-    if (enabled && !attached) {
-      const v = document.querySelector('video');
-      if (v) attach(v);
+    if (enabled) {                                   // si YouTube cambió de <video>, se engancha al nuevo
+      const v = currentVideo();
+      if (v && v !== attachedVideo) attach(v);
     }
     if (attached && ctx && ctx.state === 'suspended') ctx.resume();
   }, 1000);
