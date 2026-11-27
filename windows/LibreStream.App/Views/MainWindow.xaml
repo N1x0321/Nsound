@@ -461,9 +461,9 @@
                             </StackPanel>
                             <StackPanel Spacing="8">
                                 <TextBlock Text="Ecualizador" Style="{StaticResource SubtitleTextBlockStyle}" />
-                                <TextBlock Opacity="0.7" TextWrapping="Wrap" Text="En mantenimiento: se retiró temporalmente mientras se arregla un fallo. Volverá en una próxima versión." />
+                                <TextBlock Opacity="0.7" TextWrapping="Wrap" Text="Versión de prueba reparada: el ecualizador ya no procesa el sonido cuando está apagado. Si notas que el equipo se calienta, apágalo y avísanos." />
                             </StackPanel>
-                            <StackPanel Spacing="8" Visibility="Collapsed">
+                            <StackPanel Spacing="8">
                                 <TextBlock Text="Ecualizador" Style="{StaticResource SubtitleTextBlockStyle}" />
                                 <ToggleSwitch x:Name="EqToggle" Header="Activar ecualizador" OnContent="Activado" OffContent="Desactivado" Toggled="EqToggle_Toggled" />
                                 <ComboBox x:Name="EqPresetBox" Header="Ajuste" Width="220" SelectionChanged="EqPreset_Changed" />

@@ -2163,7 +2163,7 @@ public sealed partial class MainWindow : Window
     private void PushEq()
     {
         var s = _settings.Current;
-        const bool EqEnMantenimiento = true;   // retirado hasta arreglar su fallo (calentaba el equipo)
+        const bool EqEnMantenimiento = false;   // prueba reparada: con el ecualizador apagado el sonido va directo (ver app/src/eq.js)
         var script = $"window.__lsEq && window.__lsEq({JsonSerializer.Serialize(s.EqBands)}, {(s.EqEnabled && !EqEnMantenimiento ? "true" : "false")})";
         foreach (var frame in _ytFrames.ToList())
         {
