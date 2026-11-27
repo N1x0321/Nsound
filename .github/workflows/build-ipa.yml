@@ -31,7 +31,7 @@ jobs:
       - name: Interfaz compartida (tests y empaquetado)
         working-directory: .
         run: |
-          node --test app/test/core.test.mjs app/test/update.test.mjs
+          node --test app/test/core.test.mjs app/test/update.test.mjs app/test/equalizer.test.mjs
           node app/build.mjs
 
       - name: Seleccionar Xcode

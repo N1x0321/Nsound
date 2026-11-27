@@ -7,10 +7,13 @@ var LS = globalThis.LS = globalThis.LS || {};
   const on = (evt, fn) => { (subs[evt] = subs[evt] || []).push(fn); };
   const emit = (evt, data) => (subs[evt] || []).forEach((fn) => { try { fn(data); } catch (e) { console.error(e); } });
 
-  let yt = null, ytReady = false, ytLoading = null, pendingId = null;
+  let yt = null, ytReady = false, ytLoading = null, pendingId = null, pendingAt = 0, pendingPlay = true;
+  let ytId = null;                     // vídeo cargado en el reproductor
   let mode = null;                     // 'yt' | 'html5' | null
   let volume = 80;
   let eq = { gains: new Array(10).fill(0), on: false };
+  let eqLevel = false;                 // la página quiere el nivel del sonido (efecto de «Reproduciendo»)
+  let eqHooked = false;                // el reproductor actual puede tener el sonido enganchado al ecualizador
   const st = { playing: false, time: 0, duration: 0 };
   const media = () => document.getElementById('html5');
 
@@ -32,8 +35,12 @@ var LS = globalThis.LS = globalThis.LS || {};
             onReady: () => {
               ytReady = true;
               yt.setVolume(volume);
-              if (pendingId) { yt.loadVideoById(pendingId); pendingId = null; }
               postEq();
+              if (pendingId) {
+                const what = { videoId: pendingId, startSeconds: pendingAt };
+                if (pendingPlay) yt.loadVideoById(what); else yt.cueVideoById(what);
+                pendingId = null; pendingAt = 0; pendingPlay = true;
+              }
               resolve();
             },
             onStateChange: (e) => {
@@ -60,7 +67,29 @@ var LS = globalThis.LS = globalThis.LS || {};
   // ---------- Ecualizador (eq.js se inyecta en el marco de YouTube; aquí solo se le envían órdenes) ----------
   function postEq() {
     const f = ytFrame();
-    if (f && f.contentWindow) f.contentWindow.postMessage({ lsEq: { gains: eq.gains, on: eq.on } }, '*');
+    if (!f || !f.contentWindow) return;
+    if (eq.on && eq.gains.some((g) => g !== 0)) eqHooked = true;
+    f.contentWindow.postMessage({ lsEq: { gains: eq.gains, on: eq.on, level: eqLevel } }, '*');
+  }
+
+  // Un vídeo enganchado al ecualizador no se puede soltar: aunque esté apagado, su sonido seguiría pasando por el procesador de audio
+  // (que el móvil puede cortar en segundo plano). Al apagarlo se rehace el reproductor por donde iba y queda como si nunca se hubiera usado.
+  function releaseEq() {
+    eqHooked = false;
+    if (!yt || !ytReady) return;
+    const resume = mode === 'yt' && ytId ? { id: ytId, at: yt.getCurrentTime() || 0, play: st.playing } : null;
+    const old = ytFrame();
+    if (!old || !old.parentNode) return;
+    const slot = document.createElement('div');
+    slot.id = 'yt';
+    old.parentNode.insertBefore(slot, old);
+    ytReady = false;
+    try { yt.destroy(); } catch (e) { /* ya destruido */ }
+    if (old.parentNode) old.parentNode.removeChild(old);
+    yt = null; ytLoading = null;
+    if (!resume) return;                     // se creará cuando se ponga la siguiente canción
+    pendingId = resume.id; pendingAt = resume.at; pendingPlay = resume.play;
+    ensureYT().catch((e) => emit('error', { code: 'api', message: e.message }));
   }
 
   window.addEventListener('message', (e) => { if (e.data && e.data.lsEqStatus) emit('eqstatus', e.data.lsEqStatus); });
@@ -107,12 +136,13 @@ var LS = globalThis.LS = globalThis.LS || {};
       if (item.src === 'yt') {
         const m = media(); m.pause(); m.removeAttribute('src');
         mode = 'yt';
+        ytId = item.id;
         setState({});
         try { await ensureYT(); } catch (e) { emit('error', { code: 'api', message: e.message }); return; }
         // En solo audio se pide la imagen más pequeña (menos decodificación = menos calor y batería)
         // Vídeo: 720p (antes sin indicar, y tras escuchar música podía quedarse en la calidad mínima); solo audio: la más pequeña
         const quality = audioOnly ? 'tiny' : 'hd720';
-        if (ytReady) yt.loadVideoById({ videoId: item.id, suggestedQuality: quality }); else pendingId = item.id;
+        if (ytReady) yt.loadVideoById({ videoId: item.id, suggestedQuality: quality }); else { pendingId = item.id; pendingAt = 0; pendingPlay = true; }
         if (ytReady && typeof yt.setPlaybackQuality === 'function') yt.setPlaybackQuality(quality);
         postEq();
       } else {
@@ -138,9 +168,18 @@ var LS = globalThis.LS = globalThis.LS || {};
       if (yt && ytReady) yt.setVolume(volume);
       media().volume = volume / 100;
     },
-    // En las apps de iPhone y Android el ecualizador queda apagado siempre: engancha el sonido a un procesador de audio que el sistema
-    // corta al salir de la app o bloquear el móvil (la música se paraba del todo). Solo funciona en Windows y en navegadores.
-    setEq(gains, enabled) { eq = { gains: gains.slice(), on: !!enabled && !LS.eqUnavailable() }; postEq(); },
+    // Solo en las apps (en un navegador no se puede entrar en el reproductor de YouTube). eq.js no toca el sonido hasta que hay algo que
+    // procesar; apagarlo suelta el reproductor del todo.
+    setEq(gains, enabled) {
+      eq = { gains: gains.slice(), on: !!enabled && !LS.eqUnavailable() };
+      if (!eq.on && eqHooked) releaseEq(); else postEq();
+    },
+    setEqLevel(on) {
+      if (eqLevel === !!on) return;
+      eqLevel = !!on;
+      const f = ytFrame();
+      if (f && f.contentWindow) f.contentWindow.postMessage({ lsEqLevel: eqLevel }, '*');
+    },
     eqStatus,
   };
 })(LS);

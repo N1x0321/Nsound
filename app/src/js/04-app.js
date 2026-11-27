@@ -810,12 +810,12 @@
         <p class="note">Pulso suave en la pantalla «Reproduciendo». Con el ecualizador activo sigue el audio real. Se apaga solo con «reducir movimiento», ahorro de datos o batería baja.</p></section>
       <section class="panel"><h2>Reproducción</h2><label class="switch"><input type="checkbox" id="radioOn" ${s.radio ? 'checked' : ''}> Radio automática</label>
         <p class="note">Cuando se acaba la lista, la música no se para: sigue con canciones parecidas a la última (la radio de YouTube Music). Con «Repetir la lista» no se añade nada.</p></section>
-      ${LS.eqUnavailable() ? '<section class="panel"><h2>Ecualizador</h2><p class="note"><b>En mantenimiento.</b> Por motivos técnicos se ha retirado por ahora. Sigue disponible en la app de Windows.</p></section>' : `<section class="panel"><h2>Ecualizador</h2>
+      ${LS.eqUnavailable() ? '<section class="panel"><h2>Ecualizador</h2><p class="note">No está disponible en el navegador. Sí en las apps de Windows, Android y iPhone.</p></section>' : `<section class="panel"><h2>Ecualizador</h2>
         <label class="switch"><input type="checkbox" id="eqOn" ${s.eqEnabled ? 'checked' : ''}> Activar ecualizador</label>
         <label class="field">Ajuste <select id="eqPreset">${[...Object.keys(LS.EQ_PRESETS), LS.EQ_CUSTOM].map((n) => `<option ${n === s.eqPreset ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select></label>
         <div class="eq" id="eqBands">${s.eqBands.map((b, i) => `<label><span>${LS.EQ_LABELS[i]}</span><input type="range" min="-12" max="12" step="1" value="${b}" data-band="${i}"><output>${fmtGain(b)}</output></label>`).join('')}</div>
         <p id="eqStatus" class="hint"></p>
-        <p class="note">Actúa sobre el sonido de YouTube dentro de la app. Los vídeos del catálogo libre no admiten ecualizador.</p></section>`}
+        <p class="note">Actúa sobre el sonido de YouTube dentro de la app. Los vídeos del catálogo libre no admiten ecualizador. Apagado o en «Plano» no toca el sonido. Encendido gasta algo más de batería${Native.platform === 'ios' ? ', y en iPhone la música puede pararse al salir de la app o bloquear el móvil' : ' y en algunos móviles puede cortarse la música con la pantalla apagada'}: si te pasa o el móvil se calienta, apágalo.</p></section>`}
       ${Native.platform === 'ios' || Native.platform === 'android' ? `<section class="panel"><h2>Segundo plano y pantalla bloqueada</h2><p class="note">Al salir de la app, apagar la pantalla o desbloquear el móvil, ${Native.platform === 'ios' ? 'iOS' : 'Android'} puede pausar por un instante el reproductor de YouTube. Nsound lo reanuda solo, así que puede notarse un corte de aproximadamente un segundo. Es una limitación del sistema con el reproductor oficial de YouTube. Si pausas tú la música (en la app, en la pantalla de bloqueo o con los cascos), Nsound no la reanuda.${Native.platform === 'ios' ? ' Si la música lleva mucho rato en pausa con el móvil bloqueado, iOS cierra la app para ahorrar batería y hay que abrirla para seguir.' : ''}</p></section>` : ''}
       ${Native.platform === 'android' ? `<section class="panel" id="bgPanel"><h2>Música en segundo plano (Android)</h2>
         <p class="note" id="bgInfo">Mirando tu móvil…</p>
@@ -839,8 +839,9 @@
   async function refreshEqStatus() {
     const el = $('#eqStatus');
     if (!el) return;
-    if (LS.eqUnavailable()) { el.textContent = 'Ecualizador no disponible en el móvil.'; return; }
+    if (LS.eqUnavailable()) { el.textContent = ''; return; }
     if (!store.settings.get().eqEnabled) { el.textContent = 'Ecualizador desactivado.'; return; }
+    if (store.settings.get().eqBands.every((b) => b === 0)) { el.textContent = 'En «Plano» el sonido no se procesa: elige un ajuste o mueve una banda.'; return; }
     const st = await Player.eqStatus();
     if (!$('#eqStatus')) return;
     el.textContent = !st ? 'Se aplicará cuando reproduzcas algo de YouTube.'
@@ -1068,12 +1069,14 @@
   const reactiveWanted = () => store.settings.get().reactive && document.body.classList.contains('fx') && !fxReduce && !fxSaveData && !fxLowBattery
     && !document.hidden && S.playing && S.now && $('#np').classList.contains('open');
   function reactiveReset() {
+    Player.setEqLevel(false);                          // sin efecto a la vista no se mide el sonido
     $('#np').classList.remove('reactive');
     const a = $('#npArt'), g = $('#npGlow'); if (a) a.style.transform = ''; if (g) { g.style.opacity = ''; g.style.transform = ''; }
   }
   function reactiveTick(ts) {
     fxr.raf = 0;
     if (!reactiveWanted()) { reactiveReset(); return; }
+    Player.setEqLevel(store.settings.get().eqEnabled);
     if (ts - fxr.last >= (fxLowEnd ? 66 : 42)) {
       fxr.last = ts;
       const real = Date.now() - fxr.levelAt < 600;
@@ -1086,7 +1089,7 @@
     fxr.raf = requestAnimationFrame(reactiveTick);
   }
   function reactiveKick() { if (!fxr.raf && reactiveWanted()) fxr.raf = requestAnimationFrame(reactiveTick); }
-  document.addEventListener('visibilitychange', reactiveKick);
+  document.addEventListener('visibilitychange', () => { if (document.hidden) Player.setEqLevel(false); else reactiveKick(); });
 
   // Web (Safari / Chrome del móvil): un audio silencioso en bucle mantiene viva la sesión de audio de la página con la pantalla
   // bloqueada. Así el sistema sigue ejecutando la página (para reanudar si YouTube se pausa) y muestra NUESTROS datos y botones
