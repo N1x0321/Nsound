@@ -1361,7 +1361,7 @@ public sealed partial class MainWindow : Window
     private void Play(MediaCard card, List<MediaCard> list)
     {
         if (!card.IsPlayable) return;
-        _audioOnly = Scope == "track";
+        _audioOnly = Scope == "track" || (card.YouTubeId is not null && CoverArt.IsSquare(card.ArtworkUrl?.AbsoluteUri));   // canciones de YouTube Music (importadas o guardadas): solo sonido
         _errorStreak = 0;
         _queue = list.Where(c => c.IsPlayable).ToList();
         _index = _queue.FindIndex(c => c.Source == card.Source && c.Id == card.Id);

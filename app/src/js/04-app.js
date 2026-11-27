@@ -881,7 +881,7 @@
     const keys = lists.get(listId) || [key];
     S.queue = keys.map((k) => reg.get(k)).filter(Boolean);
     S.index = Math.max(0, S.queue.findIndex((i) => i.key === key));
-    S.audioOnly = scopeNow() === 'track' && it.src === 'yt';
+    S.audioOnly = (scopeNow() === 'track' || it.kind === 'track') && it.src === 'yt';   // canciones (de Música, importadas o de una radio): solo sonido, sin vídeo
     S.skips = 0; S.seen = []; S.hist = [];                  // lista nueva: el aleatorio empieza de cero
     start();
   }
