@@ -208,7 +208,7 @@
     S.page = PAGES.includes(parts[0]) ? parts[0] : 'home';
     S.artist = S.page === 'artist' ? LS.artistFromParts(parts) : '';
     S.sub = S.page === 'library' ? (parts[1] === 'downloads' ? 'downloads' : parts[1] === 'pl' && parts[2] ? 'pl:' + parts[2] : 'saved') : 'saved';
-    $$('#nav [data-page]').forEach((b) => b.classList.toggle('on', b.dataset.page === (S.page === 'artist' ? 'music' : S.page === 'week' ? 'library' : S.page)));   // el artista se ve dentro de Música; «Tu semana», en Biblioteca
+    $$('#nav [data-page]').forEach((b) => b.classList.toggle('on', b.dataset.page === (S.page === 'artist' ? 'music' : S.page)));   // el artista se ve dentro de Música
     render();
   }
   const go = (hash) => { if (location.hash === hash) route(); else location.hash = hash; };

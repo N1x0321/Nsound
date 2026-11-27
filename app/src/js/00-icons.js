@@ -28,6 +28,7 @@ var LS = globalThis.LS = globalThis.LS || {};
     music: [S, '<path d="M9 18V6.5l10-2V16"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="16.5" cy="16" r="2.5"/>'],
     videos: [S, '<rect x="3" y="5" width="18" height="14" rx="3"/><path d="M10.2 9.2v5.6l4.6-2.8z" fill="currentColor"/>'],
     library: [S, '<path d="M4 6.5h16M4 12h16M4 17.5h9"/>'],
+    week: [S, '<path d="M5 20V11M10 20V5M15 20v-7M20 20V8M3 20.5h18"/>'],
     settings: [S, '<path d="M4 7h9M19 7h1M4 17h1M11 17h9"/><circle cx="16" cy="7" r="2.5"/><circle cx="8" cy="17" r="2.5"/>'],
   };
 
