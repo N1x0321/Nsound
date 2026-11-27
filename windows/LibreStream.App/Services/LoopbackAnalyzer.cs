@@ -25,6 +25,10 @@ public sealed class LoopbackAnalyzer : IDisposable
 
     public bool Running => _cap is not null;
 
+    /// <summary>Niveles en vivo (4 bandas) para el visualizador; se alimenta con el mismo audio.</summary>
+    public BandMeter Meter { get; } = new();
+    private float[] _mono = Array.Empty<float>();
+
     public void Start()
     {
         if (_cap is not null) return;
@@ -60,6 +64,7 @@ public sealed class LoopbackAnalyzer : IDisposable
         if (fmt is null || fmt.Encoding != WaveFormatEncoding.IeeeFloat && fmt.BitsPerSample != 32) { if (!_logged) { _logged = true; try { File.AppendAllText(Path.Combine(Path.GetTempPath(), "nsound-keybpm.log"), $"formato no admitido: {fmt}\n"); } catch { } } return; }
         int ch = Math.Max(1, fmt.Channels), frames = e.BytesRecorded / (4 * ch);
         bool run = false;
+        if (_mono.Length < frames) _mono = new float[frames];
         lock (_lock)
         {
             if (_ring.Length == 0) return;
@@ -67,13 +72,14 @@ public sealed class LoopbackAnalyzer : IDisposable
             {
                 float s = 0;
                 for (int c = 0; c < ch; c++) s += BitConverter.ToSingle(e.Buffer, (i * ch + c) * 4);
-                _ring[_pos] = s / ch;
+                _ring[_pos] = _mono[i] = s / ch;
                 _pos = (_pos + 1) % _ring.Length;
             }
             _filled = Math.Min(_ring.Length, _filled + frames);
             _sinceAnalysis += frames;
             if (_filled >= _rate * 8 && _sinceAnalysis >= _rate * 4 && !_busy) { run = true; _sinceAnalysis = 0; }
         }
+        Meter.Process(_mono.AsSpan(0, frames), _rate);
         if (run) Analyze();
     }
 

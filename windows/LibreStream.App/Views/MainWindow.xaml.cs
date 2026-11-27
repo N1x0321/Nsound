@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Numerics;
 using System.Text.Json;
 using LibreStream.Core;
+using LibreStream.Core.Services.Audio;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
@@ -64,6 +65,10 @@ public sealed partial class MainWindow : Window
     private bool _updatingProgress;
     private bool _audioOnly;
     private bool _ytLayerShown;
+    private string _repeat = QueueOps.RepeatOff;   // repetir: off | all (la lista) | one (la canción)
+    private bool _shuffle;
+    private List<string> _seen = [];                // aleatorio: canciones ya sonadas
+    private readonly List<string> _hist = [];       // aleatorio: para que «anterior» vuelva a la que sonó antes
 
     // Géneros (apartado Música) y letra
     private static readonly string[] GenreNames = ["Éxitos", "Reggaetón", "Pop", "Rock", "Electrónica", "Hip hop", "Latino", "Lo-fi"];
@@ -113,6 +118,8 @@ public sealed partial class MainWindow : Window
         Volume.Value = _settings.Current.Volume;
         Video.SetMediaPlayer(_player.Player);
         _player.Volume = Volume.Value / 100;
+        _repeat = _settings.Current.Repeat; _shuffle = _settings.Current.Shuffle;
+        _player.QueueEnded += () => DispatcherQueue.TryEnqueue(() => Safe("Fin de la cola", OnNativeQueueEnded));
         _player.StateChanged += () => DispatcherQueue.TryEnqueue(OnNativeStateChanged);
         _analyzer.Updated += text => DispatcherQueue.TryEnqueue(() => { _keyBpm = text; ShowKeyBpm(); });
         _analyzer.Start();
@@ -145,11 +152,15 @@ public sealed partial class MainWindow : Window
         BuildChips(ScopeChips, ["Todo", "Música", "Vídeos"], Scope_Click, ["all", "track", "video"]);
         BuildChips(MusicChips, ["Canciones", "Álbumes", "Artistas"], MusicFilter_Click, ["songs", "albums", "artists"]);
         BuildEqUi();
+        PaintModes();
+        RadioToggle.IsOn = _settings.Current.Radio;
         LookBox.ItemsSource = Themes.Names;
         ApplyLook(_settings.Current.Look);
         StartKenBurns();
+        foreach (var r in PlayingBars.Children.OfType<Microsoft.UI.Xaml.Shapes.Rectangle>()) r.Fill = _songBrush;
         _ = LoadAsync();
         _ = InitYouTubePlayerAsync();
+        StartUpdateChecks();
     }
 
     /// <summary>Ejecuta una acción de interfaz anotando cualquier fallo en vez de cerrar la app.</summary>
@@ -214,7 +225,8 @@ public sealed partial class MainWindow : Window
         bool Match(string text) => q.Length == 0 || MetadataMatcher.Fold(text).Contains(q);
         var playlist = _kind.StartsWith("pl:", StringComparison.Ordinal) ? _playlists.Find(_kind[3..]) : null;
         var library = _kind == "library" || playlist is not null;
-        var special = _kind is "settings" or "downloads";
+        var special = _kind is "settings" or "downloads" or "week";
+        WeekSection.Visibility = Vis(_kind == "week");
         var scope = Scope;
 
         SettingsSection.Visibility = Vis(_kind == "settings");
@@ -240,6 +252,7 @@ public sealed partial class MainWindow : Window
             "video" => ("Vídeos", q.Length > 0 ? $"Vídeos para «{raw}». Solo vídeos." : "Eventos, series, YouTubers y más. Busca para encontrar cualquier vídeo."),
             "library" => ("Mi biblioteca", q.Length > 0 ? $"Guardados que coinciden con «{raw}»." : "Todo lo que has guardado con el corazón."),
             "downloads" => ("Descargas", "Contenido libre que puedes ver sin conexión."),
+            "week" => ("Tu semana", "Lo que has escuchado en los últimos 7 días. Se calcula solo en este PC."),
             "settings" => ("Ajustes", "Ecualizador, descargas y privacidad."),
             _ => ("Inicio", q.Length > 0 ? $"{(scope == "track" ? "Canciones" : scope == "video" ? "Vídeos" : "Resultados")} para «{raw}»." : ""),
         };
@@ -248,19 +261,22 @@ public sealed partial class MainWindow : Window
             PageTitle.Text = playlist.Name;
             hint = playlist.Items.Count == 1 ? "Lista · 1 elemento" : $"Lista · {playlist.Items.Count} elementos";
         }
-        if (artistView) { PageTitle.Text = _artist!.Name; hint = "Canciones y discografía de YouTube Music."; }
+        if (artistView) { PageTitle.Text = _artist!.Name; hint = ""; }
         else if (entriesMode) hint = _musicFilter == "albums" ? $"Álbumes para «{raw}». Pulsa uno y suena entero." : $"Artistas para «{raw}». Pulsa uno para ver sus canciones y discos.";
         PageHint.Text = hint;
         PageHint.Visibility = Vis(hint.Length > 0);
+        PageTitle.Visibility = Vis(!artistView);
+        ShowArtistHero(artistView);
 
         if (special)
         {
             SavedSection.Visibility = YouTubeSection.Visibility = Visibility.Collapsed;
             SavedEmpty.Visibility = Visibility.Collapsed;
             ArtistsSection.Visibility = AlbumsSection.Visibility = EntriesSection.Visibility = Visibility.Collapsed;
+            MixesSection.Visibility = RecentSection.Visibility = Visibility.Collapsed;
             Hero.Visibility = Visibility.Collapsed;
             _featured = null;
-            if (_kind == "downloads") BuildDownloads(); else RefreshSettingsUi();
+            if (_kind == "downloads") BuildDownloads(); else if (_kind == "week") BuildWeek(); else RefreshSettingsUi();
             return;
         }
 
@@ -281,9 +297,9 @@ public sealed partial class MainWindow : Window
 
         YouTubeTitle.Text = (_kind, q.Length > 0) switch
         {
-            ("track", false) => _genre,
+            ("track", false) => _genre == GenreNames[0] ? $"Éxitos del momento en {CountryLabel}" : _genreTitles.TryGetValue(_genre, out var gt) ? $"{_genre} · {gt}" : _genre,
             ("track", true) => "Música en YouTube",
-            ("all", false) => scope switch { "track" => "Canciones del momento", "video" => "Videoclips del momento", _ => "Éxitos del momento" },
+            ("all", false) => scope switch { "track" => "Canciones del momento", "video" => "Videoclips del momento", _ => $"Éxitos del momento en {CountryLabel}" },
             _ => scope == "track" ? "Música en YouTube" : scope == "video" ? "Vídeos de YouTube" : "Resultados en YouTube",
         };
         if (artistView) YouTubeTitle.Text = "Canciones";
@@ -301,6 +317,7 @@ public sealed partial class MainWindow : Window
         YouTubeSection.Visibility = Vis(showYouTube);
         ArtistsSection.Visibility = Vis(home);
         if (home) BuildArtistsRow();
+        ShowPersonalRows(home);
         EntriesTitle.Text = artistView ? "Discografía" : _musicFilter == "albums" ? "Álbumes" : "Artistas";
         EntriesRepeater.ItemsSource = _entries;
         EntriesSection.Visibility = Vis(entriesMode || (artistView && _entries.Count > 0));
@@ -358,6 +375,370 @@ public sealed partial class MainWindow : Window
             });
     }
 
+    // ===================== País, éxitos y artistas del país =====================
+
+    private string? _country;
+    private readonly Dictionary<string, List<YouTubeVideo>> _hitsCache = [];
+
+    /// <summary>País del usuario por el idioma/región de Windows («es-MX» → MX); España si no se sabe. NSOUND_PAIS=XX lo fuerza en pruebas.</summary>
+    private string Country => _country ??= System.Text.RegularExpressions.Regex.IsMatch(Environment.GetEnvironmentVariable("NSOUND_PAIS") ?? "", "^[A-Za-z]{2}$")
+        ? Environment.GetEnvironmentVariable("NSOUND_PAIS")!.ToUpperInvariant()
+        : YouTubeMusic.UserCountry([CultureInfo.CurrentCulture.Name, CultureInfo.CurrentUICulture.Name]);
+
+    private string CountryLabel => YouTubeMusic.CountryName(Country);
+
+    /// <summary>Lista oficial de éxitos del país (YouTube Music), con caché de una hora.</summary>
+    private async Task<List<YouTubeVideo>> CountryHitsAsync(CancellationToken ct)
+    {
+        var key = $"{Country}|{DateTime.UtcNow:yyyyMMddHH}";
+        if (_hitsCache.TryGetValue(key, out var cached)) return cached;
+        var hits = await YouTubeMusic.CountryHitsAsync(_http, Country, ct);
+        if (hits.Count > 0) _hitsCache[key] = hits;
+        return hits;
+    }
+
+    // ===================== Inicio personalizado: «Hecho para ti» y «Seguir escuchando» =====================
+
+    private readonly ListenHistory _history = new(DataDir);
+    private string? _countedKey;
+    private List<MediaCard> _recent = [];
+    private List<(MixSeed Seed, List<MediaCard> Cards)> _mixes = [];
+    private DateTime _mixesAt = DateTime.MinValue;
+    private int _mixesHistoryCount = -1;
+    private bool _mixesLoading;
+
+    /// <summary>Cuenta la canción como escuchada cuando ha sonado 30 s (o la mitad, si es corta). Solo se guarda en este PC.</summary>
+    private void RecordListen(double position)
+    {
+        if (_now is not { } card || _countedKey == Key(card) || position < ListenHistory.CountsAfter(card.DurationSec)) return;
+        _countedKey = Key(card);
+        var artist = card.Item?.Artist ?? LyricsService.GuessTrack(card.Title, card.Subtitle.Split(" · ")[0]).Artist;
+        var saved = card.ToSaved() with { ArtworkUrl = CoverUrl(card) ?? card.ArtworkUrl?.AbsoluteUri };
+        _history.Add(new PlayRecord(saved, artist, DateTime.Now));
+    }
+
+    private void ShowPersonalRows(bool home)
+    {
+        if (!home) { MixesSection.Visibility = RecentSection.Visibility = Visibility.Collapsed; return; }
+        _recent = ListenHistory.RecentDistinct(_history.Entries, 14)
+            .Select(s => new MediaCard(s, _catalog.Items.FirstOrDefault(i => i.Id == s.Id))).Where(c => c.IsPlayable).ToList();
+        RecentRepeater.ItemsSource = _recent;
+        RecentSection.Visibility = Vis(_recent.Count > 0);
+        MixesSection.Visibility = Vis(_mixes.Count > 0);
+        // las mezclas se rehacen cada media hora, o antes si has escuchado bastante desde la última vez
+        if ((DateTime.Now - _mixesAt).TotalMinutes > 30 || _history.Entries.Count - _mixesHistoryCount >= 8) _ = LoadMixesAsync();
+    }
+
+    /// <summary>Cada mezcla: la radio de su canción semilla y, si es de un artista, también sus canciones, alternadas.</summary>
+    private async Task LoadMixesAsync()
+    {
+        if (_mixesLoading) return;
+        _mixesLoading = true;
+        _mixesAt = DateTime.Now;
+        _mixesHistoryCount = _history.Entries.Count;
+        try
+        {
+            var built = new List<(MixSeed, List<MediaCard>)>();
+            foreach (var mix in ListenHistory.Mixes(_history.Entries, DateTime.Now))
+            {
+                var seed = new MediaCard(mix.Seed, _catalog.Items.FirstOrDefault(i => i.Id == mix.Seed.Id));
+                var radio = await FetchRadioAsync(seed);
+                List<YouTubeVideo> own = [];
+                if (mix.Kind == "artist")
+                {
+                    try { own = (await YouTubeMusic.SearchSongsAsync(_http, mix.Artist)).Where(ContentFilter.IsSong).ToList(); }
+                    catch (Exception ex) { App.LogOnce("Mezcla de artista", ex); }
+                }
+                var items = ListenHistory.Interleave<YouTubeVideo>([own, radio], v => v.Id, [], 40)
+                    .Where(v => v.DurationSec is > 0 and <= 900).Take(30).ToList();
+                if (items.Count >= 6) built.Add((mix, items.Select(v => new MediaCard(v)).ToList()));
+            }
+            _mixes = built;
+            BuildMixesRow();
+            MixesSection.Visibility = Vis(_kind == "all" && (Search.Text ?? "").Trim().Length == 0 && _mixes.Count > 0);
+        }
+        catch (Exception ex) { App.LogOnce("Hecho para ti", ex); }
+        finally { _mixesLoading = false; }
+    }
+
+    /// <summary>Tarjeta de mezcla: mosaico con 4 portadas, teñido con un color propio, el nombre encima y los artistas debajo.</summary>
+    private void BuildMixesRow()
+    {
+        MixesRow.Children.Clear();
+        foreach (var (mix, cards) in _mixes)
+        {
+            var hue = Math.Abs((mix.Artist + mix.Kind).Aggregate(23, (a, c) => a * 31 + c)) % 360;
+            var tint = HsvToColor(hue, 0.7, 0.75);
+            var tile = new Grid { Width = 196, Height = 196, CornerRadius = new CornerRadius(18), Background = new SolidColorBrush(HsvToColor(hue, 0.5, 0.35)) };
+            var arts = cards.Where(c => c.Artwork is not null).DistinctBy(c => c.ArtworkUrl?.AbsoluteUri).Take(4).ToList();
+            if (arts.Count >= 4)
+            {
+                tile.RowDefinitions.Add(new RowDefinition()); tile.RowDefinitions.Add(new RowDefinition());
+                tile.ColumnDefinitions.Add(new ColumnDefinition()); tile.ColumnDefinitions.Add(new ColumnDefinition());
+                for (var i = 0; i < 4; i++)
+                {
+                    var img = new Image { Source = arts[i].Artwork, Stretch = Stretch.UniformToFill };
+                    Grid.SetRow(img, i / 2); Grid.SetColumn(img, i % 2);
+                    tile.Children.Add(img);
+                }
+            }
+            else if (arts.Count > 0) tile.Children.Add(new Image { Source = arts[0].Artwork, Stretch = Stretch.UniformToFill });
+            var shade = new Border
+            {
+                Background = new LinearGradientBrush
+                {
+                    StartPoint = new Windows.Foundation.Point(0.5, 0), EndPoint = new Windows.Foundation.Point(0.5, 1),
+                    GradientStops =
+                    {
+                        new GradientStop { Color = Windows.UI.Color.FromArgb(0, tint.R, tint.G, tint.B), Offset = 0.35 },
+                        new GradientStop { Color = Windows.UI.Color.FromArgb(0xF0, (byte)(tint.R * 0.45), (byte)(tint.G * 0.45), (byte)(tint.B * 0.45)), Offset = 1 },
+                    },
+                },
+            };
+            var label = new StackPanel { VerticalAlignment = VerticalAlignment.Bottom, Margin = new Thickness(14, 0, 14, 12), Spacing = 0 };
+            label.Children.Add(new TextBlock { Text = mix.Kind == "artist" ? "MEZCLA" : "PORQUE ESCUCHASTE", FontSize = 10, CharacterSpacing = 120, Opacity = 0.85, Foreground = new SolidColorBrush(Microsoft.UI.Colors.White) });
+            label.Children.Add(new TextBlock
+            {
+                Text = mix.Kind == "artist" ? mix.Artist : mix.Seed.Title, FontSize = 20, FontWeight = Microsoft.UI.Text.FontWeights.Bold,
+                Foreground = new SolidColorBrush(Microsoft.UI.Colors.White), TextTrimming = TextTrimming.CharacterEllipsis, MaxLines = 2, TextWrapping = TextWrapping.Wrap,
+            });
+            var strip = new Border { Height = 5, VerticalAlignment = VerticalAlignment.Bottom, Background = new SolidColorBrush(tint) };
+            var hover = new Border
+            {
+                Name = "HoverPlay", Opacity = 0, IsHitTestVisible = false, Background = new SolidColorBrush(Windows.UI.Color.FromArgb(0x30, 0, 0, 0)),
+                OpacityTransition = new ScalarTransition { Duration = TimeSpan.FromMilliseconds(180) },
+                Child = new Border
+                {
+                    Width = 46, Height = 46, CornerRadius = new CornerRadius(23), Background = (Brush)Application.Current.Resources["NsAccentBrush"],
+                    HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(10),
+                    Child = new FontIcon { Glyph = "\uE768", FontSize = 17, Margin = new Thickness(2, 0, 0, 0), Foreground = (Brush)Application.Current.Resources["TextOnAccentFillColorPrimaryBrush"] },
+                },
+            };
+            foreach (var layer in new UIElement[] { shade, label, strip, hover })
+            {
+                if (tile.RowDefinitions.Count > 0) { Grid.SetRowSpan((FrameworkElement)layer, 2); Grid.SetColumnSpan((FrameworkElement)layer, 2); }
+                tile.Children.Add(layer);
+            }
+
+            var artists = cards.Select(c => c.Subtitle.Split(" · ")[0].Trim()).Where(a => a.Length > 0).DistinctBy(MetadataMatcher.Fold).Take(3).ToList();
+            var subtitle = artists.Count == 0 ? $"{cards.Count} canciones" : string.Join(", ", artists) + " y más";
+            var body = new StackPanel { Width = 196, Spacing = 4 };
+            body.Children.Add(tile);
+            body.Children.Add(new TextBlock { Text = mix.Title, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(0, 4, 0, 0) });
+            body.Children.Add(new TextBlock { Text = subtitle, FontSize = 12, Opacity = 0.65, TextTrimming = TextTrimming.CharacterEllipsis });
+            var button = new Button { Content = body, Style = (Style)Root.Resources["CardButton"] };
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(button, $"{mix.Title}: reproducir la mezcla");
+            var list = cards;
+            button.Click += (_, _) => Play(list[0], list);
+            button.PointerEntered += Card_PointerEntered;
+            button.PointerExited += Card_PointerExited;
+            MixesRow.Children.Add(button);
+        }
+    }
+
+    // ===================== Tu semana =====================
+
+    private static readonly string[] DayNames = ["domingo", "lunes", "martes", "miércoles", "jueves", "viernes", "sábado"];
+
+    private static Brush Ink(string key) => (Brush)Application.Current.Resources[key];
+
+    /// <summary>Resumen de los últimos 7 días: cifras, artista de la semana, ranking de artistas y canciones, y minutos por día.</summary>
+    private void BuildWeek()
+    {
+        WeekSection.Children.Clear();
+        var w = WeekSummary.Build(_history.Entries, DateTime.Now);
+        var accent = (SolidColorBrush)Application.Current.Resources["NsAccentBrush"];
+        if (w.IsEmpty)
+        {
+            WeekSection.Children.Add(new TextBlock
+            {
+                Text = "Aún no hay escuchas esta semana. Pon música (cuenta a partir de 30 segundos por canción) y vuelve por aquí.",
+                Opacity = 0.7, TextWrapping = TextWrapping.Wrap, FontSize = 16,
+            });
+            return;
+        }
+
+        MediaCard Card(SavedItem s) => new(s, _catalog.Items.FirstOrDefault(i => i.Id == s.Id));
+        var topCards = w.TopSongs.Select(s => Card(s.Song)).Where(c => c.IsPlayable).ToList();
+
+        // Cifras principales
+        var tiles = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 12 };
+        Border Tile(string value, string label, string? note = null)
+        {
+            var p = new StackPanel { Spacing = 2 };
+            p.Children.Add(new TextBlock { Text = value, FontSize = 34, FontWeight = Microsoft.UI.Text.FontWeights.Bold });
+            p.Children.Add(new TextBlock { Text = label, Opacity = 0.7 });
+            if (note is not null) p.Children.Add(new TextBlock { Text = note, FontSize = 12, Opacity = 0.6 });
+            return new Border { Child = p, Padding = new Thickness(20, 14, 28, 16), CornerRadius = new CornerRadius(16), Background = Ink("NsPanelBrush"), BorderBrush = Ink("NsLineBrush"), BorderThickness = new Thickness(1) };
+        }
+        var change = w.Change is { } ch ? (ch >= 0 ? $"+{ch:P0}" : $"{ch:P0}").Replace(" ", "") + " que la semana anterior" : null;
+        tiles.Children.Add(Tile($"≈ {Math.Round(w.Minutes):0}", "minutos escuchados", change));
+        tiles.Children.Add(Tile(w.Songs.ToString(CultureInfo.CurrentCulture), w.Songs == 1 ? "canción distinta" : "canciones distintas"));
+        tiles.Children.Add(Tile(w.Artists.ToString(CultureInfo.CurrentCulture), w.Artists == 1 ? "artista" : "artistas"));
+        WeekSection.Children.Add(tiles);
+
+        // Tu artista de la semana
+        if (w.TopArtists.FirstOrDefault() is { } star)
+        {
+            var hue = Math.Abs(star.Artist.Aggregate(17, (a, c) => a * 31 + c)) % 360;
+            var tint = HsvToColor(hue, 0.65, 0.7);
+            var banner = new Grid { Height = 190, CornerRadius = new CornerRadius(22), Background = new SolidColorBrush(HsvToColor(hue, 0.55, 0.3)) };
+            var starCard = Card(star.TopSong);
+            if (starCard.Artwork is { } art)
+                banner.Children.Add(new Image { Source = art, Stretch = Stretch.UniformToFill, Opacity = 0.55, HorizontalAlignment = HorizontalAlignment.Right, Width = 420 });
+            banner.Children.Add(new Border
+            {
+                Background = new LinearGradientBrush
+                {
+                    StartPoint = new Windows.Foundation.Point(0, 0.5), EndPoint = new Windows.Foundation.Point(1, 0.5),
+                    GradientStops =
+                    {
+                        new GradientStop { Color = Windows.UI.Color.FromArgb(0xF2, (byte)(tint.R * 0.35), (byte)(tint.G * 0.35), (byte)(tint.B * 0.35)), Offset = 0.35 },
+                        new GradientStop { Color = Windows.UI.Color.FromArgb(0x20, tint.R, tint.G, tint.B), Offset = 1 },
+                    },
+                },
+            });
+            var text = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(28, 0, 0, 0), Spacing = 4 };
+            var white = new SolidColorBrush(Microsoft.UI.Colors.White);
+            text.Children.Add(new TextBlock { Text = "TU ARTISTA DE LA SEMANA", FontSize = 12, CharacterSpacing = 140, Opacity = 0.85, Foreground = white });
+            text.Children.Add(new TextBlock { Text = star.Artist, FontSize = 40, FontWeight = Microsoft.UI.Text.FontWeights.Bold, Foreground = white, TextTrimming = TextTrimming.CharacterEllipsis });
+            text.Children.Add(new TextBlock { Text = $"{star.Plays} {(star.Plays == 1 ? "escucha" : "escuchas")} · lo que más sonó: «{star.TopSong.Title}»", Foreground = white, Opacity = 0.85, TextTrimming = TextTrimming.CharacterEllipsis });
+            var go = new Button { Margin = new Thickness(0, 10, 0, 0), Style = (Style)Application.Current.Resources["AccentButtonStyle"], Padding = new Thickness(18, 7, 18, 7) };
+            go.Content = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { new FontIcon { Glyph = "\uE768", FontSize = 14 }, new TextBlock { Text = "Escuchar", FontWeight = Microsoft.UI.Text.FontWeights.SemiBold } } };
+            go.Click += (_, _) => { if (starCard.IsPlayable) Play(starCard, [starCard]); };
+            text.Children.Add(go);
+            banner.Children.Add(text);
+            WeekSection.Children.Add(banner);
+        }
+
+        // Rankings: artistas y canciones, uno al lado del otro
+        var lists = new Grid { ColumnSpacing = 28 };
+        lists.ColumnDefinitions.Add(new ColumnDefinition()); lists.ColumnDefinitions.Add(new ColumnDefinition());
+
+        FrameworkElement Row(int rank, ImageSource? art, Brush tile, string title, string sub, double size, bool round)
+        {
+            var g = new Grid { ColumnSpacing = 14, Padding = new Thickness(6) };
+            g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(26) });
+            g.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            g.ColumnDefinitions.Add(new ColumnDefinition());
+            g.Children.Add(new TextBlock { Text = rank.ToString(CultureInfo.InvariantCulture), FontSize = 18, FontWeight = Microsoft.UI.Text.FontWeights.Bold, Opacity = 0.55, VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Right });
+            var pic = new Grid { Width = size, Height = size, CornerRadius = new CornerRadius(round ? size / 2 : 10), Background = tile };
+            if (art is not null) pic.Children.Add(new Image { Source = art, Stretch = Stretch.UniformToFill });
+            Grid.SetColumn(pic, 1); g.Children.Add(pic);
+            var t = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Spacing = 2 };
+            t.Children.Add(new TextBlock { Text = title, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis });
+            t.Children.Add(new TextBlock { Text = sub, FontSize = 12, Opacity = 0.65, TextTrimming = TextTrimming.CharacterEllipsis });
+            Grid.SetColumn(t, 2); g.Children.Add(t);
+            return g;
+        }
+
+        var artistsPanel = new StackPanel { Spacing = 2 };
+        artistsPanel.Children.Add(new TextBlock { Text = "Artistas más escuchados", Style = (Style)Root.Resources["SectionTitle"], Margin = new Thickness(0, 0, 0, 6) });
+        var rank = 0;
+        foreach (var a in w.TopArtists)
+        {
+            var c = Card(a.TopSong);
+            var row = Row(++rank, c.Artwork, c.Tile, a.Artist, $"{a.Plays} {(a.Plays == 1 ? "escucha" : "escuchas")}", 52, true);
+            var b = new Button { Content = row, Tag = a.Artist, Style = (Style)Root.Resources["CardButton"], HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Stretch, Padding = new Thickness(0) };
+            ToolTipService.SetToolTip(b, $"Ver canciones y discografía de {a.Artist}");
+            b.Click += Artist_Click;
+            artistsPanel.Children.Add(b);
+        }
+        lists.Children.Add(artistsPanel);
+
+        var songsPanel = new StackPanel { Spacing = 2 };
+        var songsHead = new Grid { ColumnSpacing = 12 };
+        songsHead.ColumnDefinitions.Add(new ColumnDefinition());
+        songsHead.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        songsHead.Children.Add(new TextBlock { Text = "Canciones más escuchadas", Style = (Style)Root.Resources["SectionTitle"], Margin = new Thickness(0, 0, 0, 6), TextTrimming = TextTrimming.CharacterEllipsis });
+        if (topCards.Count > 0)
+        {
+            var all = new Button { HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center, Content = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, Children = { new FontIcon { Glyph = "\uE768", FontSize = 12 }, new TextBlock { Text = "Reproducir todas" } } } };
+            all.Click += (_, _) => Play(topCards[0], topCards);
+            Grid.SetColumn(all, 1);
+            songsHead.Children.Add(all);
+        }
+        songsPanel.Children.Add(songsHead);
+        rank = 0;
+        foreach (var s in w.TopSongs)
+        {
+            var c = Card(s.Song);
+            var row = Row(++rank, c.Artwork, c.Tile, s.Song.Title, $"{s.Artist} · {s.Plays} {(s.Plays == 1 ? "vez" : "veces")}", 52, false);
+            var b = new Button { Content = row, Tag = c, Style = (Style)Root.Resources["CardButton"], HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Stretch, Padding = new Thickness(0) };
+            b.Click += (_, _) => { if (c.IsPlayable) Play(c, topCards.Contains(c) ? topCards : [c]); };
+            songsPanel.Children.Add(b);
+        }
+        Grid.SetColumn(songsPanel, 1);
+        lists.Children.Add(songsPanel);
+        WeekSection.Children.Add(lists);
+
+        // Día a día: una barra por día (un solo color), hoy marcado; el valor de cada día en su etiqueta emergente
+        var chart = new StackPanel { Spacing = 8 };
+        chart.Children.Add(new TextBlock { Text = "Día a día", Style = (Style)Root.Resources["SectionTitle"], Margin = new Thickness(0) });
+        var max = Math.Max(1, w.MinutesByDay.Max());
+        var bars = new Grid { Height = 170, ColumnSpacing = 2, MaxWidth = 640, HorizontalAlignment = HorizontalAlignment.Left };
+        for (var i = 0; i < 7; i++)
+        {
+            bars.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(80) });
+            var day = w.Days[i];
+            var minutes = w.MinutesByDay[i];
+            var isToday = day == DateTime.Now.Date;
+            var col = new Grid { Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent) };   // zona de ratón más grande que la barra
+            col.RowDefinitions.Add(new RowDefinition());
+            col.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            var barHeight = minutes <= 0 ? 3 : Math.Max(6, 130 * minutes / max);
+            var bar = new Border
+            {
+                Width = 34, Height = barHeight, VerticalAlignment = VerticalAlignment.Bottom, CornerRadius = new CornerRadius(4, 4, 0, 0),
+                Background = minutes <= 0 ? Ink("NsLineBrush") : accent, Opacity = isToday || minutes <= 0 ? 1 : 0.55,
+            };
+            col.Children.Add(bar);
+            if (minutes > 0 && (minutes >= max || isToday))   // solo se rotulan el día más alto y hoy
+                col.Children.Add(new TextBlock { Text = $"{Math.Round(minutes):0} min", FontSize = 11, Opacity = 0.75, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Bottom, Margin = new Thickness(0, 0, 0, barHeight + 4) });
+            var label = new TextBlock
+            {
+                Text = isToday ? "hoy" : DayNames[(int)day.DayOfWeek][..3], FontSize = 12, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 6, 0, 0),
+                FontWeight = isToday ? Microsoft.UI.Text.FontWeights.Bold : Microsoft.UI.Text.FontWeights.Normal, Opacity = isToday ? 1 : 0.65,
+            };
+            Grid.SetRow(label, 1);
+            col.Children.Add(label);
+            ToolTipService.SetToolTip(col, $"{(isToday ? "Hoy" : char.ToUpper(DayNames[(int)day.DayOfWeek][0]) + DayNames[(int)day.DayOfWeek][1..])} {day:d MMM}: {(minutes <= 0 ? "nada" : $"≈ {Math.Round(minutes):0} min")}");
+            Grid.SetColumn(col, i);
+            bars.Children.Add(col);
+        }
+        chart.Children.Add(bars);
+        chart.Children.Add(new TextBlock { Text = "Minutos aproximados: cada escucha cuenta la duración de la canción.", FontSize = 12, Opacity = 0.5 });
+        WeekSection.Children.Add(chart);
+    }
+
+    private readonly Dictionary<string, (List<YouTubeVideo> Songs, string Title)> _genreCache = [];
+    private readonly Dictionary<string, string> _genreTitles = [];   // género → nombre de su lista oficial (para el título)
+
+    /// <summary>Lista oficial del género, guardada una hora (las listas de YouTube Music cambian como mucho a diario).</summary>
+    private async Task<(List<YouTubeVideo> Songs, string Title)> GenreSongsAsync(string genre, CancellationToken ct)
+    {
+        var key = $"{genre}|{DateTime.UtcNow:yyyyMMddHH}";
+        if (_genreCache.TryGetValue(key, out var cached)) return cached;
+        var res = await YouTubeMusic.GenreSongsAsync(_http, genre, ct);
+        // las listas de género de YouTube son iguales en todos los países: primero van los artistas que más suenan en el tuyo
+        try { res = (YouTubeMusic.BoostByArtists(res.Songs, (await CountryArtistsAsync(ct)).Select(a => a.Name).ToList()), res.ListTitle); }
+        catch (Exception ex) when (ex is not OperationCanceledException) { App.LogOnce("Ranking del país para el género", ex); }
+        if (res.Songs.Count > 0) _genreCache[key] = res;
+        return res;
+    }
+
+    private (string Key, List<MusicArtist> Artists)? _countryArtists;
+
+    /// <summary>Ranking oficial de artistas de tu país (YouTube Music), guardado una hora.</summary>
+    private async Task<List<MusicArtist>> CountryArtistsAsync(CancellationToken ct)
+    {
+        var key = $"{Country}|{DateTime.UtcNow:yyyyMMddHH}";
+        if (_countryArtists is { } c && c.Key == key) return c.Artists;
+        var list = await YouTubeMusic.ChartArtistsAsync(_http, Country, ct);
+        if (list.Count > 0) _countryArtists = (key, list);
+        return list;
+    }
+
     // ===================== Búsqueda en YouTube =====================
 
     private async Task SearchYouTubeAsync(string? text)
@@ -365,7 +746,7 @@ public sealed partial class MainWindow : Window
         var typed = (text ?? "").Trim();
         var kind = _kind;
         var scope = Scope;
-        if (kind is "library" or "settings" or "downloads" || kind.StartsWith("pl:", StringComparison.Ordinal) || typed.Length == 1) return;
+        if (kind is "library" or "settings" or "downloads" or "week" || kind.StartsWith("pl:", StringComparison.Ordinal) || typed.Length == 1) return;
         if (kind == "video" && typed.Length == 0) { _ = LoadShelvesAsync(); return; }
         if (kind == "track" && _artist is not null) return;   // página de artista abierta: sus canciones ya están
         if (kind == "track" && typed.Length > 1 && _musicFilter != "songs") { _ = LoadEntriesAsync(typed); return; }
@@ -387,10 +768,35 @@ public sealed partial class MainWindow : Window
         try
         {
             List<YouTubeVideo>? results = null;
+            // Sin búsqueda, «Éxitos»: el top oficial del país (YouTube Music). Los demás géneros: la lista oficial de YouTube Music
+            // de ese género («Éxitos actuales del dance», «Hot Reggaeton»…), que YouTube renueva cada semana.
+            var fromHits = false;
+            string? curatedTitle = null;
+            if (typed.Length == 0 && kind == "track" && _genre != GenreNames[0])
+            {
+                try
+                {
+                    var (songs, title) = await GenreSongsAsync(_genre, cts.Token);
+                    var list = songs.Where(v => v.DurationSec == 0 || ContentFilter.IsSong(v)).ToList();
+                    if (list.Count >= 10) { results = list.Take(80).ToList(); fromHits = true; curatedTitle = title; }
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException) { App.LogOnce("Lista del género", ex); }
+            }
+            if (typed.Length == 0 && (kind == "track" ? _genre == GenreNames[0] : kind == "all"))
+            {
+                try
+                {
+                    var hitsList = (await CountryHitsAsync(cts.Token)).Where(v => v.DurationSec == 0 || ContentFilter.IsSong(v)).ToList();
+                    if (hitsList.Count >= 10) { results = hitsList.Take(60).ToList(); fromHits = true; }
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException) { App.LogOnce("Éxitos del país", ex); }
+            }
+            if (!fromHits)
+            {
             if (scope == "track")
             {
                 // Música: solo canciones de YouTube Music (versiones de audio: sin intros ni charla)
-                var musicQuery = typed.Length > 0 ? typed : YouTubeMusic.GenreQuery(kind == "track" ? _genre : "Éxitos", DateTime.Now.Year);
+                var musicQuery = typed.Length > 0 ? typed : YouTubeMusic.GenreQuery(kind == "track" ? _genre : "Éxitos", DateTime.Now.Year) + (kind == "track" && _genre != GenreNames[0] ? "" : " " + CountryLabel);   // el país solo para «Éxitos»: con los géneros desviaba la búsqueda
                 try { results = (await YouTubeMusic.SearchSongsAsync(_http, musicQuery, cts.Token)).Where(ContentFilter.IsSong).ToList(); }
                 catch (Exception ex) when (ex is not OperationCanceledException) { App.LogOnce("YouTube Music", ex); }
                 if (results is { Count: 0 }) results = null;   // si YouTube Music no da nada, se usa la búsqueda normal
@@ -401,15 +807,18 @@ public sealed partial class MainWindow : Window
                 // Sin búsqueda: primero lo publicado esta semana del género (se actualiza solo), después el fondo de catálogo
                 try
                 {
-                    var fresh = (await YouTubeSearch.SearchAsync(_http, YouTubeMusic.RecentQuery(kind == "track" ? _genre : "Éxitos", DateTime.Now.Year), cts.Token, thisWeek: true))
+                    var fresh = (await YouTubeSearch.SearchAsync(_http, YouTubeMusic.RecentQuery(kind == "track" ? _genre : "Éxitos", DateTime.Now.Year) + (kind == "track" && _genre != GenreNames[0] ? "" : " " + CountryLabel), cts.Token, thisWeek: true))
                         .Where(v => ContentFilter.IsSong(v) && !v.IsLive && v.DurationSec <= 480).Take(8).ToList();
                     var seen = fresh.Select(v => v.Id).ToHashSet();
                     results = fresh.Concat(results.Where(v => !seen.Contains(v.Id))).ToList();
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException) { App.LogOnce("Novedades del género", ex); }
             }
+            }
+            results ??= [];
             if (cts.IsCancellationRequested || kind != _kind || scope != Scope) return;
-            results = scope == "track" ? results.Where(ContentFilter.IsSong).ToList()
+            results = fromHits ? results
+                : scope == "track" ? results.Where(ContentFilter.IsSong).ToList()
                 : scope == "video" ? results.Where(ContentFilter.IsVideo).ToList()
                 : typed.Length == 0 ? results.Where(ContentFilter.IsSong).ToList()
                 : results.Where(v => !v.IsLive).ToList();
@@ -417,6 +826,7 @@ public sealed partial class MainWindow : Window
             _youtube = results.Select(v => new MediaCard(v)).ToList();
             YouTubeRepeater.ItemsSource = _youtube;
             YouTubeInfo.Text = _youtube.Count == 0 ? "Sin resultados en YouTube." : "";
+            if (curatedTitle is { Length: > 0 }) { _genreTitles[_genre] = curatedTitle; YouTubeTitle.Text = $"{_genre} · {curatedTitle}"; }
         }
         catch (OperationCanceledException) { }
         catch (Exception ex)
@@ -519,6 +929,7 @@ public sealed partial class MainWindow : Window
         try
         {
             var page = await YouTubeMusic.BrowseArtistAsync(_http, artist.Id, artist.Name);
+            if (_artist == artist) { _artistPage = page; _artistPageArtist = artist.Id; }
             var songs = page.Songs;
             if (page.AllSongsId.Length > 0)
             {
@@ -544,6 +955,60 @@ public sealed partial class MainWindow : Window
         {
             if (_artist == artist) YouTubeBusy.IsActive = false;
         }
+    }
+
+    private MusicArtistPage? _artistPage;
+    private string? _artistHeroFor;
+
+    /// <summary>Cabecera de la página de artista (foto ancha, oyentes, biografía) y la fila de artistas parecidos.</summary>
+    private void ShowArtistHero(bool artistView)
+    {
+        ArtistHero.Visibility = Vis(artistView);
+        var page = artistView && _artistPageArtist == _artist?.Id ? _artistPage : null;
+        ArtistBio.Visibility = Vis(page is { Description.Length: > 0 });
+        RelatedSection.Visibility = Vis(page is { Related.Count: > 0 });
+        if (!artistView || _artist is not { } artist) return;
+        ArtistName.Text = artist.Name;
+        ArtistListeners.Text = page?.Listeners ?? "";
+        var key = $"{artist.Id}|{page is not null}";
+        if (_artistHeroFor == key) return;
+        _artistHeroFor = key;
+        var hue = Math.Abs(artist.Name.Aggregate(17, (a, c) => a * 31 + c)) % 360;
+        ArtistHeroTile.Background = new LinearGradientBrush
+        {
+            StartPoint = new Windows.Foundation.Point(0, 0), EndPoint = new Windows.Foundation.Point(1, 1),
+            GradientStops = { new GradientStop { Color = HsvToColor(hue, 0.6, 0.55), Offset = 0 }, new GradientStop { Color = HsvToColor((hue + 40) % 360, 0.7, 0.2), Offset = 1 } },
+        };
+        // foto ancha si la hay; si no, su foto cuadrada (a la derecha) sobre el degradado
+        var url = page?.Banner ?? artist.Art;
+        ArtistBanner.HorizontalAlignment = page?.Banner is null ? HorizontalAlignment.Right : HorizontalAlignment.Stretch;
+        ArtistBanner.Width = page?.Banner is null ? 320 : double.NaN;
+        ArtistBanner.Opacity = 0;
+        ArtistBanner.Source = url is null ? null : new BitmapImage(new Uri(url));
+        if (url is not null) DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () => ArtistBanner.Opacity = 1);
+        ArtistBio.Text = page?.Description ?? "";
+        ArtistBio.MaxLines = 3;
+        RelatedRow.Children.Clear();
+        foreach (var r in page?.Related ?? [])
+        {
+            var rel = r;
+            AddArtistButton(r.Name, r.Art, null, RelatedRow, (_, _) => _ = OpenArtistAsync(rel));
+        }
+    }
+
+    private string? _artistPageArtist;
+
+    private void ArtistBio_Tapped(object sender, TappedRoutedEventArgs e) => ArtistBio.MaxLines = ArtistBio.MaxLines == 3 ? 0 : 3;
+
+    /// <summary>Radio del artista: su canción más escuchada y la radio de YouTube Music a partir de ella.</summary>
+    private async void ArtistRadio_Click(object sender, RoutedEventArgs e)
+    {
+        if (_youtube.FirstOrDefault() is not { } seed) return;
+        ShowToast("\uE93E", $"Radio de {_artist?.Name ?? seed.Subtitle}");
+        var radio = await FetchRadioAsync(seed);
+        var list = new List<MediaCard> { seed };
+        list.AddRange(YouTubeMusic.PickRadio(radio, [seed.Id], 40).Select(v => new MediaCard(v)));
+        Play(seed, list);
     }
 
     private void ArtistBack_Click(object sender, RoutedEventArgs e)
@@ -577,22 +1042,7 @@ public sealed partial class MainWindow : Window
         var circles = new Dictionary<string, Border>();
         foreach (var name in ArtistCatalog.WeeklyArtists(DateTime.UtcNow))
         {
-            var h = Math.Abs(name.Aggregate(17, (a, c) => a * 31 + c)) % 360;
-            var circle = new Border
-            {
-                Width = 84, Height = 84, CornerRadius = new CornerRadius(42),
-                Background = new SolidColorBrush(HsvToColor(h, 0.62, 0.78)),
-                Child = new TextBlock { Text = name[..1], FontSize = 32, FontWeight = Microsoft.UI.Text.FontWeights.Bold, Foreground = new SolidColorBrush(Microsoft.UI.Colors.White), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center },
-            };
-            var label = new TextBlock { Text = name, TextAlignment = TextAlignment.Center, TextWrapping = TextWrapping.Wrap, MaxWidth = 96, FontSize = 12, HorizontalAlignment = HorizontalAlignment.Center };
-            var button = new Button
-            {
-                Tag = name, Padding = new Thickness(6), Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent), BorderThickness = new Thickness(0),
-                Content = new StackPanel { Spacing = 6, Children = { circle, label } },
-            };
-            Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(button, $"Artista {name}: ver canciones y discografía");
-            button.Click += Artist_Click;
-            ArtistsRow.Children.Add(button);
+            var circle = AddArtistButton(name, null, null);
             if (ArtistCatalog.KnownCovers.TryGetValue(name, out var rg))
             {
                 circle.Background = new ImageBrush { ImageSource = new BitmapImage(new Uri(ArtistCatalog.CoverUrl(rg))), Stretch = Stretch.UniformToFill };
@@ -601,6 +1051,49 @@ public sealed partial class MainWindow : Window
             else circles[name] = circle;   // los que no están resueltos se buscan después
         }
         _ = LoadArtistCoversAsync(circles);
+        _ = LoadTopArtistsAsync();
+    }
+
+    /// <summary>Un artista de la fila: círculo con su foto (o la inicial) y su nombre; pulsarlo abre sus canciones y discos.</summary>
+    private Border AddArtistButton(string name, string? photo, int? rank, Panel? host = null, RoutedEventHandler? click = null)
+    {
+        var h = Math.Abs(name.Aggregate(17, (a, c) => a * 31 + c)) % 360;
+        var circle = new Border
+        {
+            Width = 84, Height = 84, CornerRadius = new CornerRadius(42),
+            Background = new SolidColorBrush(HsvToColor(h, 0.62, 0.78)),
+            Child = new TextBlock { Text = name[..1], FontSize = 32, FontWeight = Microsoft.UI.Text.FontWeights.Bold, Foreground = new SolidColorBrush(Microsoft.UI.Colors.White), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center },
+        };
+        if (photo is not null)
+        {
+            circle.Background = new ImageBrush { ImageSource = new BitmapImage(new Uri(photo)), Stretch = Stretch.UniformToFill };
+            circle.Child = null;
+        }
+        var label = new TextBlock { Text = name, TextAlignment = TextAlignment.Center, TextWrapping = TextWrapping.Wrap, MaxWidth = 96, FontSize = 12, HorizontalAlignment = HorizontalAlignment.Center };
+        var button = new Button
+        {
+            Tag = name, Padding = new Thickness(6), Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent), BorderThickness = new Thickness(0),
+            Content = new StackPanel { Spacing = 6, Children = { circle, label } },
+        };
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(button, (rank is { } r ? $"Puesto {r}: " : "Artista ") + $"{name}: ver canciones y discografía");
+        button.Click += click ?? Artist_Click;
+        (host ?? ArtistsRow).Children.Add(button);
+        return circle;
+    }
+
+    /// <summary>«Artistas más escuchados»: el ranking real de YouTube Music del país (se actualiza solo). Si no está disponible se queda la lista de la semana.</summary>
+    private async Task LoadTopArtistsAsync()
+    {
+        try
+        {
+            var list = await CountryArtistsAsync(default);
+            if (list.Count < 6) return;
+            ArtistsRow.Children.Clear();
+            var rank = 0;
+            foreach (var a in list.Take(14)) AddArtistButton(a.Name, a.Art, ++rank);
+            ArtistsTitle.Text = "Artistas más escuchados";
+        }
+        catch (Exception ex) { App.LogOnce("Ranking de artistas", ex); }   // sin ranking: se queda la lista de la semana
     }
 
     /// <summary>La foto de cada artista es la portada de uno de sus discos; mientras llega se ve la inicial.</summary>
@@ -721,15 +1214,15 @@ public sealed partial class MainWindow : Window
         try
         {
             using var gate = new SemaphoreSlim(3); // como mucho 3 búsquedas a la vez
-            async Task<IReadOnlyList<YouTubeVideo>> One(string query)
+            async Task<IReadOnlyList<YouTubeVideo>> One(ShelfQuery query)
             {
                 await gate.WaitAsync();
-                try { return await YouTubeSearch.SearchAsync(_http, query, default, videosOnly: true); }
-                catch (Exception ex) { App.LogOnce("Estantería " + query, ex); return []; }
+                try { return await YouTubeSearch.SearchAsync(_http, query.Q.Trim(), default, videosOnly: true, thisWeek: query.Week); }
+                catch (Exception ex) { App.LogOnce("Estantería " + query.Q, ex); return []; }
                 finally { gate.Release(); }
             }
 
-            var built = await Task.WhenAll(VideoShelves.Default.Select(async shelf =>
+            var built = await Task.WhenAll(YouTubeMusic.ShelvesFor(Country, CountryLabel).Select(async shelf =>
             {
                 var results = await Task.WhenAll(shelf.Queries.Select(One));
                 return new Shelf(shelf.Title, VideoShelves.Merge(results, 10).Select(v => new MediaCard(v)).ToList());
@@ -869,11 +1362,12 @@ public sealed partial class MainWindow : Window
     private void Play(MediaCard card, List<MediaCard> list)
     {
         if (!card.IsPlayable) return;
-        _audioOnly = Scope == "track";
+        _audioOnly = Scope == "track" || (card.YouTubeId is not null && CoverArt.IsSquare(card.ArtworkUrl?.AbsoluteUri));   // canciones de YouTube Music (importadas o guardadas): solo sonido
         _errorStreak = 0;
         _queue = list.Where(c => c.IsPlayable).ToList();
         _index = _queue.FindIndex(c => c.Source == card.Source && c.Id == card.Id);
         if (_index < 0) { _queue = [card]; _index = 0; }
+        _seen = []; _hist.Clear();
         StartCurrent();
     }
 
@@ -887,6 +1381,7 @@ public sealed partial class MainWindow : Window
     {
         if (_index < 0 || _index >= _queue.Count) return;
         var card = _queue[_index];
+        _countedKey = null;
         _now = card;
         ShowStatus(null);
 
@@ -904,30 +1399,187 @@ public sealed partial class MainWindow : Window
             _mode = Mode.Native;
             RunPlayerScript("cmd('stop')");
             ShowYouTubeLayer(false);
-            var natives = _queue.Where(c => c.Item is not null).ToList();
+            // Cola solo de archivos: MediaPlaybackList repite y mezcla. Si hay vídeos de YouTube en la cola, decide la app y el reproductor nativo toca de uno en uno.
+            var natives = AppDriven ? [card] : _queue.Where(c => c.Item is not null).ToList();
+            ApplyNativeModes();
             _player.Play(natives.Select(c => Resolve(c.Item!)), Math.Max(0, natives.IndexOf(card)));
         }
         UpdateNowPlayingBar();
+        if (RadioWanted && !_shuffle && _index == _queue.Count - 1) PrefetchRadio(card);   // última de la cola: la radio se pide ya
+    }
+
+    private static string Key(MediaCard c) => $"{c.Source}:{c.Id}";
+
+    /// <summary>Cola con algún vídeo de YouTube: la siguiente canción la elige la app (repetir/aleatorio con QueueOps) en vez del reproductor nativo.</summary>
+    private bool AppDriven => _mode == Mode.YouTube || _queue.Any(c => c.YouTubeId is not null);
+
+    private void ApplyNativeModes() => _player.SetModes(AppDriven ? QueueOps.RepeatOff : _repeat, !AppDriven && _shuffle);
+
+    /// <summary>Pasa a la siguiente canción según repetir/aleatorio; false si se acabó la lista.</summary>
+    private bool AdvanceAuto()
+    {
+        var r = QueueOps.PickNextIndex(_queue, _index, _repeat, _shuffle, _seen, Key);
+        if (r.Index < 0) return false;
+        if (_index >= 0 && _index < _queue.Count) { _hist.Add(Key(_queue[_index])); if (_hist.Count > 50) _hist.RemoveAt(0); }
+        _seen = r.Seen; _index = r.Index;
+        StartCurrent();
+        return true;
     }
 
     private void Next()
     {
-        if (_mode == Mode.YouTube || _queue.Any(c => c.YouTubeId is not null))
+        var atEnd = !_shuffle && _index >= _queue.Count - 1;
+        if (!AppDriven && !(atEnd && RadioWanted)) { _player.Next(); return; }
+        if (AppDriven && AdvanceAuto()) return;
+        _ = EndOfQueueAsync();
+    }
+
+    // ----- Radio automática: al acabarse la cola, canciones parecidas -----
+
+    private bool RadioWanted => _settings.Current.Radio && _repeat != QueueOps.RepeatAll;
+    private Task<List<YouTubeVideo>>? _radioPrefetch;
+    private string? _radioSeed;
+    private bool _radioBusy;
+
+    private async Task EndOfQueueAsync()
+    {
+        if (await ContinueWithRadioAsync()) return;
+        if (_mode == Mode.YouTube) RunPlayerScript("cmd('pause')");
+    }
+
+    /// <summary>La radio de YouTube Music de esa canción; si es un archivo, la de la misma canción encontrada en YouTube Music.</summary>
+    private async Task<List<YouTubeVideo>> FetchRadioAsync(MediaCard seed)
+    {
+        try
         {
-            if (_index + 1 < _queue.Count) { _index++; StartCurrent(); }
-            else if (_mode == Mode.YouTube) RunPlayerScript("cmd('pause')");
+            var id = seed.YouTubeId;
+            if (id is null)
+            {
+                var query = seed.Item is { } item ? $"{item.Artist} {item.Title}" : CoverArt.Query(seed.Title, seed.Subtitle);
+                id = (await YouTubeMusic.SearchSongsAsync(_http, query)).FirstOrDefault()?.Id;
+            }
+            return id is null ? [] : await YouTubeMusic.RadioAsync(_http, id);
         }
-        else _player.Next();
+        catch (Exception ex) { App.LogOnce("Radio automática", ex); return []; }
+    }
+
+    private void PrefetchRadio(MediaCard seed)
+    {
+        if (_radioSeed == Key(seed)) return;
+        _radioSeed = Key(seed);
+        _radioPrefetch = FetchRadioAsync(seed);
+    }
+
+    /// <summary>Añade a la cola canciones parecidas a la última y sigue sonando. False si está desactivada o no hay nada que añadir.</summary>
+    private async Task<bool> ContinueWithRadioAsync()
+    {
+        if (!RadioWanted || _radioBusy || _now is not { } seed) return false;
+        _radioBusy = true;
+        try
+        {
+            var radio = _radioSeed == Key(seed) && _radioPrefetch is { } pending ? await pending : await FetchRadioAsync(seed);
+            if (!ReferenceEquals(_now, seed)) return false;   // mientras tanto se eligió otra canción
+            var played = _hist.Select(k => k[(k.IndexOf(':') + 1)..]);
+            var add = YouTubeMusic.PickRadio(radio, _queue.Select(c => c.Id).Concat(played));
+            if (add.Count == 0) return false;
+            _queue.AddRange(add.Select(v => new MediaCard(v)));
+            var (artist, title) = seed.Item is { } it ? (it.Artist, it.Title) : LyricsService.GuessTrack(seed.Title, seed.Subtitle.Split(" · ")[0]);
+            ShowToast("\uE93E", $"Radio: canciones parecidas a «{title}»" + (artist.Length > 0 ? $" de {artist}" : ""));
+            return AdvanceAuto();
+        }
+        finally { _radioBusy = false; }
+    }
+
+    // ----- Avisos breves -----
+
+    private readonly DispatcherTimer _toastTimer = new() { Interval = TimeSpan.FromSeconds(3.2) };
+    private bool _toastHooked;
+
+    /// <summary>Aviso que aparece un momento encima de la barra y se va solo.</summary>
+    private void ShowToast(string glyph, string text)
+    {
+        if (!_toastHooked)
+        {
+            _toastHooked = true;
+            _toastTimer.Tick += (_, _) => { _toastTimer.Stop(); Toast.Opacity = 0; Toast.Translation = new Vector3(0, 10, 0); };
+        }
+        ToastIcon.Glyph = glyph;
+        ToastText.Text = text;
+        Toast.Translation = new Vector3(0, 10, 0);
+        DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () => { Toast.Opacity = 1; Toast.Translation = Vector3.Zero; });
+        _toastTimer.Stop(); _toastTimer.Start();
+    }
+
+    private void Radio_Toggled(object sender, RoutedEventArgs e)
+    {
+        if (_settings.Current.Radio == RadioToggle.IsOn) return;
+        _settings.Current.Radio = RadioToggle.IsOn;
+        ScheduleSave();
+        ShowToast("\uE93E", RadioToggle.IsOn ? "Radio automática activada" : "Radio automática desactivada");
     }
 
     private void Previous()
     {
-        if (_mode == Mode.YouTube)
+        if (!AppDriven) { _player.Previous(); return; }
+        var time = _mode == Mode.YouTube ? _ytTime : _player.Position.TotalSeconds;
+        void Restart() { if (_mode == Mode.YouTube) RunPlayerScript("cmd('seek', 0)"); else _player.Seek(TimeSpan.Zero); }
+        if (time > 3) { Restart(); return; }
+        if (_shuffle && _hist.Count > 0)     // en aleatorio «anterior» vuelve a la que sonó antes
         {
-            if (_ytTime > 3 || _index <= 0) RunPlayerScript("cmd('seek', 0)");
-            else { _index--; StartCurrent(); }
+            var key = _hist[^1];
+            _hist.RemoveAt(_hist.Count - 1);
+            var i = _queue.FindIndex(c => Key(c) == key);
+            if (i >= 0) { _index = i; StartCurrent(); return; }
         }
-        else _player.Previous();
+        if (_index <= 0) Restart(); else { _index--; StartCurrent(); }
+    }
+
+    /// <summary>Acaba una canción (YouTube, o nativa en una cola mixta): repetir la canción vuelve a empezar la misma.</summary>
+    private void OnEnded()
+    {
+        if (_repeat == QueueOps.RepeatOne && _now is not null) { StartCurrent(); return; }
+        Next();
+    }
+
+    private void OnNativeQueueEnded()
+    {
+        if (_mode != Mode.Native) return;
+        if (AppDriven) OnEnded();
+        else if (RadioWanted) _ = EndOfQueueAsync();   // cola solo de archivos terminada: sigue la radio
+    }
+
+    private static readonly string[] RepeatLabels = ["Repetir: desactivado", "Repetir: la lista", "Repetir: la canción"];
+
+    private void PaintModes()
+    {
+        var idx = _repeat == QueueOps.RepeatAll ? 1 : _repeat == QueueOps.RepeatOne ? 2 : 0;
+        var shuffleLabel = _shuffle ? "Aleatorio: activado" : "Aleatorio: desactivado";
+        void Mark(Button b, bool on, string label)
+        {
+            if (b.Content is FontIcon fi) { if (on) fi.Foreground = (Brush)Application.Current.Resources["NsAccentBrush"]; else fi.ClearValue(IconElement.ForegroundProperty); }
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(b, label);
+            ToolTipService.SetToolTip(b, label);
+        }
+        foreach (var b in new[] { ShuffleBtn, NpShuffleBtn }) Mark(b, _shuffle, shuffleLabel);
+        foreach (var b in new[] { RepeatBtn, NpRepeatBtn }) Mark(b, idx != 0, RepeatLabels[idx]);
+        foreach (var icon in new[] { RepeatIcon, NpRepeatIcon }) icon.Glyph = idx == 2 ? "" : "";   // repetir una / repetir
+    }
+
+    private void Repeat_Click(object sender, RoutedEventArgs e)
+    {
+        _repeat = QueueOps.NextRepeat(_repeat);
+        _settings.Current.Repeat = _repeat; ScheduleSave();
+        ApplyNativeModes(); PaintModes();
+        ShowToast(_repeat == QueueOps.RepeatOne ? "\uE8ED" : "\uE8EE", _repeat == QueueOps.RepeatAll ? "Repetir la lista" : _repeat == QueueOps.RepeatOne ? "Repetir la canción" : "Repetición desactivada");
+    }
+
+    private void Shuffle_Click(object sender, RoutedEventArgs e)
+    {
+        _shuffle = !_shuffle;
+        _seen = _now is not null ? [Key(_now)] : []; _hist.Clear();
+        _settings.Current.Shuffle = _shuffle; ScheduleSave();
+        ApplyNativeModes(); PaintModes();
+        ShowToast("\uE8B1", _shuffle ? "Aleatorio activado" : "Aleatorio desactivado");
     }
 
     private void OnNativeStateChanged()
@@ -959,7 +1611,7 @@ public sealed partial class MainWindow : Window
             () => Safe("Mini: volver", ShowMainFromMini),
             seconds => Safe("Mini: saltar", () => Progress.Value = Math.Clamp(seconds, 0, Progress.Maximum)),   // reutiliza el salto de la barra principal
             () => Safe("Mini: guardar", () => Save_Click(this, null!)),
-            Root.RequestedTheme);
+            Root.RequestedTheme, _analyzer.Running);
         _mini.Closed += (_, _) => _mini = null;
         SyncMini();
         _mini.SetProgress(TimeSpan.FromSeconds(Math.Max(0, Progress.Value)), TimeSpan.FromSeconds(Math.Max(1, Progress.Maximum)));
@@ -981,7 +1633,8 @@ public sealed partial class MainWindow : Window
     private void SyncMini()
     {
         if (_mini is null) return;
-        _mini.SetTrack(_now?.Title ?? "", _now is null ? "" : _now.YouTubeId is null ? _now.Subtitle : $"{_now.Subtitle} · YouTube", _now?.Artwork, _now?.Tile, IsPlaying);
+        _mini.SetTrack(_now?.Id ?? "", _now?.Title ?? "", _now is null ? "" : _now.YouTubeId is null ? _now.Subtitle : $"{_now.Subtitle} · YouTube", _now is null ? null : BestArt(_now), _now?.Tile, _now is null ? null : Backdrop(_now), IsPlaying);
+        _mini.SetGlow(_songColor);
         _mini.SetSaved(_now is not null && _library.Contains(_now.Source, _now.Id));
     }
 
@@ -1002,13 +1655,16 @@ public sealed partial class MainWindow : Window
         SyncMini();
         if (_now is null) return;
         if (_analyzedId != _now.Id) { _analyzedId = _now.Id; _keyBpm = ""; _analyzer.Reset(); }
+        var changed = _barTrackId != _now.Id;
+        _barTrackId = _now.Id;
         NowTitle.Text = _now.Title;
         NowArtist.Text = _now.YouTubeId is null ? _now.Subtitle : $"{_now.Subtitle} · YouTube";
         ShowKeyBpm();
         NowTile.Background = _now.Tile;
-        NowImage.Source = _now.Artwork;
+        NowImage.Source = BestArt(_now);
+        if (changed && _palette.Id != "clasico") AnimateTrackChange();
         SaveIcon.Glyph = _library.Contains(_now.Source, _now.Id) ? "" : "";
-        if (LyricsPanel.Visibility == Visibility.Visible) _ = LoadLyricsAsync();
+        if (LyricsPanel.Visibility == Visibility.Visible || KaraokeOn) _ = LoadLyricsAsync();
         UpdateAmbient();
         UpdateNowSheet();
     }
@@ -1026,6 +1682,7 @@ public sealed partial class MainWindow : Window
         _lyrics = null; _lyricIndex = -1;
         LyricsList.ItemsSource = null;
         LyricsInfo.Text = "Buscando la letra…";
+        BuildKaraoke("Buscando la letra…");
 
         var (artist, title) = card.Item is { } item
             ? (item.Artist, item.Title)
@@ -1038,22 +1695,97 @@ public sealed partial class MainWindow : Window
             LyricsList.ItemsSource = found?.Lines;
             LyricsInfo.Text = found is null ? $"No hay letra para «{title}»."
                 : found.Synced ? $"{artist} — {title}" : $"{artist} — {title} (sin sincronizar)";
+            BuildKaraoke(found is null ? $"No hay letra para «{title}»." : null);
         }
         catch (OperationCanceledException) { }
         catch (Exception ex)
         {
             LyricsInfo.Text = $"No se pudo cargar la letra: {ex.Message}";
+            BuildKaraoke("No se pudo cargar la letra.");
         }
     }
 
     private void FollowLyrics(double position)
     {
-        if (_lyrics is not { Synced: true } lyrics || LyricsPanel.Visibility != Visibility.Visible) return;
+        if (_lyrics is not { Synced: true } lyrics || (LyricsPanel.Visibility != Visibility.Visible && !KaraokeOn)) return;
         var index = LyricsService.IndexAt(lyrics.Lines, position + 0.3);
         if (index == _lyricIndex) return;
         _lyricIndex = index;
-        LyricsList.SelectedIndex = index;
-        if (index >= 0) LyricsList.ScrollIntoView(lyrics.Lines[Math.Min(index + 3, lyrics.Lines.Count - 1)]);
+        if (LyricsPanel.Visibility == Visibility.Visible)
+        {
+            LyricsList.SelectedIndex = index;
+            if (index >= 0) LyricsList.ScrollIntoView(lyrics.Lines[Math.Min(index + 3, lyrics.Lines.Count - 1)]);
+        }
+        if (KaraokeOn) HighlightKaraoke(index);
+    }
+
+    // ----- Letra a pantalla completa en «Reproduciendo» -----
+
+    private bool KaraokeOn => NowSheet.Visibility == Visibility.Visible && NpLyricsHost.Visibility == Visibility.Visible;
+
+    private void SetKaraoke(bool on)
+    {
+        NpLyricsToggle.IsChecked = on;
+        NpLyricsHost.Visibility = Vis(on);
+        NpLyricsCol.Width = on ? new GridLength(1.25, GridUnitType.Star) : new GridLength(0);
+        if (!on) return;
+        if (_now is null) { BuildKaraoke("Reproduce una canción para ver su letra."); return; }
+        _lyricIndex = -1;
+        if (_lyricsFor == $"{_now.Source}:{_now.Id}") BuildKaraoke(_lyrics is null ? LyricsInfo.Text : null);
+        else _ = LoadLyricsAsync();
+    }
+
+    /// <summary>Una línea por renglón, grande; la que suena se enciende. Sin letra sincronizada se ve entera y fija.</summary>
+    private void BuildKaraoke(string? message)
+    {
+        NpLyricsLines.Children.Clear();
+        NpLyricsInfo.Text = message ?? "";
+        NpLyricsInfo.Visibility = Vis(message is not null);
+        if (message is not null || _lyrics is not { } lyrics) return;
+        foreach (var line in lyrics.Lines)
+        {
+            var tb = new TextBlock
+            {
+                Text = line.Text.Length == 0 ? "♪" : line.Text, FontSize = 30, FontWeight = Microsoft.UI.Text.FontWeights.Bold,
+                TextWrapping = TextWrapping.Wrap, Opacity = lyrics.Synced ? 0.32 : 0.9, Tag = line,
+                OpacityTransition = new ScalarTransition { Duration = TimeSpan.FromMilliseconds(280) },
+                ScaleTransition = new Vector3Transition { Duration = TimeSpan.FromMilliseconds(280) },
+            };
+            if (lyrics.Synced && line.Time >= 0)
+            {
+                tb.Tapped += (_, _) => SeekTo(line.Time);
+                ToolTipService.SetToolTip(tb, "Saltar a esta línea");
+            }
+            NpLyricsLines.Children.Add(tb);
+        }
+        NpLyricsScroll.ChangeView(null, 0, null, true);
+        _lyricIndex = -2;   // en la siguiente actualización (≈0,5 s, ya colocadas las líneas) se enciende la que suena
+    }
+
+    private void HighlightKaraoke(int index)
+    {
+        for (var i = 0; i < NpLyricsLines.Children.Count; i++)
+        {
+            if (NpLyricsLines.Children[i] is not TextBlock tb) continue;
+            var on = i == index;
+            tb.Opacity = on ? 1 : i < index ? 0.22 : 0.38;
+            tb.CenterPoint = new Vector3(0, (float)tb.ActualHeight / 2, 0);
+            tb.Scale = on ? new Vector3(1.06f, 1.06f, 1) : Vector3.One;
+        }
+        if (index < 0 || index >= NpLyricsLines.Children.Count) return;
+        var target = (FrameworkElement)NpLyricsLines.Children[index];
+        var y = target.TransformToVisual(NpLyricsLines).TransformPoint(new Windows.Foundation.Point(0, 0)).Y;
+        NpLyricsScroll.ChangeView(null, Math.Max(0, y - NpLyricsScroll.ViewportHeight * 0.38), null, false);   // la línea queda algo por encima del centro
+    }
+
+    private void SeekTo(double seconds)
+    {
+        if (_mode == Mode.YouTube)
+        {
+            _ytTime = seconds;
+            RunPlayerScript($"cmd('seek', {seconds.ToString("0.##", CultureInfo.InvariantCulture)})");
+        }
+        else if (_mode == Mode.Native) _player.Seek(TimeSpan.FromSeconds(seconds));
     }
 
     private void Lyrics_Click(object sender, RoutedEventArgs e)
@@ -1212,6 +1944,7 @@ public sealed partial class MainWindow : Window
         _updatingProgress = false;
 
         FollowLyrics(pos.TotalSeconds);
+        RecordListen(pos.TotalSeconds);
         SyncSheetAndBars(pos, total);
         _mini?.SetProgress(pos, total);
         Elapsed.Text = MediaCard.Format(pos);
@@ -1323,7 +2056,7 @@ public sealed partial class MainWindow : Window
                     if (_ytPlaying && _ytTime > 1) _errorStreak = 0;   // ya suena: se acaba la racha de errores
                     break;
                 case "ended" when _mode == Mode.YouTube:
-                    Next();
+                    OnEnded();
                     break;
                 case "error" when _mode == Mode.YouTube:
                     var code = root.GetProperty("code").GetInt32();
@@ -1333,7 +2066,7 @@ public sealed partial class MainWindow : Window
                     ShowYouTubeLayer(false);
                     _ytPlaying = false;
                     _errorStreak++;
-                    if (_errorStreak <= 3 && _index + 1 < _queue.Count) { _index++; StartCurrent(); }
+                    if (_errorStreak <= 3 && AdvanceAuto()) { }
                     else
                     {
                         if (_errorStreak > 3) ShowStatus("YouTube no deja reproducir estos vídeos ahora mismo. Prueba con otro o inténtalo más tarde.");
@@ -1690,9 +2423,12 @@ public sealed partial class MainWindow : Window
         AmbientBlueEnd.Color = Hex(t.Blue, 0);
         SlashA.Color = Hex(t.Accent, 0); SlashB.Color = Hex(t.Accent, 0x66); SlashC.Color = Hex(t.Accent, 0);
         HeroSlash.Visibility = Vis(!classic);
+        BarTint.Visibility = BarLine.Visibility = NowGlow.Visibility = Vis(!classic);
+        NpShadeTop.Color = Hex(t.Bg, 0x66);
+        NpShadeBottom.Color = Hex(t.Bg, 0xF2);
         Hero.CornerRadius = new CornerRadius(classic ? 14 : 26);
         Bar.Margin = classic ? new Thickness(0) : new Thickness(12, 4, 12, 12);
-        Bar.CornerRadius = new CornerRadius(classic ? 0 : 22);
+        Bar.CornerRadius = new CornerRadius(classic ? 0 : 24);
         Bar.BorderThickness = classic ? new Thickness(0, 1, 0, 0) : new Thickness(1);
         UpdateAmbient();
         if (_featured is not null) UpdateHero();
@@ -1700,15 +2436,157 @@ public sealed partial class MainWindow : Window
         SetBars(IsPlaying);
     }
 
-    /// <summary>El brillo de arriba a la derecha toma el tono de la canción (o el acento si no suena nada).</summary>
+    private Windows.UI.Color _songColor = Windows.UI.Color.FromArgb(255, 0xFF, 0x4D, 0x62);
+    private readonly SolidColorBrush _songBrush = new(Windows.UI.Color.FromArgb(255, 0xFF, 0x4D, 0x62));
+    private readonly Dictionary<string, Windows.UI.Color> _artColors = [];
+    private readonly HashSet<string> _artColorTried = [];
+    private string? _barTrackId;
+
+    /// <summary>
+    /// El color de la canción tiñe el brillo de fondo, la barra inferior, la pantalla «Reproduciendo» y el mini reproductor. Mientras se
+    /// lee la portada se usa el tono estable de la tarjeta; en cuanto se sabe el color de la portada, se pasa a él con una transición.
+    /// </summary>
     private void UpdateAmbient()
     {
-        var color = _now is { } n ? MediaCard.Hsl(MediaCard.HueOf(n.Id), 0.8, 0.48) : Hex(_palette.Accent);
-        var alpha = _palette.Dark ? (byte)0x4D : (byte)0x30;
-        AmbientStop.Color = Windows.UI.Color.FromArgb(alpha, color.R, color.G, color.B);
-        AmbientEnd.Color = Windows.UI.Color.FromArgb(0, color.R, color.G, color.B);
-        NpGlowStop.Color = Windows.UI.Color.FromArgb(0x70, color.R, color.G, color.B);
-        NpGlowEnd.Color = Windows.UI.Color.FromArgb(0, color.R, color.G, color.B);
+        if (_now is not { } n) { ApplySongColor(Hex(_palette.Accent)); return; }
+        ApplySongColor(_artColors.TryGetValue(n.Id, out var known) ? known : MediaCard.Hsl(MediaCard.HueOf(n.Id), 0.75, 0.52));
+        if (_artColors.ContainsKey(n.Id) || !_artColorTried.Add(n.Id)) return;
+        _ = EnrichAsync(n);
+    }
+
+    private void ApplySongColor(Windows.UI.Color c)
+    {
+        _songColor = c;
+        var dark = _palette.Dark;
+        Windows.UI.Color A(byte alpha) => Windows.UI.Color.FromArgb(alpha, c.R, c.G, c.B);
+        AnimateColor(AmbientStop, A(dark ? (byte)0x5A : (byte)0x38));
+        AnimateColor(AmbientEnd, A(0));
+        AnimateColor(NpGlowStop, A(0x80));
+        AnimateColor(NpGlowEnd, A(0));
+        AnimateColor(NpArtGlowStop, A(0x99));
+        AnimateColor(NpArtGlowEnd, A(0));
+        AnimateColor(BarTintStop, A(dark ? (byte)0x40 : (byte)0x26));
+        AnimateColor(BarTintEnd, A(0));
+        AnimateColor(BarLineA, A(0));
+        AnimateColor(BarLineB, A(0xCC));
+        AnimateColor(BarLineC, A(0));
+        AnimateColor(NowGlowStop, A(0xB0));
+        AnimateColor(NowGlowEnd, A(0));
+        AnimateColor(_songBrush, A(0xFF));
+        _mini?.SetGlow(c);
+    }
+
+    /// <summary>Cambia un color poco a poco (≈0,9 s) en vez de saltar.</summary>
+    private static void AnimateColor(DependencyObject target, Windows.UI.Color to)
+    {
+        var a = new ColorAnimation
+        {
+            To = to, Duration = TimeSpan.FromMilliseconds(900), EnableDependentAnimation = true,
+            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseInOut },
+        };
+        Storyboard.SetTarget(a, target);
+        Storyboard.SetTargetProperty(a, "Color");
+        var sb = new Storyboard();
+        sb.Children.Add(a);
+        sb.Begin();
+    }
+
+    private readonly Dictionary<string, string?> _covers = [];          // id → portada cuadrada de YouTube Music (null: no hay)
+    private readonly Dictionary<string, ImageSource> _coverImages = [];
+
+    /// <summary>Portada cuadrada de la canción, si se conoce: la propia (YouTube Music) o la encontrada para el vídeo.</summary>
+    private string? CoverUrl(MediaCard card)
+        => CoverArt.IsSquare(card.ArtworkUrl?.AbsoluteUri) ? card.ArtworkUrl!.AbsoluteUri : _covers.GetValueOrDefault(card.Id);
+
+    private ImageSource? CoverImage(MediaCard card)
+    {
+        if (CoverUrl(card) is not { } url) return null;
+        if (!_coverImages.TryGetValue(url, out var img)) _coverImages[url] = img = new BitmapImage(new Uri(url));
+        return img;
+    }
+
+    /// <summary>Portada para la barra, «Reproduciendo» y el mini: la cuadrada oficial si la hay; si no, la de la tarjeta.</summary>
+    private ImageSource? BestArt(MediaCard card) => CoverImage(card) ?? card.Artwork;
+
+    /// <summary>Al empezar una canción: busca su portada cuadrada (si el vídeo no la trae) y después lee su color.</summary>
+    private async Task EnrichAsync(MediaCard card)
+    {
+        if (card.YouTubeId is { } vid && CoverUrl(card) is null && !_covers.ContainsKey(card.Id))
+        {
+            try
+            {
+                var songs = await YouTubeMusic.SearchSongsAsync(_http, CoverArt.Query(card.Title, card.Subtitle.Split(" · ")[0]));
+                _covers[card.Id] = CoverArt.PickSong(songs, vid, card.Title, card.Subtitle.Split(" · ")[0])?.Art;
+                if (_covers[card.Id] is not null && _now?.Id == card.Id) ShowCover(card);
+            }
+            catch (Exception ex) { App.LogOnce("Portada cuadrada", ex); }   // sin conexión: se queda el fotograma del vídeo
+        }
+        await LoadArtColorAsync(card);
+    }
+
+    /// <summary>Cambia a la portada cuadrada en la barra, «Reproduciendo» y el mini (con un fundido).</summary>
+    private void ShowCover(MediaCard card)
+    {
+        if (CoverImage(card) is not { } img) return;
+        NowImage.Opacity = 0;
+        NowImage.Source = img;
+        DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () => NowImage.Opacity = 1);
+        NpImage.Source = img;
+        NpBackdrop.Source = Backdrop(card);
+        _mini?.SetCover(img, Backdrop(card));
+    }
+
+    /// <summary>Lee el color dominante de la portada (reducida a 24×24): la cuadrada si se encontró; si no, la miniatura del vídeo.</summary>
+    private async Task LoadArtColorAsync(MediaCard card)
+    {
+        try
+        {
+            var uri = CoverUrl(card) is { } cover ? new Uri(cover)
+                : card.YouTubeId is { } y ? new Uri($"https://i.ytimg.com/vi/{y}/mqdefault.jpg") : card.ArtworkUrl;
+            if (uri is null) return;
+            var bytes = uri.IsFile ? await File.ReadAllBytesAsync(uri.LocalPath) : await _http.GetByteArrayAsync(uri);
+            using var stream = new Windows.Storage.Streams.InMemoryRandomAccessStream();
+            await stream.WriteAsync(System.Runtime.InteropServices.WindowsRuntime.WindowsRuntimeBufferExtensions.AsBuffer(bytes));
+            stream.Seek(0);
+            var decoder = await Windows.Graphics.Imaging.BitmapDecoder.CreateAsync(stream);
+            var data = await decoder.GetPixelDataAsync(Windows.Graphics.Imaging.BitmapPixelFormat.Bgra8, Windows.Graphics.Imaging.BitmapAlphaMode.Straight,
+                new Windows.Graphics.Imaging.BitmapTransform { ScaledWidth = 24, ScaledHeight = 24, InterpolationMode = Windows.Graphics.Imaging.BitmapInterpolationMode.Linear },
+                Windows.Graphics.Imaging.ExifOrientationMode.IgnoreExifOrientation, Windows.Graphics.Imaging.ColorManagementMode.DoNotColorManage);
+            if (ArtPalette.Vibrant(data.DetachPixelData()) is not { } vivid) return;
+            var g = ArtPalette.Glow(vivid);
+            var color = Windows.UI.Color.FromArgb(255, g.R, g.G, g.B);
+            _artColors[card.Id] = color;
+            if (_now?.Id == card.Id) ApplySongColor(color);
+        }
+        catch (Exception ex) { App.LogOnce("Color de la portada", ex); }   // sin portada o sin conexión: se queda el tono de la tarjeta
+    }
+
+    private readonly Dictionary<string, ImageSource> _backdrops = [];
+
+    /// <summary>Fondo desenfocado: la portada en su versión más pequeña, ampliada (para YouTube, la miniatura de 120×90).</summary>
+    private ImageSource? Backdrop(MediaCard card)
+    {
+        var tiny = CoverArt.Tiny(CoverUrl(card));
+        var key = tiny ?? card.Id;
+        if (_backdrops.TryGetValue(key, out var cached)) return cached;
+        ImageSource? img = tiny is not null ? new BitmapImage(new Uri(tiny))
+            : card.YouTubeId is { } y ? new BitmapImage(new Uri($"https://i.ytimg.com/vi/{y}/default.jpg")) : card.Artwork;
+        if (img is not null) _backdrops[key] = img;
+        return img;
+    }
+
+    /// <summary>Al cambiar de canción, la portada y el título de la barra entran con un pequeño desliz.</summary>
+    private void AnimateTrackChange()
+    {
+        NowImage.Opacity = 0;
+        NowText.Opacity = 0;
+        NowText.Translation = new Vector3(0, 8, 0);
+        DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () =>
+        {
+            NowImage.Opacity = 1;
+            NowText.Opacity = 1;
+            NowText.Translation = Vector3.Zero;
+        });
     }
 
     private void StartKenBurns()
@@ -1735,29 +2613,79 @@ public sealed partial class MainWindow : Window
         DispatcherQueue.TryEnqueue(() => Browse.Opacity = 1);
     }
 
+    /// <summary>
+    /// Mientras suena: barras del ecualizador, la portada «respira», el botón de reproducir lanza ondas, el brillo de fondo late
+    /// despacio y la portada grande de «Reproduciendo» se mueve un poco. En pausa todo vuelve a su sitio. «Clásico» no anima nada.
+    /// </summary>
+    private readonly DispatcherTimer _vizTimer = new() { Interval = TimeSpan.FromMilliseconds(33) };
+    private readonly double[] _levels = new double[BandMeter.Count];
+    private bool _live;   // con el analizador en marcha, barras, portada y brillo siguen al sonido real
+
+    /// <summary>Unas 30 veces por segundo: lleva los niveles del sonido a las barras, la portada, el brillo y el mini.</summary>
+    private void VizTick()
+    {
+        _analyzer.Meter.Read(_levels);
+        double bass = _levels[0], body = Math.Max(_levels[0], _levels[1]);
+        var bars = new[] { Bar1, Bar2, Bar3, Bar4 };
+        for (var i = 0; i < bars.Length; i++) bars[i].ScaleY = 0.15 + 0.85 * _levels[i];
+        NowArtScale.ScaleX = NowArtScale.ScaleY = 1 + 0.07 * bass;
+        NpArtScale.ScaleX = NpArtScale.ScaleY = 1 + 0.035 * bass;
+        NowGlow.Opacity = 0.2 + 0.75 * body;
+        Ambient.Opacity = 0.55 + 0.45 * bass;
+        _mini?.SetLevels(_levels);
+    }
+
+    private void StopViz()
+    {
+        _vizTimer.Stop();
+        NowArtScale.ScaleX = NowArtScale.ScaleY = NpArtScale.ScaleX = NpArtScale.ScaleY = 1;
+        NowGlow.Opacity = 0;
+        Ambient.Opacity = 1;
+        _mini?.SetLevels(null);
+    }
+
     private void SetBars(bool playing)
     {
         var show = playing && _palette.Id != "clasico";
         PlayingBars.Visibility = Vis(show);
         if (show == _barsOn) return;
         _barsOn = show;
-        if (!show) { _bars?.Stop(); return; }
+        NowGlow.Opacity = show ? 0.55 : 0;
+        if (!show) { _bars?.Stop(); StopViz(); return; }
         if (_bars is null)
         {
+            _live = _analyzer.Running;
+            if (_live) _vizTimer.Tick += (_, _) => Safe("Visualizador", VizTick);
             _bars = new Storyboard();
-            foreach (var (scale, secs) in new[] { (Bar1, 0.9), (Bar2, 0.7), (Bar3, 1.1) })
+            void Add(DependencyObject target, string prop, double from, double to, double secs, bool reverse = true, double begin = 0)
             {
                 var a = new DoubleAnimation
                 {
-                    From = 0.25, To = 1, Duration = TimeSpan.FromSeconds(secs), AutoReverse = true,
+                    From = from, To = to, Duration = TimeSpan.FromSeconds(secs), AutoReverse = reverse, BeginTime = TimeSpan.FromSeconds(begin),
                     RepeatBehavior = RepeatBehavior.Forever, EnableDependentAnimation = true,
+                    EasingFunction = new SineEase { EasingMode = EasingMode.EaseInOut },
                 };
-                Storyboard.SetTarget(a, scale);
-                Storyboard.SetTargetProperty(a, "ScaleY");
+                Storyboard.SetTarget(a, target);
+                Storyboard.SetTargetProperty(a, prop);
                 _bars.Children.Add(a);
+            }
+            foreach (var prop in new[] { "ScaleX", "ScaleY" }) Add(PlayHaloScale, prop, 1, 1.45, 1.8, reverse: false);
+            Add(PlayHalo, "Opacity", 0.45, 0, 1.8, reverse: false);
+            if (!_live)   // sin acceso al sonido del PC: animación fija
+            {
+                foreach (var (scale, secs) in new[] { (Bar1, 0.45), (Bar2, 0.62), (Bar3, 0.38), (Bar4, 0.53) })
+                    Add(scale, "ScaleY", 0.2, 1, secs);
+                foreach (var prop in new[] { "ScaleX", "ScaleY" })
+                {
+                    Add(NowArtScale, prop, 1, 1.05, 1.4);
+                    Add(NpArtScale, prop, 1, 1.025, 2.6);
+                }
+                Add(Ambient, "Opacity", 0.65, 1, 4.5);
+                Add(NowGlow, "Opacity", 0.3, 0.8, 1.4);
             }
         }
         _bars.Begin();
+        if (_live) _vizTimer.Start();
     }
 
     private void SyncSheetAndBars(TimeSpan pos, TimeSpan total)
@@ -1787,15 +2715,15 @@ public sealed partial class MainWindow : Window
         NowSheet.Visibility = Visibility.Visible;
     }
 
-    private void CloseNowSheet() => NowSheet.Visibility = Visibility.Collapsed;
+    private void CloseNowSheet()
+    {
+        NowSheet.Visibility = Visibility.Collapsed;
+        if (NpLyricsHost.Visibility == Visibility.Visible) SetKaraoke(false);
+    }
 
     private void NowSheetClose_Click(object sender, RoutedEventArgs e) => CloseNowSheet();
 
-    private void NowSheetLyrics_Click(object sender, RoutedEventArgs e)
-    {
-        CloseNowSheet();
-        Lyrics_Click(sender, e);
-    }
+    private void NowSheetLyrics_Click(object sender, RoutedEventArgs e) => SetKaraoke(NpLyricsToggle.IsChecked == true);
 
     private void NowSheetVideo_Click(object sender, RoutedEventArgs e)
     {
@@ -1809,20 +2737,40 @@ public sealed partial class MainWindow : Window
         if (_now is not { } card) return;
         NpTitle.Text = card.Title;
         NpArtist.Text = card.YouTubeId is null ? card.Subtitle : $"{card.Subtitle} · YouTube";
-        NpImage.Source = card.YouTubeId is { } id ? new BitmapImage(new Uri($"https://i.ytimg.com/vi/{id}/hq720.jpg")) : card.Artwork;
+        NpImage.Source = CoverImage(card) ?? (card.YouTubeId is { } id ? new BitmapImage(new Uri($"https://i.ytimg.com/vi/{id}/hq720.jpg")) : card.Artwork);
+        NpBackdrop.Source = Backdrop(card);
         NpHeartIcon.Glyph = _library.Contains(card.Source, card.Id) ? "\uEB52" : "\uEB51";
     }
 
+    private static FrameworkElement? FindNamed(DependencyObject root, string name)
+    {
+        for (var k = 0; k < VisualTreeHelper.GetChildrenCount(root); k++)
+        {
+            var child = VisualTreeHelper.GetChild(root, k);
+            if (child is FrameworkElement fe && fe.Name == name) return fe;
+            if (FindNamed(child, name) is { } found) return found;
+        }
+        return null;
+    }
+
+    /// <summary>Al pasar el ratón por una tarjeta: sube un poco, crece y muestra el botón de reproducir.</summary>
     private void Card_PointerEntered(object sender, PointerRoutedEventArgs e)
     {
-        if (_palette.Id == "clasico" || sender is not UIElement ui) return;
+        if (_palette.Id == "clasico" || sender is not FrameworkElement ui) return;
         ui.TranslationTransition ??= new Vector3Transition { Duration = TimeSpan.FromMilliseconds(220) };
+        ui.ScaleTransition ??= new Vector3Transition { Duration = TimeSpan.FromMilliseconds(220) };
+        ui.CenterPoint = new Vector3((float)ui.ActualWidth / 2, (float)ui.ActualHeight / 2, 0);
         ui.Translation = new Vector3(0, -6, 0);
+        ui.Scale = new Vector3(1.03f, 1.03f, 1);
+        if (FindNamed(ui, "HoverPlay") is { } hover) hover.Opacity = 1;
     }
 
     private void Card_PointerExited(object sender, PointerRoutedEventArgs e)
     {
-        if (sender is UIElement ui) ui.Translation = Vector3.Zero;
+        if (sender is not FrameworkElement ui) return;
+        ui.Translation = Vector3.Zero;
+        ui.Scale = Vector3.One;
+        if (FindNamed(ui, "HoverPlay") is { } hover) hover.Opacity = 0;
     }
 
     // ===================== Importar una lista desde un enlace =====================
@@ -2079,6 +3027,7 @@ public sealed partial class MainWindow : Window
     {
         if ((sender as FrameworkElement)?.Tag is not MediaCard card) return;
         var list = _saved.Contains(card) ? _saved
+            : _recent.Contains(card) ? _recent
             : _youtube.Contains(card) ? _youtube
             : _shelves.FirstOrDefault(s => s.Cards.Contains(card))?.Cards ?? [card];
         Play(card, list);

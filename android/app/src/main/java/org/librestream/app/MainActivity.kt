@@ -167,6 +167,12 @@ class MainActivity : Activity() {
         }
     }
 
+    /** Abre en el navegador la página de una versión de Nsound (aviso de versión nueva). Ninguna otra dirección. */
+    fun openReleasePage(url: String) {
+        require(url.startsWith("https://github.com/N1x0321/Nsound/releases/")) { "Dirección no permitida" }
+        check(tryStart(Intent(Intent.ACTION_VIEW, Uri.parse(url)))) { "No hay navegador" }
+    }
+
     /** Guarda un texto (copia de la biblioteca) donde elija el usuario con el selector del sistema. */
     fun saveText(name: String, text: String) {
         runOnUiThread {

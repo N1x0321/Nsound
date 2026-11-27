@@ -65,6 +65,7 @@
     clearTimeout(toast.t);
     toast.t = setTimeout(() => t.classList.remove('show'), ms || 4500);
   }
+  const bgPanel = LS.createBgPanel({ call: Native.call, $, esc, toast, storage: safeStorage() });
 
   const persistent = LS.createCache(safeStorage(), { ttl: 30 * 60 * 1000, max: 24 });
   let running = 0;
@@ -151,6 +152,17 @@
     try { recentStore.setItem('ls.recent', JSON.stringify([slim, ...recentList().filter((x) => x.src + ':' + x.id !== it.src + ':' + it.id)].slice(0, 12))); } catch (e) { /* sin almacenamiento */ }
   }
 
+  // ---------- Historial de escucha (solo en este dispositivo): «Seguir escuchando», «Hecho para ti» y «Tu semana» ----------
+  // Una canción cuenta como escuchada cuando ha sonado 30 s (o la mitad, si es más corta). No sale del móvil.
+  function historyList() { try { const a = JSON.parse(recentStore.getItem('ls.history') || '[]'); return Array.isArray(a) ? a.filter((e) => e && e.item && e.item.id && e.item.src) : []; } catch (e) { return []; } }
+  function historyAdd(it) {
+    if (!it || it.src === 'cat') return;
+    const g = it.artist ? { artist: LS.cleanArtistName(it.artist) } : LS.guessTrack(it.title, String(it.sub || '').split(' · ')[0]);
+    const item = { src: it.src, id: it.id, title: it.title, artist: it.artist, sub: it.sub, duration: it.duration, thumb: it.cover || it.thumb, kind: it.kind };
+    const list = [{ item, artist: g.artist || '', at: Date.now() }, ...historyList()].slice(0, LS.HISTORY_MAX);
+    try { recentStore.setItem('ls.history', JSON.stringify(list)); } catch (e) { /* sin espacio: se queda sin guardar */ }
+  }
+
   // Color de la carátula (si el navegador deja leerla); si no, un tono estable según la canción
   function artHue(url, id, apply) {
     apply({ h: hue(id), s: 62, l: 36 });
@@ -170,14 +182,35 @@
     img.src = url;
   }
 
+  // ---------- Radio de YouTube Music y carátulas cuadradas ----------
+  async function radioFor(it) {
+    let id = it.src === 'yt' ? it.id : '';
+    if (!id) { const r = await musicSearch((it.sub || '') + ' ' + it.title); id = r[0] && r[0].id; }
+    if (!id) return [];
+    return ytmPost(LS.MUSIC_NEXT_URL, LS.radioBody(id), 'radio|' + id, (j) => LS.parseYtmRadio(j, id));
+  }
+  // Si el vídeo solo trae un fotograma («vevo»…), se busca la misma canción en YouTube Music para usar su portada cuadrada
+  async function findCover(it) {
+    if (it.src !== 'yt' || it.cover !== undefined || LS.isSquareCover(it.thumb)) return;
+    it.cover = '';
+    try {
+      const pick = LS.pickCoverSong(await musicSearch(LS.coverQuery(it.title, String(it.sub || '').split(' · ')[0])), it.id, it.title, String(it.sub || '').split(' · ')[0]);
+      if (!pick) return;
+      it.cover = pick.art;
+      if (S.now === it) { updateBar(); updateNp(); }
+    } catch (e) { /* sin conexión: se queda el fotograma */ }
+  }
+  const artOf = (it) => it.cover || it.thumb || '';
+
   // ---------- Navegación ----------
-  const PAGES = ['home', 'music', 'videos', 'library', 'settings', 'artist'];
+  const PAGES = ['home', 'music', 'videos', 'library', 'settings', 'artist', 'week'];
   function route() {
     const parts = (location.hash.replace(/^#\/?/, '') || 'home').split('/');
     S.page = PAGES.includes(parts[0]) ? parts[0] : 'home';
     S.artist = S.page === 'artist' ? LS.artistFromParts(parts) : '';
     S.sub = S.page === 'library' ? (parts[1] === 'downloads' ? 'downloads' : parts[1] === 'pl' && parts[2] ? 'pl:' + parts[2] : 'saved') : 'saved';
     $$('#nav [data-page]').forEach((b) => b.classList.toggle('on', b.dataset.page === (S.page === 'artist' ? 'music' : S.page)));   // el artista se ve dentro de Música
+    $('#topSettings').classList.toggle('on', S.page === 'settings');
     render();
   }
   const go = (hash) => { if (location.hash === hash) route(); else location.hash = hash; };
@@ -198,6 +231,7 @@
     if (S.page === 'videos') return renderVideos(v, id);
     if (S.page === 'library') return renderLibrary(v, id);
     if (S.page === 'artist') return renderArtist(v, id);
+    if (S.page === 'week') return renderWeek(v);
     return renderSettings(v);
   }
 
@@ -223,6 +257,26 @@
     const pick = LS.pickHitsList(lists);
     if (!pick) return [];
     return ytmTracksOf(pick.id, {});
+  }
+
+  // Géneros siempre al día: la lista oficial de YouTube Music de su categoría («Éxitos actuales del dance», «Hot Reggaeton»…), que YouTube
+  // renueva cada semana. Esas listas son iguales en todos los países: primero van los artistas del ranking de tu país.
+  async function genreSongs(genre, cc) {
+    const src = LS.genreSource(genre);
+    if (!src) return { songs: [], title: '' };
+    const hour = new Date().toISOString().slice(0, 13);
+    const cats = await ytmPost(LS.MUSIC_BROWSE_URL, LS.musicBrowseBody(LS.MOODS_BROWSE_ID), 'moods|' + hour.slice(0, 10), LS.parseYtmMoodCategories);
+    const cat = LS.findCategory(cats, src.category);
+    if (!cat) return { songs: [], title: '' };
+    const lists = await ytmPost(LS.MUSIC_BROWSE_URL, LS.musicCategoryBody(cat.params), 'categoria|' + cat.params + '|' + hour, LS.parseYtmChartLists);
+    const pick = LS.pickGenrePlaylist(lists, src.prefer);
+    if (!pick) return { songs: [], title: '' };
+    let songs = await ytmTracksOf(pick.id, {});
+    try {
+      const ranking = await ytmPost(LS.MUSIC_BROWSE_URL, LS.musicBrowseBody(LS.CHARTS_BROWSE_ID, cc), 'ranking|' + cc + '|' + hour, LS.parseYtmChartArtists);
+      songs = LS.boostByArtists(songs, ranking.map((a) => a.name));
+    } catch (e) { /* sin ranking del país: se queda el orden de la lista */ }
+    return { songs, title: pick.title };
   }
 
   // «Artistas de la semana»: el ranking real de YouTube Music («Artistas principales»), que se actualiza solo; si no está disponible, la lista fija
@@ -272,17 +326,93 @@
     v.innerHTML = `<h1>${greet}</h1>${chips([['all', 'Todo'], ['track', 'Música'], ['video', 'Vídeos']], sc, 'scope')}
       ${q ? `<p class="hint">${sc === 'track' ? 'Canciones' : sc === 'video' ? 'Vídeos' : 'Resultados'} para «${esc(q)}».</p>` : ''}
       <section id="hero" class="hero" hidden></section>
+      <section id="mixRow" hidden><h2>Hecho para ti: tus radios</h2><div class="shelf mixes" id="mixGrid"></div></section>
+      <section id="recentRow" hidden><h2>Seguir escuchando</h2><div id="recentGrid"></div></section>
+      <div id="weekCta"></div>
       ${q ? '' : topArtistsHtml()}
       <section><h2 id="hitsTitle">${q ? 'Resultados en YouTube' : sc === 'track' ? 'Canciones del momento' : sc === 'video' ? 'Videoclips del momento' : 'Éxitos del momento'}</h2>
       <div id="hits">${skeleton()}</div></section>
-      <section id="recentRow" hidden><h2>Seguir escuchando</h2><div id="recentGrid"></div></section>
       <section id="savedRow" hidden><h2>De tu biblioteca</h2><div id="savedGrid"></div></section>`;
     if (!q) { renderHero(); setTimeout(() => loadReleases(id), 1500); setTimeout(() => loadArtistCovers(id), 800); loadTopArtists(id); }
-    const recent = recentList().map(savedItem);
+    const hist = historyList();
+    const recent = (hist.length ? LS.recentDistinct(hist, 14) : recentList()).map(savedItem);
+    if (!q && !LS.mixesFrom(hist, Date.now()).length) {   // aún sin historial: se explica qué saldrá aquí
+      $('#mixRow').hidden = false;
+      $('#mixGrid').outerHTML = '<p class="hint" id="mixGrid">Aquí aparecerán radios hechas con lo que escuchas: «Mezcla de» tus artistas favoritos y «Porque escuchaste» tus últimas canciones. Escucha unas cuantas canciones (al menos 30 segundos cada una) y vuelve a Inicio.</p>';
+    }
+    if (!q && hist.length) {
+      const w = LS.weekSummary(hist, Date.now());
+      if (w.plays) $('#weekCta').innerHTML = `<button class="weekcta" data-page="week">${LS.icon('music')}<div><b>Tu semana</b><span>≈ ${Math.round(w.minutes)} min · ${w.songs} canciones · ${w.artists} artistas</span></div></button>`;
+      loadMixes(id);
+    }
     if (!q && recent.length) { $('#recentRow').hidden = false; $('#recentGrid').innerHTML = `<div class="shelf">${setList('home-recent', recent) && recent.map((i, n) => card(i, 'home-recent', 'video', n)).join('')}</div>`; }
     const saved = store.library.items().slice(0, 8).map(savedItem);
     if (!q && saved.length) { $('#savedRow').hidden = false; $('#savedGrid').innerHTML = grid(setList('home-saved', saved) && 'home-saved', saved, 'video'); }
     await showResults('#hits', id, 'home');
+  }
+
+  // «Hecho para ti»: cada mezcla es la radio de su canción semilla y, si es de un artista, también sus canciones, alternadas
+  const mixCache = { at: 0, count: -1, data: [] };
+  async function loadMixes(id) {
+    const hist = historyList();
+    if (Date.now() - mixCache.at > 30 * 60 * 1000 || hist.length - mixCache.count >= 8) {
+      mixCache.at = Date.now(); mixCache.count = hist.length;
+      const built = [];
+      for (const mix of LS.mixesFrom(hist, Date.now())) {
+        try {
+          const radio = await radioFor(mix.seed);
+          let own = [];
+          if (mix.kind === 'artist') { try { own = (await musicSearch(mix.artist)).filter((m) => LS.isSong({ title: m.title, duration: m.duration })); } catch (e) { own = []; } }
+          const songs = LS.interleave([own, radio], (m) => m.id, [], 40).filter((m) => m.duration > 0 && m.duration <= 900).slice(0, 30);
+          if (songs.length >= 6) built.push({ mix, songs });
+        } catch (e) { /* esa mezcla no se pudo hacer */ }
+      }
+      mixCache.data = built;
+    }
+    if (id !== S.renderId || !$('#mixGrid') || !mixCache.data.length) return;
+    if ($('#mixGrid').tagName !== 'DIV') $('#mixGrid').outerHTML = '<div class="shelf mixes" id="mixGrid"></div>';
+    $('#mixGrid').innerHTML = mixCache.data.map(({ mix, songs }, i) => {
+      const items = setList('mix' + i, songs.map(musicItem));
+      const arts = [...new Set(items.map((x) => x.thumb).filter(Boolean))].slice(0, 4);
+      const artists = [...new Set(songs.map((m) => String(m.channel || '').split(' · ')[0].trim()).filter(Boolean))].slice(0, 3);
+      return `<div class="mixcard"><button class="mixbtn" style="--mh:${hue(mix.artist + mix.kind)}" data-act="play" data-key="${esc(items[0].key)}" data-list="mix${i}" aria-label="${esc(mix.title)}">
+        <div class="mosaic${arts.length < 4 ? ' one' : ''}">${(arts.length < 4 ? arts.slice(0, 1) : arts).map((u) => `<img loading="lazy" alt="" src="${esc(u)}">`).join('')}
+        <div class="lab"><small>${mix.kind === 'artist' ? 'MEZCLA' : 'PORQUE ESCUCHASTE'}</small><b>${esc(mix.kind === 'artist' ? mix.artist : mix.seed.title)}</b></div><span class="strip"></span></div></button>
+        <div class="t">${esc(mix.title)}</div><div class="s">${esc(artists.length ? artists.join(', ') + ' y más' : songs.length + ' canciones')}</div></div>`;
+    }).join('');
+    $('#mixRow').hidden = false;
+  }
+
+  // ---------- Tu semana ----------
+  const DAYN = ['dom', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb'];
+  function renderWeek(v) {
+    const w = LS.weekSummary(historyList(), Date.now());
+    if (!w.plays) {
+      v.innerHTML = `<h1>Tu semana</h1><p class="hint">Aún no hay escuchas esta semana. Pon música (cuenta a partir de 30 segundos por canción) y vuelve por aquí.</p>`;
+      return;
+    }
+    const pct = w.change === null ? '' : (w.change >= 0 ? '+' : '') + Math.round(w.change * 100) + ' % que la semana anterior';
+    const star = w.topArtists[0];
+    const topItems = setList('week', w.topSongs.map((s) => savedItem(s.song)));
+    const max = Math.max(1, ...w.byDay);
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    v.innerHTML = `<h1>Tu semana</h1><p class="hint">Lo que has escuchado en los últimos 7 días. Se calcula solo en este dispositivo.</p>
+      <div class="wtiles"><div class="wtile"><b>≈ ${Math.round(w.minutes)}</b><span>minutos escuchados</span>${pct ? `<small>${esc(pct)}</small>` : ''}</div>
+        <div class="wtile"><b>${w.songs}</b><span>${w.songs === 1 ? 'canción distinta' : 'canciones distintas'}</span></div>
+        <div class="wtile"><b>${w.artists}</b><span>${w.artists === 1 ? 'artista' : 'artistas'}</span></div></div>
+      ${star ? `<div class="wstar" style="--sh:${hue(star.artist)}">${star.top.thumb ? `<img alt="" src="${esc(star.top.thumb)}">` : ''}<div class="in"><small>TU ARTISTA DE LA SEMANA</small><b>${esc(star.artist)}</b>
+        <span>${star.plays} ${star.plays === 1 ? 'escucha' : 'escuchas'} · lo que más sonó: «${esc(star.top.title)}»</span>
+        <div class="row-actions"><button class="primary" data-act="artist" data-name="${esc(star.artist)}">Ver artista</button></div></div></div>` : ''}
+      <div class="wcols"><section><h2>Artistas más escuchados</h2>${w.topArtists.map((a, i) => `<button class="wrow" data-act="artist" data-name="${esc(a.artist)}">
+          <span class="n">${i + 1}</span><span class="p round" style="--ph:${hue(a.artist)}">${a.top.thumb ? `<img alt="" loading="lazy" src="${esc(a.top.thumb)}">` : ''}</span>
+          <span class="x"><b>${esc(a.artist)}</b><span>${a.plays} ${a.plays === 1 ? 'escucha' : 'escuchas'}</span></span></button>`).join('')}</section>
+        <section><h2>Canciones más escuchadas</h2>${w.topSongs.map((s, i) => `<button class="wrow" data-act="play" data-key="${esc(topItems[i].key)}" data-list="week">
+          <span class="n">${i + 1}</span><span class="p" style="--ph:${hue(s.song.id)}">${s.song.thumb ? `<img alt="" loading="lazy" src="${esc(s.song.thumb)}">` : ''}</span>
+          <span class="x"><b>${esc(s.song.title)}</b><span>${esc(s.artist)} · ${s.plays} ${s.plays === 1 ? 'vez' : 'veces'}</span></span></button>`).join('')}</section></div>
+      <section><h2>Día a día</h2><div class="wdays">${w.byDay.map((m, i) => {
+        const isToday = w.days[i] === today.getTime(), h = m <= 0 ? 3 : Math.max(6, 130 * m / max);
+        return `<div class="wday${isToday ? ' today' : ''}${m <= 0 ? ' zero' : ''}" title="${isToday ? 'Hoy' : DAYN[new Date(w.days[i]).getDay()]}: ${m <= 0 ? 'nada' : '≈ ' + Math.round(m) + ' min'}">${m > 0 && (m >= max || isToday) ? Math.round(m) + ' min' : ''}<i style="height:${h}px"></i>${isToday ? 'hoy' : DAYN[new Date(w.days[i]).getDay()]}</div>`;
+      }).join('')}</div><p class="note">Minutos aproximados: cada escucha cuenta la duración de la canción.</p></section>`;
   }
 
   async function showResults(target, id, listId) {
@@ -306,14 +436,28 @@
           return;
         }
       }
+      if (!q && S.page === 'music' && S.genre !== LS.GENRES[0]) {
+        let g = { songs: [], title: '' };
+        try { g = await genreSongs(S.genre, cc); } catch (e) { /* si falla, la búsqueda de siempre */ }
+        const songs = g.songs.filter((m) => m.duration === 0 || LS.isSong({ title: m.title, duration: m.duration }));
+        if (songs.length >= 10) {
+          if (id !== S.renderId) return;
+          const its = setList(listId, songs.slice(0, 80).map(sc === 'track' ? musicItem : (m) => ytItem({ id: m.id, title: m.title, channel: m.channel, duration: m.duration, published: '' })));
+          box.innerHTML = grid(listId, its, sc === 'track' ? 'track' : 'video');
+          const h = $('#hitsTitle'); if (h && g.title) h.textContent = S.genre + ' · ' + g.title;
+          return;
+        }
+      }
+      // El país solo se añade a la búsqueda de «Éxitos»: con los géneros desviaba los resultados (Electrónica salía rock en español)
+      const near = S.page === 'music' && S.genre !== LS.GENRES[0] ? '' : ' ' + cName;
       let recent = [];
       if (!q) {
-        try { recent = (await ytSearch(LS.recentQuery(S.page === 'music' ? S.genre : LS.GENRES[0], new Date().getFullYear()) + ' ' + cName, { thisWeek: true })).filter((v) => LS.isSong(v) && !LS.isLive(v) && v.duration <= 480).slice(0, 8); } catch (e) { recent = []; }
+        try { recent = (await ytSearch(LS.recentQuery(S.page === 'music' ? S.genre : LS.GENRES[0], new Date().getFullYear()) + near, { thisWeek: true })).filter((v) => LS.isSong(v) && !LS.isLive(v) && v.duration <= 480).slice(0, 8); } catch (e) { recent = []; }
       }
       const withRecent = (arr, mk) => { const ids = new Set(recent.map((v) => v.id)); return recent.map(mk).concat(arr.filter((x) => !ids.has(x.id))); };
       if (sc === 'track') {
         try {
-          const songs = await musicSearch(q || (LS.genreQuery(S.page === 'music' ? S.genre : LS.GENRES[0], new Date().getFullYear()) + ' ' + cName));
+          const songs = await musicSearch(q || (LS.genreQuery(S.page === 'music' ? S.genre : LS.GENRES[0], new Date().getFullYear()) + near));
           items = songs.filter((m) => LS.isSong({ title: m.title, duration: m.duration })).map(musicItem);
           if (!items.length) items = null;
         } catch (e) { items = null; }   // si YouTube Music falla, se usa la búsqueda normal
@@ -416,7 +560,7 @@
     const q = S.query;
     v.innerHTML = `<h1>Música</h1><p class="hint">${q ? `Canciones para «${esc(q)}». Solo música, sin vídeo.` : 'Elige un género o busca un artista. Aquí solo hay música y suena sin vídeo.'}</p>
       ${q ? '' : chips(LS.GENRES.map((g) => [g, g]), S.genre, 'genre')}
-      <section><h2>${q ? 'Música en YouTube' : esc(S.genre)}</h2><div id="hits">${skeleton()}</div></section>`;
+      <section><h2 id="hitsTitle">${q ? 'Música en YouTube' : esc(S.genre)}</h2><div id="hits">${skeleton()}</div></section>`;
     await showResults('#hits', id, 'music');
   }
 
@@ -448,10 +592,14 @@
     const name = S.artist;
     if (!name) { go('#/music'); return; }
     v.innerHTML = `<p><button class="chip" data-act="back">← Volver</button></p>
-      <div class="ahead"><div class="aav" id="aAv"></div><div style="min-width:0"><h1>${esc(name)}</h1><p class="hint" id="aFacts">Buscando ficha del artista…</p></div></div>
-      <div class="row-actions"><button class="primary" data-act="playartist" id="aPlay" hidden>${LS.icon('play')} Reproducir</button></div>
+      <div class="ahero" id="aHero" style="--ah:${hue(name)}"><div class="in"><small>ARTISTA</small><h1>${esc(name)}</h1><span id="aListeners"></span>
+        <div class="row-actions"><button class="primary" data-act="playartist" id="aPlay" hidden>${LS.icon('play')} Reproducir</button><button class="chip" data-act="artistradio" id="aRadio" hidden>Radio</button></div></div></div>
+      <p class="abio" id="aBio" hidden data-act="bio"></p>
+      <p class="hint" id="aFacts">Buscando ficha del artista…</p>
       <section><h2>Canciones</h2><div id="aSongs">${skeleton(6)}</div></section>
-      <section id="aAlb" hidden><h2>Discografía</h2><div id="aAlbums"></div></section>`;
+      <section id="aAlb" hidden><h2>Discografía</h2><div id="aAlbums"></div></section>
+      <section id="aRel" hidden><h2>Artistas parecidos</h2><div class="shelf artists" id="aRelRow"></div></section>`;
+    const heroImg = (url, side) => { const h = $('#aHero'); if (!h || !url || $('#aHero > img')) return; h.insertAdjacentHTML('afterbegin', `<img alt="" class="${side ? 'side' : ''}" src="${esc(url)}" onerror="this.remove()">`); };
     let ytmReleases = [];
     const songsP = (async () => {
       try {
@@ -459,6 +607,15 @@
         const found = (await ytmArtistsFor(name)).find((a) => LS.normName(a.name) === want0) || (await ytmArtistsFor(name))[0];
         if (found && LS.normName(found.name).includes(want0)) {
           const page = await ytmArtistPage(found.id, found.name);
+          if (id === S.renderId) {
+            heroImg(page.banner || found.art, !page.banner);
+            if (page.listeners) $('#aListeners').textContent = page.listeners;
+            if (page.description) { $('#aBio').textContent = page.description; $('#aBio').hidden = false; }
+            if (page.related && page.related.length) {
+              $('#aRelRow').innerHTML = page.related.slice(0, 14).map((a) => `<button class="aitem" data-act="artist" data-name="${esc(a.name)}"><span class="aav" style="background:${a.art ? `url('${esc(a.art)}') center / cover, ` : ''}linear-gradient(135deg,hsl(${hue(a.name)} 70% 50%),#2a2a38)">${a.art ? '' : esc(a.name.trim()[0] || '?')}</span><span class="an">${esc(a.name)}</span></button>`).join('');
+              $('#aRel').hidden = false;
+            }
+          }
           let songs = page.songs;
           if (page.allSongsId) { try { const all = await ytmTracksOf(page.allSongsId, { artist: found.name }); if (all.length > songs.length) songs = all; } catch (e) { /* se quedan las más escuchadas */ } }
           songs = songs.filter((m) => LS.isSong({ title: m.title, duration: m.duration }));
@@ -468,7 +625,7 @@
             if (id !== S.renderId) return;
             setList('artist', items);
             $('#aSongs').innerHTML = grid('artist', items, 'track');
-            $('#aPlay').hidden = false; if (items[0].thumb) $('#aAv').style.backgroundImage = `url("${items[0].thumb}")`;
+            $('#aPlay').hidden = false; $('#aRadio').hidden = false;
             return;
           }
         }
@@ -481,7 +638,7 @@
         if (id !== S.renderId) return;
         setList('artist', items);
         $('#aSongs').innerHTML = items.length ? grid('artist', items, 'track') : '<p class="hint">No se encontraron canciones.</p>';
-        if (items.length) { $('#aPlay').hidden = false; if (items[0].thumb) $('#aAv').style.backgroundImage = `url("${items[0].thumb}")`; }
+        if (items.length) { $('#aPlay').hidden = false; $('#aRadio').hidden = false; heroImg(items[0].thumb, true); }
       } catch (e) { if (id === S.renderId) $('#aSongs').innerHTML = `<p class="hint err">No se pudo buscar: ${esc(e.message)}</p>`; }
     })();
     const infoP = (async () => {
@@ -587,6 +744,7 @@
     const tabs = [['saved', 'Guardado'], ['downloads', 'Descargas'], ...pls.map((p) => ['pl:' + p.id, p.name])];
     v.innerHTML = `<h1>Mi biblioteca</h1>
       <div class="chips">${tabs.map(([k, l]) => `<button class="chip ${k === S.sub ? 'on' : ''}" data-sub="${esc(k)}">${esc(l)}</button>`).join('')}
+      <button class="chip add" data-page="week">Tu semana</button>
       <button class="chip add" data-act="newlist">+ Nueva lista</button>
       <button class="chip add" data-act="import">${LS.icon('import')} Importar</button>
       <button class="chip add" data-act="export">${LS.icon('download')} Exportar</button></div><div id="libBody"></div>`;
@@ -650,6 +808,8 @@
         <div class="chips">${LS.LOOKS.map(([id, name, , accent]) => `<button class="chip ${id === s.look ? 'on' : ''}" data-look="${id}"><i class="dot" style="background:${accent}"></i>${esc(name)}</button>`).join('')}</div>
         <p class="note">Elige el estilo: cambia colores, brillo y animaciones al momento. «Clásico» es el aspecto de siempre; los demás se apagan solos si tu móvil tiene «reducir movimiento».</p><label class="switch"><input type="checkbox" id="reactiveOn" ${s.reactive ? 'checked' : ''}> Efectos que reaccionan a la música</label>
         <p class="note">Pulso suave en la pantalla «Reproduciendo». Con el ecualizador activo sigue el audio real. Se apaga solo con «reducir movimiento», ahorro de datos o batería baja.</p></section>
+      <section class="panel"><h2>Reproducción</h2><label class="switch"><input type="checkbox" id="radioOn" ${s.radio ? 'checked' : ''}> Radio automática</label>
+        <p class="note">Cuando se acaba la lista, la música no se para: sigue con canciones parecidas a la última (la radio de YouTube Music). Con «Repetir la lista» no se añade nada.</p></section>
       ${LS.eqUnavailable() ? '<section class="panel"><h2>Ecualizador</h2><p class="note"><b>En mantenimiento.</b> Por motivos técnicos se ha retirado por ahora. Sigue disponible en la app de Windows.</p></section>' : `<section class="panel"><h2>Ecualizador</h2>
         <label class="switch"><input type="checkbox" id="eqOn" ${s.eqEnabled ? 'checked' : ''}> Activar ecualizador</label>
         <label class="field">Ajuste <select id="eqPreset">${[...Object.keys(LS.EQ_PRESETS), LS.EQ_CUSTOM].map((n) => `<option ${n === s.eqPreset ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select></label>
@@ -669,29 +829,11 @@
         <div class="row-actions"><button class="chip" data-act="bgcopy" id="bgCopy" style="display:none">Copiar informe</button></div>
         <p class="note">Muchos móviles (Oppo, Xiaomi, Vivo, Huawei, a veces Samsung) cierran las apps en segundo plano aunque suene música. Estos ajustes se lo impiden a Nsound; sin ellos el móvil puede parar la música al apagar la pantalla. Más información: <a href="https://dontkillmyapp.com" target="_blank" rel="noopener">dontkillmyapp.com</a>.</p></section>` : ''}
       <!-- Privacidad (bloqueo de anuncios): oculto en la interfaz; el bloqueo sigue activo por defecto -->
-      <section class="panel"><h2>Acerca de</h2><p class="note">Nsound es gratuita, sin ánimo de lucro y sin suscripciones; su código es visible para uso no comercial. YouTube se reproduce con su reproductor oficial y no se descarga. Letras: LRCLIB. Plataforma: ${esc(Native.platform)}.</p></section>`;
+      <section class="panel"><h2>Acerca de</h2><p class="note">Nsound es gratuita, sin ánimo de lucro y sin suscripciones; su código es visible para uso no comercial. YouTube se reproduce con su reproductor oficial y no se descarga. Letras: LRCLIB. Plataforma: ${esc(Native.platform)}.${LS.parseVersion(appVersion) ? ` Versión ${esc(appVersion.split('+')[0])}.` : ''}</p></section>`;
     refreshEqStatus();
-    if (Native.platform === 'android') refreshBgInfo();
+    if (Native.platform === 'android') bgPanel.refresh();
   }
 
-  // Android: datos del móvil, estado de la restricción de batería y pasos según el fabricante
-  async function refreshBgInfo() {
-    const info = $('#bgInfo'), steps = $('#bgSteps');
-    if (!info) return;
-    try {
-      const b = JSON.parse(await Native.call('batteryInfo', {}));
-      const guide = LS.bgSteps(b.manufacturer, b.brand);
-      if (!$('#bgInfo')) return;
-      info.innerHTML = `<b>${esc(b.manufacturer)} ${esc(b.model)}</b> · Android ${esc(b.release)} · Restricción de batería: <b>${b.ignoring ? 'quitada ✓' : 'activa (puede cerrar la música en segundo plano)'}</b>`;
-      steps.innerHTML = `<b>Pasos para ${esc(guide.name)}</b> (orientativos; cambian según el modelo):<br>${guide.steps.map((t, i) => `${i + 1}. ${esc(t)}`).join('<br>')}`;
-    } catch (e) { info.textContent = 'No se pudo leer la información del móvil.'; }
-  }
-  async function bgAction(name, okMsg) {
-    try {
-      const r = JSON.parse(await Native.call(name, {}));
-      toast(r === 'ninguna' ? 'No se pudo abrir esa pantalla en tu móvil: ve a Ajustes → Aplicaciones → Nsound.' : okMsg(r), 6000);
-    } catch (e) { toast('No se pudo abrir: ' + e.message, 5000); }
-  }
   const fmtGain = (n) => (n > 0 ? '+' + n : String(n));
 
   async function refreshEqStatus() {
@@ -722,7 +864,7 @@
     const keys = lists.get(listId) || [key];
     S.queue = keys.map((k) => reg.get(k)).filter(Boolean);
     S.index = Math.max(0, S.queue.findIndex((i) => i.key === key));
-    S.audioOnly = scopeNow() === 'track' && it.src === 'yt';
+    S.audioOnly = (scopeNow() === 'track' || it.kind === 'track') && it.src === 'yt';   // canciones (de Música, importadas o de una radio): solo sonido, sin vídeo
     S.skips = 0; S.seen = []; S.hist = [];                  // lista nueva: el aleatorio empieza de cero
     start();
   }
@@ -732,18 +874,52 @@
     if (!it) return;
     S.userPause = false; S.resumeTries = 0;
     keepAlive.on();
-    S.now = it; S.time = 0; S.duration = it.duration || 0; S.lyrics = null; S.lyricsFor = ''; S.lyricIndex = -1;
+    S.now = it; S.time = 0; S.duration = it.duration || 0; S.lyrics = null; S.lyricsFor = ''; S.lyricIndex = -1; S.counted = null;
     Player.load(resolveLocal(it), { audioOnly: S.audioOnly });
     if (S.audioOnly) showVideo(false); else setVideoMode(videoMode() === 'pip' ? 'pip' : 'full');
     updateBar();
-    if (!$('#lyrics').hidden) loadLyrics();
+    if (!$('#lyrics').hidden || $('#np').classList.contains('karaoke')) loadLyrics();
+    findCover(it);
+    if (radioWanted() && !S.shuffle && S.index === S.queue.length - 1) { S.radioSeed = it.key; S.radioP = radioFor(it).catch(() => []); }   // última de la cola: la radio se pide ya
+  }
+
+  // Radio a mano (como «Iniciar radio» de Spotify): la canción y, detrás, otras parecidas. Si es la que suena, no se corta.
+  async function startRadio(it) {
+    if (!it) return;
+    const g = it.artist ? { title: it.title } : LS.guessTrack(it.title, it.sub || '');
+    toast('Preparando la radio de «' + g.title + '»…', 2500);
+    try {
+      const items = LS.pickRadio(await radioFor(it), [it.id], 40).map(musicItem);
+      if (!items.length) { toast('YouTube Music no tiene radio para esta canción.', 3500); return; }
+      if (S.now && S.now.key === it.key) { S.queue = [S.now, ...items]; S.index = 0; S.seen = [S.now.key]; S.hist = []; }
+      else { setList('radio', [it, ...items]); play(it.key, 'radio'); }
+      toast('Radio de «' + g.title + '»: ' + items.length + ' canciones a continuación.', 3500);
+    } catch (e) { toast('No se pudo crear la radio: ' + e.message, 4000); }
+  }
+
+  // Radio automática: al acabarse la cola, se añaden canciones parecidas a la última y sigue sonando
+  const radioWanted = () => store.settings.get().radio && S.repeat !== 'all';
+  async function continueWithRadio() {
+    const seed = S.now;
+    if (!seed || !radioWanted() || S.radioBusy) return false;
+    S.radioBusy = true;
+    try {
+      const radio = S.radioSeed === seed.key && S.radioP ? await S.radioP : await radioFor(seed);
+      if (S.now !== seed) return false;
+      const add = LS.pickRadio(radio, S.queue.map((x) => x.id).concat(S.hist.map((k) => k.slice(k.indexOf(':') + 1))));
+      if (!add.length) return false;
+      S.queue = S.queue.concat(add.map(musicItem));
+      const g = seed.artist ? { artist: LS.cleanArtistName(seed.artist), title: seed.title } : LS.guessTrack(seed.title, seed.sub || '');
+      toast('Radio: canciones parecidas a «' + g.title + '»' + (g.artist ? ' de ' + g.artist : ''), 3500);
+      return true;
+    } catch (e) { return false; } finally { S.radioBusy = false; }
   }
 
   // Aleatorio y repetir (como en Spotify): repetir una vez = la lista, dos = la canción, tres = apagado
   S.repeat = store.settings.get().repeat; S.shuffle = store.settings.get().shuffle; S.seen = []; S.hist = [];
   function next() {
     const r = LS.pickNextIndex(S.queue, S.index, { repeat: S.repeat, shuffle: S.shuffle, seen: S.seen });
-    if (r.index < 0) { Player.pause(); return; }
+    if (r.index < 0) { continueWithRadio().then((ok) => { if (ok) next(); else Player.pause(); }); return; }
     if (S.queue[S.index]) S.hist = S.hist.concat(S.queue[S.index].key).slice(-50);
     S.seen = r.seen; S.index = r.index; start();
   }
@@ -959,13 +1135,10 @@
     if (st.playing && !S.userPause) S.wantPlay = true;
     if (st.playing && Native.platform === 'android' && !S.bgHinted) {
       S.bgHinted = true;
-      Native.call('batteryInfo', {}).then((t) => {
-        const b = JSON.parse(t);
-        let seen = false; try { seen = localStorage.getItem('ls.bgHint') === '1'; } catch (e) { /* sin almacenamiento */ }
-        if (!b.ignoring && !seen) { try { localStorage.setItem('ls.bgHint', '1'); } catch (e) { /* ya */ } toast('Para que suene con la pantalla apagada, revisa Ajustes → Música en segundo plano.', 9000); }
-      }).catch(() => {});
+      bgPanel.hint();
     }
     S.playing = st.playing; S.time = st.time; if (st.duration > 0) S.duration = st.duration;
+    if (S.now && S.counted !== S.now.key && S.time >= LS.countsAfter(S.duration)) { S.counted = S.now.key; historyAdd(S.now); }
     mediaSessionTick(st);
     autoResume(st);
     reactiveKick();
@@ -993,7 +1166,7 @@
     const it = S.now;
     if (!it) return;
     document.body.classList.add('has-track');
-    artHue(it.thumb, it.id, (c) => { const st = document.body.style; st.setProperty('--h', c.h); st.setProperty('--sat', c.s + '%'); st.setProperty('--lum', c.l + '%'); });
+    artHue(artOf(it), it.id, (c) => { const st = document.body.style; st.setProperty('--h', c.h); st.setProperty('--sat', c.s + '%'); st.setProperty('--lum', c.l + '%'); });
     recentPush(it);
     mediaSessionSet(it);
     $$('.card.cur').forEach((c) => c.classList.remove('cur'));
@@ -1001,8 +1174,8 @@
     updateNp();
     $('#nowTitle').textContent = it.title;
     $('#nowSub').textContent = it.sub + (it.src === 'yt' ? ' · YouTube' : '');
-    $('#nowImg').src = it.thumb || '';
-    $('#nowImg').style.visibility = it.thumb ? 'visible' : 'hidden';
+    if ($('#nowImg').getAttribute('src') !== artOf(it)) $('#nowImg').src = artOf(it);
+    $('#nowImg').style.visibility = artOf(it) ? 'visible' : 'hidden';
     LS.setIcon($('#heart'), store.library.has(it) ? 'heartOn' : 'heart');
     $('#heart').classList.toggle('on', store.library.has(it));
   }
@@ -1023,7 +1196,7 @@
     const it = S.now;
     if (!it) return;
     const img = $('#npImg');
-    const big = it.src === 'yt' ? `https://i.ytimg.com/vi/${it.id}/hq720.jpg` : (it.thumb || '');   // hq720 no trae bandas negras
+    const big = it.cover || (LS.isSquareCover(it.thumb) ? it.thumb : it.src === 'yt' ? `https://i.ytimg.com/vi/${it.id}/hq720.jpg` : (it.thumb || ''));   // portada cuadrada si la hay; hq720 no trae bandas negras
     img.onerror = () => { img.onerror = null; img.src = (it.thumb || '').replace('mqdefault', 'hqdefault'); };
     if (img.getAttribute('src') !== big) img.src = big;
     $('#npTitle').textContent = it.title;
@@ -1069,7 +1242,13 @@
   $('#npHeart').onclick = toggleHeart;
   $('#npAdd').onclick = (e) => { e.stopPropagation(); openAddMenu(); };
   $('#npQueue').onclick = () => openQueue();
-  $('#npLyrics').onclick = () => { closeNp(); $('#lyricsBtn').click(); };
+  $('#npRadio').onclick = () => startRadio(S.now);
+  $('#npLyrics').onclick = () => {             // letra grande dentro de «Reproduciendo» (la línea que suena, encendida)
+    const np = $('#np'), on = !np.classList.contains('karaoke');
+    np.classList.toggle('karaoke', on); $('#npLyrics').classList.toggle('on', on);
+    if (on) { S.lyricIndex = -1; if (S.lyricsFor === (S.now && S.now.key)) drawNpLyrics(); else loadLyrics(); }
+  };
+  $('#npLyricsLines').onclick = (e) => { const p = e.target.closest('p'); if (p && S.lyrics && S.lyrics.synced) Player.seek(S.lyrics.lines[+p.dataset.i].time); };
   $('#npVideo').onclick = () => { closeNp(); if (S.now) showVideo(true); };
   const npp = $('#npProgress');
   npp.addEventListener('input', () => { npp.dataset.drag = '1'; $('#npElapsed').textContent = LS.formatTime(+npp.value); npp.style.setProperty('--p', (100 * npp.value / npp.max) + '%'); });
@@ -1085,7 +1264,7 @@
     if (!it || S.lyricsFor === it.key) return;
     S.lyricsFor = it.key; S.lyrics = null; S.lyricIndex = -1;
     const info = $('#lyricsInfo'), list = $('#lyricsList');
-    list.innerHTML = ''; info.textContent = 'Buscando la letra…';
+    list.innerHTML = ''; info.textContent = 'Buscando la letra…'; drawNpLyrics('Buscando la letra…');
     const g = it.src !== 'yt' ? { artist: it.sub, title: it.title }
       : it.artist ? { artist: it.artist, title: LS.cleanTitle(it.title).title } : LS.guessTrack(it.title, it.sub);
     try {
@@ -1096,17 +1275,36 @@
       S.lyrics = found;
       info.textContent = !found ? `No hay letra para «${g.title}».` : found.synced ? `${g.artist} — ${g.title}` : `${g.artist} — ${g.title} (sin sincronizar)`;
       list.innerHTML = found ? found.lines.map((l, i) => `<li data-i="${i}">${esc(l.text) || '&nbsp;'}</li>`).join('') : '';
-    } catch (e) { info.textContent = 'No se pudo cargar la letra: ' + e.message; }
+      drawNpLyrics(found ? '' : info.textContent);
+    } catch (e) { info.textContent = 'No se pudo cargar la letra: ' + e.message; drawNpLyrics('No se pudo cargar la letra.'); }
+  }
+
+  function drawNpLyrics(msg) {
+    const box = $('#npLyricsLines'), info = $('#npLyricsInfo');
+    info.textContent = msg || '';
+    if (msg || !S.lyrics) { box.innerHTML = ''; return; }
+    box.classList.toggle('static', !S.lyrics.synced);
+    box.innerHTML = S.lyrics.lines.map((l, i) => `<p data-i="${i}">${esc(l.text) || '♪'}</p>`).join('');
+    $('#npLyricsBox').scrollTop = 0;
+    S.lyricIndex = -1; followLyrics();
   }
 
   function followLyrics() {
-    if (!S.lyrics || !S.lyrics.synced || $('#lyrics').hidden) return;
+    const karaoke = $('#np').classList.contains('karaoke') && $('#np').classList.contains('open');
+    if (!S.lyrics || !S.lyrics.synced || ($('#lyrics').hidden && !karaoke)) return;
     const i = LS.lyricIndexAt(S.lyrics.lines, S.time + 0.3);
     if (i === S.lyricIndex) return;
     S.lyricIndex = i;
-    $$('#lyricsList li.on').forEach((li) => li.classList.remove('on'));
-    const li = $(`#lyricsList li[data-i="${i}"]`);
-    if (li) { li.classList.add('on'); li.scrollIntoView({ block: 'center', behavior: 'smooth' }); }
+    if (!$('#lyrics').hidden) {
+      $$('#lyricsList li.on').forEach((li) => li.classList.remove('on'));
+      const li = $(`#lyricsList li[data-i="${i}"]`);
+      if (li) { li.classList.add('on'); li.scrollIntoView({ block: 'center', behavior: 'smooth' }); }
+    }
+    if (karaoke) {
+      $$('#npLyricsLines p').forEach((p, n) => { p.classList.toggle('on', n === i); p.classList.toggle('past', n < i); });
+      const p = $(`#npLyricsLines p[data-i="${i}"]`), box = $('#npLyricsBox');
+      if (p) box.scrollTop = p.offsetTop - box.clientHeight * 0.38;
+    }
   }
 
 
@@ -1302,7 +1500,7 @@
     const o = sheet('qm');
     o.innerHTML = `<div class="imp-box" role="dialog" aria-modal="true"><h2>${esc(it.title)}</h2><p class="imp-sub">${esc(it.sub)}</p>
       <div class="imp-btns" style="flex-direction:column"><button data-act="qnext" data-key="${esc(key)}">Reproducir a continuación</button>
-      <button data-act="qend" data-key="${esc(key)}">Añadir al final de la cola</button><button data-act="qmclose">Cancelar</button></div></div>`;
+      <button data-act="qend" data-key="${esc(key)}">Añadir al final de la cola</button><button data-act="qradio" data-key="${esc(key)}">Iniciar radio de esta canción</button><button data-act="qmclose">Cancelar</button></div></div>`;
     o.hidden = false;
     o.onclick = (e) => { if (e.target === o) o.hidden = true; };
   }
@@ -1371,20 +1569,29 @@
     if (d.sub) { go(d.sub === 'saved' ? '#/library' : d.sub === 'downloads' ? '#/library/downloads' : '#/library/pl/' + d.sub.slice(3)); return; }
     switch (d.act) {
       case 'play': play(d.key, d.list); break;
-      case 'bgbattery': bgAction('batteryRequest', (r) => r === 'peticion' ? 'Pulsa «Permitir» en el aviso del sistema.' : 'Busca Nsound en la lista y elige «Sin restricciones».'); break;
-      case 'bgauto': bgAction('autostartSettings', (r) => r === 'fabricante' ? 'Activa Nsound en esa pantalla.' : 'No hay pantalla de inicio automático en tu móvil: se abrieron los ajustes de la app (Batería → Sin restricciones).'); break;
-      case 'bgreport': Native.call('bgReport', {}).then((t) => { const el = $('#bgReport'); if (!el) return; el.value = JSON.parse(t); el.style.display = 'block'; $('#bgCopy').style.display = ''; el.scrollTop = el.scrollHeight; }).catch((e) => toast('No se pudo generar el informe: ' + e.message, 5000)); break;
+      case 'bgbattery': bgPanel.battery(); break;
+      case 'bgauto': bgPanel.autostart(); break;
+      case 'bgreport': bgPanel.report(); break;
       case 'bgclear': Native.call('bgClear', {}).then(() => { const el = $('#bgReport'); if (el) { el.value = ''; el.style.display = 'none'; } toast('Informe borrado.', 2500); }).catch(() => {}); break;
       case 'bgcopy': { const el = $('#bgReport'); if (!el) break; el.focus(); el.select(); let ok = false; try { ok = document.execCommand('copy'); } catch (e) { /* sin permiso */ } toast(ok ? 'Informe copiado.' : 'Selecciona el texto y cópialo a mano.', 3500); break; }
-      case 'bgapp': bgAction('appSettings', () => 'En Batería, elige «Sin restricciones».'); break;
+      case 'bgapp': bgPanel.appSettings(); break;
       case 'artist': go(LS.artistHash(d.name)); break;
       case 'back': if (history.length > 1) history.back(); else go('#/music'); break;
       case 'playartist': { const k = lists.get('artist') || []; if (k.length) play(k[0], 'artist'); break; }
+      case 'artistradio': {
+        const k = lists.get('artist') || [], seed = reg.get(k[0]);
+        if (!seed) break;
+        toast('Radio de ' + S.artist, 2500);
+        radioFor(seed).then((radio) => { const items = [seed, ...LS.pickRadio(radio, [seed.id], 40).map(musicItem)]; setList('aradio', items); play(seed.key, 'aradio'); }).catch(() => play(seed.key, 'artist'));
+        break;
+      }
+      case 'bio': t.classList.toggle('open'); break;
       case 'album': playAlbum(d.artist, d.title, d.id, d.art); break;
       case 'playall': { const k = lists.get('lib') || []; if (k.length) play(k[0], 'lib'); break; }
       case 'newlist': newList(false); break;
       case 'qnext': queueIt(d.key, 'next'); $('#qm').hidden = true; break;
       case 'qend': queueIt(d.key, 'end'); $('#qm').hidden = true; break;
+      case 'qradio': $('#qm').hidden = true; startRadio(reg.get(d.key)); break;
       case 'qmclose': $('#qm').hidden = true; break;
       case 'qpclose': $('#qp').hidden = true; break;
       case 'qjump': S.index = Number(d.i); S.skips = 0; start(); renderQueue(); break;
@@ -1446,6 +1653,7 @@
     if (t.id === 'eqOn') { store.settings.set({ eqEnabled: t.checked }); applyEq(); refreshEqStatus(); }
     if (t.id === 'eqPreset' && LS.EQ_PRESETS[t.value]) { store.settings.set({ eqPreset: t.value, eqBands: LS.EQ_PRESETS[t.value] }); applyEq(); render(); }
     if (t.id === 'reactiveOn') { store.settings.set({ reactive: t.checked }); if (t.checked) reactiveKick(); }
+    if (t.id === 'radioOn') { store.settings.set({ radio: t.checked }); toast(t.checked ? 'Radio automática activada' : 'Radio automática desactivada', 2200); }
     if (t.id === 'adOn') { store.settings.set({ adBlock: t.checked }); Native.call('setAdBlock', { enabled: t.checked }).catch(() => {}); }
   });
 
@@ -1461,6 +1669,30 @@
   $('#q').addEventListener('focus', () => document.body.classList.add('kb'));
   $('#q').addEventListener('blur', () => document.body.classList.remove('kb'));
   window.addEventListener('hashchange', route);
+
+  // ---------- Versión instalada y aviso de versiones nuevas ----------
+  let appVersion = '', updates = null, update = null;
+  function paintUpdate(u) {
+    update = u;
+    $('#update').hidden = !u;
+    $('#updateText').textContent = u ? `Hay una versión nueva (${u.version})` : '';
+  }
+  const checkUpdates = () => { if (updates) updates.check().then(paintUpdate).catch(() => { /* sin aviso */ }); };
+  async function startUpdates() {
+    try { appVersion = Native.platform === 'web' ? LS.BUILD_VERSION : String(await Native.call('appVersion', {})); } catch (e) { return; }
+    updates = LS.createUpdateChecker({ storage: safeStorage(), installed: appVersion, platform: Native.platform, fetchJson: LS.fetchReleases, online: () => navigator.onLine !== false });
+    if (S.page === 'settings') render();
+    paintUpdate(updates.current());
+    checkUpdates();
+  }
+  $('#updateGet').onclick = () => {
+    if (!update) return;
+    if (Native.platform === 'web') { window.open(update.url, '_blank', 'noopener'); return; }
+    Native.call('openUrl', { url: update.url }).catch(() => toast('No se pudo abrir el navegador. Descárgala en github.com/N1x0321/Nsound/releases', 7000));
+  };
+  $('#updateClose').onclick = () => { if (update) updates.dismiss(update.version); paintUpdate(null); };
+  // Las apps móviles pueden pasar días abiertas: se vuelve a mirar al regresar (como mucho una vez al día)
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) checkUpdates(); });
 
   // ---------- Arranque ----------
   Player.init();
@@ -1497,4 +1729,5 @@
   Native.call('setAdBlock', { enabled: s0.adBlock }).catch(() => {});
   loadCatalog();
   route();
+  startUpdates();
 })();

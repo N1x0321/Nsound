@@ -38,10 +38,14 @@ jobs:
           dotnet-version: "8.0.x"
 
       - name: Publicar (portable, autocontenido)
-        run: >
-          dotnet publish windows/LibreStream.App -c Release
-          -r win-${{ matrix.arch }} -p:Platform=${{ matrix.arch }}
-          -o out/Nsound
+        shell: pwsh
+        run: |
+          # La versión de la etiqueta queda dentro de la app: con ella avisa de las versiones nuevas
+          $version = if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:GITHUB_REF_NAME.TrimStart('v') } else { '0.0.0-dev' }
+          dotnet publish windows/LibreStream.App -c Release -r win-${{ matrix.arch }} -p:Platform=${{ matrix.arch }} "-p:Version=$version" -o out/Nsound
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $built = (Get-Item out/Nsound/Nsound.dll).VersionInfo.ProductVersion
+          if ($built.Split('+')[0] -ne $version) { Write-Error "La app lleva la versión '$built' y debía llevar '$version'"; exit 1 }
 
       - name: Empaquetar .zip
         id: pkg

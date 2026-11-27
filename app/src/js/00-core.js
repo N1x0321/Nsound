@@ -252,8 +252,21 @@ var LS = globalThis.LS = globalThis.LS || {};
    * Los discos salen de los carruseles (álbumes, singles y EP); el tipo se ve en el subtítulo, no en el título del carrusel (que cambia de idioma).
    */
   LS.parseYtmArtistPage = function (json, artistName) {
-    const data = ytmParse(json), res = { songs: [], allSongsId: '', releases: [] };
+    const data = ytmParse(json), res = { songs: [], allSongsId: '', releases: [], banner: '', description: '', listeners: '', related: [] };
     if (!data) return res;
+    // Cabecera: foto ancha, biografía (la que muestra YouTube Music) y oyentes mensuales (o suscriptores)
+    const hd = data.header && typeof data.header === 'object' ? data.header[Object.keys(data.header)[0]] : null;
+    if (hd && typeof hd === 'object') {
+      const text = (x) => (x && Array.isArray(x.runs) ? x.runs.map((r) => r.text || '').join('').trim() : '');
+      const th = hd.thumbnail && hd.thumbnail.musicThumbnailRenderer && hd.thumbnail.musicThumbnailRenderer.thumbnail && hd.thumbnail.musicThumbnailRenderer.thumbnail.thumbnails;
+      if (Array.isArray(th)) for (const t of th) if (t && /^https:\/\//.test(t.url || '') && (!(t.width > 1920) || !res.banner)) res.banner = t.url;   // la grande sin pasar de 1920 px
+      res.description = text(hd.description);
+      res.listeners = text(hd.monthlyListenerCount);
+      const sb = hd.subscriptionButton && hd.subscriptionButton.subscribeButtonRenderer;
+      if (!res.listeners && sb && text(sb.subscriberCountText)) res.listeners = text(sb.subscriberCountText) + ' suscriptores';
+      res.listeners = res.listeners.replace(/\u00a0/g, ' ');
+    }
+    const self = LS.fold(artistName || '');
     const seen = new Set();
     ytmWalk(data, (k, v) => {
       if (k === 'musicShelfRenderer') {
@@ -264,6 +277,11 @@ var LS = globalThis.LS = globalThis.LS || {};
       }
       if (k === 'musicTwoRowItemRenderer') {
         const be = v && v.navigationEndpoint && v.navigationEndpoint.browseEndpoint, id = be && be.browseId;
+        if (LS.isBrowseId(id) && /^UC/.test(id)) {                       // «Puede que también te guste»: artistas parecidos
+          const name = v.title && Array.isArray(v.title.runs) && v.title.runs[0] ? String(v.title.runs[0].text || '').trim() : '';
+          if (name && LS.fold(name) !== self && !seen.has(id)) { seen.add(id); res.related.push({ id, name, art: v.thumbnailRenderer ? ytmThumb({ thumbnail: v.thumbnailRenderer }) : '' }); }
+          return true;
+        }
         if (!LS.isBrowseId(id) || !/^MPRE/.test(id) || seen.has(id)) return true;
         const title = v.title && Array.isArray(v.title.runs) && v.title.runs[0] ? String(v.title.runs[0].text || '').trim() : '';
         const sub = v.subtitle && Array.isArray(v.subtitle.runs) ? v.subtitle.runs.map((r) => String(r.text || '').trim()).filter((t) => !dot(t)) : [];
@@ -351,6 +369,109 @@ var LS = globalThis.LS = globalThis.LS || {};
   LS.pickHitsList = function (lists) {
     const l = lists || [];
     return l.find((x) => /100|m[aá]s populares|most popular/i.test(x.title)) || l.find((x) => /top diario|daily/i.test(x.title)) || l.find((x) => /tendencias|trending/i.test(x.title)) || l[0] || null;
+  };
+
+  // ---------- Radio automática: la radio de YouTube Music de una canción (lista RDAMVM + id) ----------
+  LS.MUSIC_NEXT_URL = 'https://music.youtube.com/youtubei/v1/next?prettyPrint=false';
+  LS.radioBody = (videoId) => JSON.stringify({ context: ytmContext, videoId: String(videoId), playlistId: 'RDAMVM' + videoId, isAudioOnly: true });
+  /** Respuesta de la radio → [{ id, title, channel, album, duration, art }] sin la canción de partida ni repetidas. */
+  LS.parseYtmRadio = function (json, seedId) {
+    const data = ytmParse(json), out = [], seen = new Set([seedId || '']);
+    if (!data) return out;
+    const runs = (x) => (x && Array.isArray(x.runs) ? x.runs.map((r) => r.text || '').join('') : '');
+    ytmWalk(data, (k, v) => {
+      if (k !== 'playlistPanelVideoRenderer') return false;
+      const id = v && v.videoId;
+      if (!LS.isValidVideoId(id) || seen.has(id)) return true;
+      const title = runs(v.title).trim();
+      if (!title) return true;
+      const parts = runs(v.longBylineText).split('•').map((t) => t.trim()).filter((t) => t && !/^(19|20)\d{2}$/.test(t));
+      const len = runs(v.lengthText).trim();
+      seen.add(id);
+      out.push({ id, title, channel: parts[0] || '', album: parts[1] || '', duration: /^\d+(:\d{2})+$/.test(len) ? LS.parseLength(len) : 0, art: ytmThumb({ thumbnail: { musicThumbnailRenderer: v } }) });
+      return true;
+    });
+    return out;
+  };
+  /** Qué canciones de la radio se añaden: las que no están ya ni han sonado; sin directos ni vídeos de más de 15 min. */
+  LS.pickRadio = function (radio, alreadyIds, max) {
+    const skip = new Set(alreadyIds || []);
+    return (radio || []).filter((v) => v.duration > 0 && v.duration <= 900 && !skip.has(v.id) && skip.add(v.id)).slice(0, max || 25);
+  };
+
+  // ---------- Géneros siempre al día: listas oficiales de «Moods y géneros» de YouTube Music ----------
+  LS.MOODS_BROWSE_ID = 'FEmusic_moods_and_genres';
+  LS.MOOD_CATEGORY_BROWSE_ID = 'FEmusic_moods_and_genres_category';
+  /** Página de una categoría de «Moods y géneros» («Dance y electrónica», «Latina»…). */
+  LS.musicCategoryBody = (params) => JSON.stringify({ context: ytmContext, browseId: LS.MOOD_CATEGORY_BROWSE_ID, params: String(params || '') });
+
+  /** Categoría de cada género de la app y palabras para elegir su lista (de mejor a peor). «Éxitos» va por la lista del país. */
+  const GENRE_SOURCES = {
+    'Reggaetón': ['Latina', ['hot reggaet', 'reggaet', 'perreo', 'dembow']],
+    'Latino': ['Latina', ['latin now', 'éxitos latinos', 'latin', 'latino']],
+    'Pop': ['Pop', ['pop hotlist', 'pop certified', 'hotlist', 'pop']],
+    'Rock': ['Rock', ["today's rock hits", 'rock hits', 'hotlist', 'rock']],
+    'Electrónica': ['Dance y electrónica', ['actuales del dance', 'dance hits', 'house + techno', 'dance', 'edm']],
+    'Hip hop': ['Hip hop', ['actuales de hiphop', 'actuales de hip hop', 'rap bangers', 'hip hop', 'rap']],
+    'Lo-fi': ['Concentración', ['lo-fi', 'lofi']],
+  };
+  LS.genreSource = (genre) => (GENRE_SOURCES[genre] ? { category: GENRE_SOURCES[genre][0], prefer: GENRE_SOURCES[genre][1] } : null);
+
+  /** Página de «Moods y géneros» → [{ name, params }] */
+  LS.parseYtmMoodCategories = function (json) {
+    const data = ytmParse(json), out = [];
+    if (!data) return out;
+    ytmWalk(data, (k, v) => {
+      if (k !== 'musicNavigationButtonRenderer') return false;
+      const name = v && v.buttonText && Array.isArray(v.buttonText.runs) ? v.buttonText.runs.map((r) => r.text || '').join('').trim() : '';
+      const be = v && v.clickCommand && v.clickCommand.browseEndpoint;
+      if (name && be && be.browseId === LS.MOOD_CATEGORY_BROWSE_ID && be.params) out.push({ name, params: String(be.params) });
+      return true;
+    });
+    return out;
+  };
+
+  /** Categoría por nombre, sin tildes ni mayúsculas. */
+  LS.findCategory = function (cats, name) {
+    const want = LS.fold(name), l = cats || [];
+    return l.find((c) => LS.fold(c.name) === want) || l.find((c) => LS.fold(c.name).includes(want)) || null;
+  };
+
+  const OLD_LIST = /cl[aá]sic|classic|billion|esencial|essential|\b(50|60|70|80|90)s?\b|años? (50|60|70|80|90)|00s|\d0s|de los \d|retro|viej|throwback|instrumental/i;
+  /**
+   * De las listas de una categoría, la mejor para el género: solo listas oficiales de YouTube Music (VLRDCLAK…, se renuevan solas), la
+   * primera que tenga una palabra preferida; nunca clásicos, décadas o instrumentales si hay otra.
+   */
+  LS.pickGenrePlaylist = function (lists, prefer) {
+    const official = (lists || []).filter((l) => /^VLRDCLAK/.test(l.id));
+    const fresh = official.filter((l) => !OLD_LIST.test(l.title));
+    for (const pool of [fresh, official]) {
+      for (const word of prefer || []) {
+        const w = LS.fold(word), hit = pool.find((l) => LS.fold(l.title).includes(w));
+        if (hit) return hit;
+      }
+    }
+    return fresh[0] || official[0] || null;
+  };
+
+  /**
+   * Toque del país: de la lista del género (igual en todos los países), primero las canciones de los artistas del ranking de tu país,
+   * en el orden del ranking; luego el resto en el orden de la lista. songs: [{ artist | channel }], countryArtists: ['Nombre', …]
+   */
+  LS.boostByArtists = function (songs, countryArtists) {
+    const rank = new Map();
+    (countryArtists || []).forEach((n, i) => { const f = LS.fold(n); if (f && !rank.has(f)) rank.set(f, i); });
+    const rankOf = (s) => {
+      let best = Infinity;
+      for (const part of String(s.artist || s.channel || '').split(' · ')[0].split(/,| y | & | x /i)) {
+        const r = rank.get(LS.fold(part));
+        if (r !== undefined && r < best) best = r;
+      }
+      return best;
+    };
+    return (songs || []).map((s, i) => ({ s, i, r: rankOf(s) }))
+      .sort((a, b) => (a.r === Infinity) - (b.r === Infinity) || (a.r === Infinity ? a.i - b.i : a.r - b.r) || a.i - b.i)
+      .map((x) => x.s);
   };
 
   /** De varios álbumes encontrados, el que mejor encaja con título (y artista): igual > contiene; el primero si ninguno encaja del todo. */

@@ -11,6 +11,22 @@
 
     <Grid x:Name="Root" RequestedTheme="Dark" Background="{StaticResource NsBgBrush}">
         <Grid.Resources>
+            <!-- Botón redondo de icono (barra inferior y pantalla «Reproduciendo») -->
+            <Style x:Key="BarIcon" TargetType="Button">
+                <Setter Property="Background" Value="Transparent" />
+                <Setter Property="BorderThickness" Value="0" />
+                <Setter Property="Width" Value="40" />
+                <Setter Property="Height" Value="40" />
+                <Setter Property="Padding" Value="0" />
+                <Setter Property="CornerRadius" Value="20" />
+            </Style>
+            <!-- Título de cada sección -->
+            <Style x:Key="SectionTitle" TargetType="TextBlock">
+                <Setter Property="FontSize" Value="22" />
+                <Setter Property="FontWeight" Value="Bold" />
+                <Setter Property="Margin" Value="8,14,0,2" />
+            </Style>
+
             <Style x:Key="CardButton" TargetType="Button">
                 <Setter Property="Padding" Value="8" />
                 <Setter Property="Background" Value="Transparent" />
@@ -23,11 +39,17 @@
             <DataTemplate x:Key="VideoCard" x:DataType="local:MediaCard">
                 <Button Style="{StaticResource CardButton}" Tag="{x:Bind}" Click="Card_Click" RightTapped="Card_RightTapped" PointerEntered="Card_PointerEntered" PointerExited="Card_PointerExited">
                     <StackPanel Width="256" Spacing="6">
-                        <Grid Height="144" CornerRadius="12" Background="{x:Bind Tile}">
+                        <Grid Height="144" CornerRadius="14" Background="{x:Bind Tile}">
                             <TextBlock Text="{x:Bind Initials}" FontSize="40" FontWeight="Bold" Opacity="0.85"
                                        HorizontalAlignment="Center" VerticalAlignment="Center" />
                             <Image Source="{x:Bind Artwork}" Stretch="UniformToFill" />
-                            <Border Background="#B0000000" CornerRadius="4" Padding="6,2" Margin="6"
+                            <Border x:Name="HoverPlay" Opacity="0" Background="#59000000" IsHitTestVisible="False">
+                                <Border.OpacityTransition><ScalarTransition Duration="0:0:0.18" /></Border.OpacityTransition>
+                                <Border Width="52" Height="52" CornerRadius="26" Background="{StaticResource NsAccentBrush}" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                    <FontIcon Glyph="&#xE768;" FontSize="20" Margin="3,0,0,0" Foreground="{StaticResource TextOnAccentFillColorPrimaryBrush}" />
+                                </Border>
+                            </Border>
+                            <Border Background="#B0000000" CornerRadius="6" Padding="6,2" Margin="8"
                                     HorizontalAlignment="Right" VerticalAlignment="Bottom">
                                 <TextBlock Text="{x:Bind DurationText}" FontSize="12" />
                             </Border>
@@ -42,10 +64,16 @@
             <DataTemplate x:Key="TrackCard" x:DataType="local:MediaCard">
                 <Button Style="{StaticResource CardButton}" Tag="{x:Bind}" Click="Card_Click" RightTapped="Card_RightTapped" PointerEntered="Card_PointerEntered" PointerExited="Card_PointerExited">
                     <StackPanel Width="160" Spacing="6">
-                        <Grid Height="160" CornerRadius="12" Background="{x:Bind Tile}">
+                        <Grid Height="160" CornerRadius="14" Background="{x:Bind Tile}">
                             <TextBlock Text="{x:Bind Initials}" FontSize="44" FontWeight="Bold" Opacity="0.9"
                                        HorizontalAlignment="Center" VerticalAlignment="Center" />
                             <Image Source="{x:Bind Artwork}" Stretch="UniformToFill" />
+                            <Border x:Name="HoverPlay" Opacity="0" Background="#40000000" IsHitTestVisible="False">
+                                <Border.OpacityTransition><ScalarTransition Duration="0:0:0.18" /></Border.OpacityTransition>
+                                <Border Width="44" Height="44" CornerRadius="22" Background="{StaticResource NsAccentBrush}" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="10">
+                                    <FontIcon Glyph="&#xE768;" FontSize="17" Margin="2,0,0,0" Foreground="{StaticResource TextOnAccentFillColorPrimaryBrush}" />
+                                </Border>
+                            </Border>
                         </Grid>
                         <TextBlock Text="{x:Bind Title}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
                         <TextBlock Text="{x:Bind Subtitle}" FontSize="12" Opacity="0.65" TextTrimming="CharacterEllipsis" />
@@ -115,6 +143,9 @@
                 <NavigationViewItemSeparator />
                 <NavigationViewItem Content="Mi biblioteca" Icon="Library" Tag="library" />
                 <NavigationViewItem Content="Descargas" Icon="Download" Tag="downloads" />
+                <NavigationViewItem Content="Tu semana" Tag="week">
+                    <NavigationViewItem.Icon><FontIcon Glyph="&#xE81C;" /></NavigationViewItem.Icon>
+                </NavigationViewItem>
                 <NavigationViewItemHeader Content="Tus listas" />
                 <NavigationViewItem x:Name="NewListItem" Content="Nueva lista" Icon="Add" Tag="newlist" SelectsOnInvoked="False" />
             </NavigationView.MenuItems>
@@ -150,7 +181,25 @@
                 <ScrollViewer x:Name="Browse" VerticalScrollBarVisibility="Auto">
                     <StackPanel Padding="28,20,28,28" Spacing="14">
 
-                        <TextBlock x:Name="PageTitle" Text="Inicio" Style="{StaticResource TitleTextBlockStyle}" Margin="8,0,0,0" />
+                        <!-- Aviso discreto de versión nueva (se descarta por versión) -->
+                        <Border x:Name="UpdateNotice" Visibility="Collapsed" Margin="8,0,0,0" Padding="16,4,6,4" CornerRadius="12" HorizontalAlignment="Left"
+                                Background="{StaticResource NsPanelBrush}" BorderBrush="{StaticResource NsLineBrush}" BorderThickness="1">
+                            <Grid ColumnSpacing="8">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock x:Name="UpdateText" TextWrapping="Wrap" VerticalAlignment="Center" />
+                                <HyperlinkButton Grid.Column="1" Content="Descargar" Click="UpdateDownload_Click" />
+                                <Button Grid.Column="2" Style="{StaticResource BarIcon}" Width="32" Height="32" Click="UpdateDismiss_Click"
+                                        AutomationProperties.Name="Descartar este aviso" ToolTipService.ToolTip="Descartar este aviso">
+                                    <FontIcon Glyph="&#xE711;" FontSize="12" />
+                                </Button>
+                            </Grid>
+                        </Border>
+
+                        <TextBlock x:Name="PageTitle" Text="Inicio" FontSize="36" FontWeight="Bold" Margin="8,0,0,0" />
                         <TextBlock x:Name="PageHint" Opacity="0.7" Margin="8,-8,0,0" TextWrapping="Wrap" Visibility="Collapsed" />
 
                         <StackPanel x:Name="PlaylistActions" Orientation="Horizontal" Spacing="8" Margin="8,0,0,0" Visibility="Collapsed">
@@ -188,13 +237,52 @@
                                     <TextBlock Text="Volver" />
                                 </StackPanel>
                             </Button>
-                            <Button x:Name="ArtistPlay" Style="{StaticResource AccentButtonStyle}" Click="ArtistPlay_Click" AutomationProperties.Name="Reproducir las canciones del artista" Visibility="Collapsed">
-                                <StackPanel Orientation="Horizontal" Spacing="8">
-                                    <SymbolIcon Symbol="Play" />
-                                    <TextBlock Text="Reproducir" FontWeight="SemiBold" />
-                                </StackPanel>
-                            </Button>
                         </StackPanel>
+
+                        <!-- Cabecera de la página de artista: foto ancha, nombre, oyentes y botones -->
+                        <Grid x:Name="ArtistHero" Height="320" CornerRadius="26" Visibility="Collapsed">
+                            <Border x:Name="ArtistHeroTile" Background="{StaticResource NsPanelBrush}" />
+                            <Image x:Name="ArtistBanner" Stretch="UniformToFill" VerticalAlignment="Top">
+                                <Image.OpacityTransition><ScalarTransition Duration="0:0:0.4" /></Image.OpacityTransition>
+                            </Image>
+                            <Border>
+                                <Border.Background>
+                                    <LinearGradientBrush StartPoint="0,0" EndPoint="0.85,0.6">
+                                        <GradientStop Color="#E0000000" Offset="0.05" />
+                                        <GradientStop Color="#00000000" Offset="1" />
+                                    </LinearGradientBrush>
+                                </Border.Background>
+                            </Border>
+                            <Border>
+                                <Border.Background>
+                                    <LinearGradientBrush StartPoint="0.5,0.35" EndPoint="0.5,1">
+                                        <GradientStop Color="#00000000" Offset="0" />
+                                        <GradientStop Color="#CC000000" Offset="1" />
+                                    </LinearGradientBrush>
+                                </Border.Background>
+                            </Border>
+                            <StackPanel VerticalAlignment="Bottom" HorizontalAlignment="Left" Margin="34,0,34,30" Spacing="2" MaxWidth="760">
+                                <TextBlock Text="ARTISTA" Foreground="White" FontSize="12" CharacterSpacing="140" Opacity="0.85" />
+                                <TextBlock x:Name="ArtistName" Foreground="White" FontSize="56" FontWeight="Bold" TextTrimming="CharacterEllipsis" />
+                                <TextBlock x:Name="ArtistListeners" Foreground="White" Opacity="0.85" />
+                                <StackPanel Orientation="Horizontal" Spacing="10" Margin="0,14,0,0">
+                                    <Button x:Name="ArtistPlay" Style="{StaticResource AccentButtonStyle}" Click="ArtistPlay_Click" AutomationProperties.Name="Reproducir las canciones del artista" Visibility="Collapsed">
+                                        <StackPanel Orientation="Horizontal" Spacing="8">
+                                            <SymbolIcon Symbol="Play" />
+                                            <TextBlock Text="Reproducir" FontWeight="SemiBold" />
+                                        </StackPanel>
+                                    </Button>
+                                    <Button Click="ArtistRadio_Click" Padding="16,6" AutomationProperties.Name="Radio del artista: sus canciones y otras parecidas" ToolTipService.ToolTip="Sus canciones y otras parecidas">
+                                        <StackPanel Orientation="Horizontal" Spacing="8">
+                                            <FontIcon Glyph="&#xE93E;" FontSize="15" />
+                                            <TextBlock Text="Radio" FontWeight="SemiBold" />
+                                        </StackPanel>
+                                    </Button>
+                                </StackPanel>
+                            </StackPanel>
+                        </Grid>
+                        <TextBlock x:Name="ArtistBio" Margin="8,0,8,0" Opacity="0.8" TextWrapping="Wrap" MaxLines="3" TextTrimming="WordEllipsis" MaxWidth="980" HorizontalAlignment="Left"
+                                   Visibility="Collapsed" Tapped="ArtistBio_Tapped" ToolTipService.ToolTip="Pulsa para leer más o menos" />
 
                         <!-- Destacado -->
                         <Grid x:Name="Hero" Height="300" CornerRadius="26" Visibility="Collapsed">
@@ -234,17 +322,33 @@
                             <StackPanel x:Name="HeroDots" Orientation="Horizontal" Spacing="6" Margin="32" HorizontalAlignment="Right" VerticalAlignment="Bottom" />
                         </Grid>
 
+                        <!-- Hecho para ti: mezclas a partir de lo que escuchas (historial solo en este PC) -->
+                        <StackPanel x:Name="MixesSection" Spacing="6" Visibility="Collapsed">
+                            <TextBlock Text="Hecho para ti" Style="{StaticResource SectionTitle}" />
+                            <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled" HorizontalScrollMode="Enabled">
+                                <StackPanel x:Name="MixesRow" Orientation="Horizontal" Spacing="12" Margin="8,0,0,8" />
+                            </ScrollViewer>
+                        </StackPanel>
+                        <StackPanel x:Name="RecentSection" Spacing="6" Visibility="Collapsed">
+                            <TextBlock Text="Seguir escuchando" Style="{StaticResource SectionTitle}" />
+                            <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled" HorizontalScrollMode="Enabled">
+                                <ItemsRepeater x:Name="RecentRepeater" ItemTemplate="{StaticResource TrackCard}" Margin="0,0,0,8">
+                                    <ItemsRepeater.Layout><StackLayout Orientation="Horizontal" Spacing="4" /></ItemsRepeater.Layout>
+                                </ItemsRepeater>
+                            </ScrollViewer>
+                        </StackPanel>
+
                         <TextBlock x:Name="Status" Foreground="#FF8A80" TextWrapping="Wrap" Visibility="Collapsed" />
                         <StackPanel x:Name="AlbumsSection" Spacing="6" Visibility="Collapsed">
-                            <TextBlock x:Name="AlbumsTitle" Text="Discografía" Style="{StaticResource SubtitleTextBlockStyle}" Margin="8,8,0,0" />
+                            <TextBlock x:Name="AlbumsTitle" Text="Discografía" Style="{StaticResource SectionTitle}" />
                             <TextBlock x:Name="AlbumsInfo" Opacity="0.7" Margin="8,0,0,0" TextWrapping="Wrap" />
                             <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled" HorizontalScrollMode="Enabled">
                                 <StackPanel x:Name="AlbumsRow" Orientation="Horizontal" Spacing="12" Margin="8,0,0,8" />
                             </ScrollViewer>
                         </StackPanel>
                         <StackPanel x:Name="YouTubeSection" Spacing="6" Visibility="Collapsed">
-                            <StackPanel Orientation="Horizontal" Spacing="10" Margin="8,8,0,0">
-                                <TextBlock x:Name="YouTubeTitle" Text="YouTube" Style="{StaticResource SubtitleTextBlockStyle}" />
+                            <StackPanel Orientation="Horizontal" Spacing="10" Margin="8,14,0,2">
+                                <TextBlock x:Name="YouTubeTitle" FontSize="22" FontWeight="Bold" Text="YouTube" />
                                 <ProgressRing x:Name="YouTubeBusy" IsActive="False" Width="18" Height="18" />
                             </StackPanel>
                             <TextBlock x:Name="YouTubeInfo" Opacity="0.7" Margin="8,0,0,0" />
@@ -256,8 +360,8 @@
                         </StackPanel>
 
                         <StackPanel x:Name="EntriesSection" Spacing="6" Visibility="Collapsed">
-                            <StackPanel Orientation="Horizontal" Spacing="10" Margin="8,8,0,0">
-                                <TextBlock x:Name="EntriesTitle" Text="Álbumes" Style="{StaticResource SubtitleTextBlockStyle}" />
+                            <StackPanel Orientation="Horizontal" Spacing="10" Margin="8,14,0,2">
+                                <TextBlock x:Name="EntriesTitle" FontSize="22" FontWeight="Bold" Text="Álbumes" />
                                 <ProgressRing x:Name="EntriesBusy" IsActive="False" Width="18" Height="18" />
                             </StackPanel>
                             <TextBlock x:Name="EntriesInfo" Opacity="0.7" Margin="8,0,0,0" TextWrapping="Wrap" />
@@ -268,8 +372,15 @@
                             </ItemsRepeater>
                         </StackPanel>
 
+                        <StackPanel x:Name="RelatedSection" Spacing="6" Visibility="Collapsed">
+                            <TextBlock Text="Artistas parecidos" Style="{StaticResource SectionTitle}" />
+                            <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled" HorizontalScrollMode="Enabled">
+                                <StackPanel x:Name="RelatedRow" Orientation="Horizontal" Spacing="14" Margin="8,0,0,8" />
+                            </ScrollViewer>
+                        </StackPanel>
+
                         <StackPanel x:Name="ArtistsSection" Spacing="6" Visibility="Collapsed">
-                            <TextBlock Text="Artistas de la semana" Style="{StaticResource SubtitleTextBlockStyle}" Margin="8,8,0,0" />
+                            <TextBlock x:Name="ArtistsTitle" Text="Artistas de la semana" Style="{StaticResource SectionTitle}" />
                             <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled" HorizontalScrollMode="Enabled">
                                 <StackPanel x:Name="ArtistsRow" Orientation="Horizontal" Spacing="14" Margin="8,0,0,8" />
                             </ScrollViewer>
@@ -281,7 +392,7 @@
                         </StackPanel>
 
                         <StackPanel x:Name="SavedSection" Spacing="6" Visibility="Collapsed">
-                            <TextBlock x:Name="SavedTitle" Text="Guardado" Style="{StaticResource SubtitleTextBlockStyle}" Margin="8,8,0,0" />
+                            <TextBlock x:Name="SavedTitle" Text="Guardado" Style="{StaticResource SectionTitle}" />
                             <TextBlock x:Name="SavedEmpty" Opacity="0.7" Margin="8,0,0,0" TextWrapping="Wrap"
                                        Text="Aún no has guardado nada. Reproduce algo y pulsa el corazón de la barra inferior." />
                             <ItemsRepeater x:Name="SavedRepeater" ItemTemplate="{StaticResource VideoCard}">
@@ -291,8 +402,11 @@
                             </ItemsRepeater>
                         </StackPanel>
 
+                        <!-- «Tu semana»: se construye en código con el historial de este PC -->
+                        <StackPanel x:Name="WeekSection" Spacing="18" Visibility="Collapsed" Margin="8,4,0,0" />
+
                         <StackPanel x:Name="DownloadsSection" Spacing="10" Visibility="Collapsed">
-                            <TextBlock Text="Descargado" Style="{StaticResource SubtitleTextBlockStyle}" Margin="8,8,0,0" />
+                            <TextBlock Text="Descargado" Style="{StaticResource SectionTitle}" />
                             <TextBlock x:Name="DownloadsEmpty" Opacity="0.7" Margin="8,0,0,0" TextWrapping="Wrap"
                                        Text="Todavía no has añadido nada. Usa el botón de abajo para añadir tus archivos de música." />
                             <Button Click="AddMusicFiles_Click" Margin="8,0,0,0" AutomationProperties.Name="Añadir mis archivos de música">
@@ -328,6 +442,12 @@
                                            Text="Cambia colores, brillo y animaciones al momento. «Clásico» es el aspecto de siempre. En «Elegir mi color» puedes poner el color que quieras: el texto de los botones se adapta solo para que siempre se lea." />
                             </StackPanel>
                             <StackPanel Spacing="8">
+                                <TextBlock Text="Reproducción" Style="{StaticResource SubtitleTextBlockStyle}" />
+                                <ToggleSwitch x:Name="RadioToggle" Header="Radio automática" OnContent="Activada" OffContent="Desactivada" Toggled="Radio_Toggled" />
+                                <TextBlock Opacity="0.55" FontSize="12" TextWrapping="Wrap"
+                                           Text="Cuando se acaba la lista, la música no se para: sigue con canciones parecidas a la última (la radio de YouTube Music). Con «Repetir la lista» activado no se añade nada." />
+                            </StackPanel>
+                            <StackPanel Spacing="8">
                                 <TextBlock Text="Ecualizador" Style="{StaticResource SubtitleTextBlockStyle}" />
                                 <TextBlock Opacity="0.7" TextWrapping="Wrap" Text="En mantenimiento: se retiró temporalmente mientras se arregla un fallo. Volverá en una próxima versión." />
                             </StackPanel>
@@ -354,6 +474,7 @@
                                 <TextBlock Opacity="0.55" FontSize="12" TextWrapping="Wrap"
                                            Text="Corta las conexiones a servidores de publicidad conocidos. Los anuncios que YouTube sirve desde sus propios servidores de vídeo pueden seguir apareciendo." />
                             </StackPanel>
+                            <TextBlock x:Name="VersionText" Opacity="0.55" FontSize="12" />
                         </StackPanel>
                     </StackPanel>
                 </ScrollViewer>
@@ -382,86 +503,161 @@
             </Grid>
         </NavigationView>
 
-        <!-- Barra de reproducción -->
-        <Grid x:Name="Bar" Grid.Row="2" Margin="12,4,12,12" CornerRadius="22" Padding="16,10" ColumnSpacing="16"
+        <!-- Barra de reproducción: se tiñe con el color de la portada que suena -->
+        <Grid x:Name="Bar" Grid.Row="2" Margin="12,4,12,12" CornerRadius="24" Padding="14,10,18,10" ColumnSpacing="16"
               Background="{StaticResource NsBarBrush}" BorderBrush="{StaticResource NsLineBrush}" BorderThickness="1">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="260" />
+                <ColumnDefinition Width="300" />
                 <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="470" />
+                <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
 
-            <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center" Background="Transparent" Tapped="Now_Tapped">
-                <Grid Width="48" Height="48" CornerRadius="10">
-                    <Border x:Name="NowTile" Background="#22FFFFFF" />
-                    <Image x:Name="NowImage" Stretch="UniformToFill" />
+            <Rectangle x:Name="BarTint" Grid.ColumnSpan="3" Margin="-14,-10,-18,-10" IsHitTestVisible="False">
+                <Rectangle.Fill>
+                    <LinearGradientBrush StartPoint="0,0.5" EndPoint="0.75,0.5">
+                        <GradientStop x:Name="BarTintStop" Color="#38FF4D62" Offset="0" />
+                        <GradientStop x:Name="BarTintEnd" Color="#00FF4D62" Offset="1" />
+                    </LinearGradientBrush>
+                </Rectangle.Fill>
+            </Rectangle>
+            <Rectangle x:Name="BarLine" Grid.ColumnSpan="3" Height="2" Margin="60,-10,60,0" VerticalAlignment="Top" IsHitTestVisible="False">
+                <Rectangle.Fill>
+                    <LinearGradientBrush StartPoint="0,0.5" EndPoint="1,0.5">
+                        <GradientStop x:Name="BarLineA" Color="#00FF4D62" Offset="0" />
+                        <GradientStop x:Name="BarLineB" Color="#CCFF4D62" Offset="0.5" />
+                        <GradientStop x:Name="BarLineC" Color="#00FF4D62" Offset="1" />
+                    </LinearGradientBrush>
+                </Rectangle.Fill>
+            </Rectangle>
+
+            <Grid ColumnSpacing="14" VerticalAlignment="Center" Background="Transparent" Tapped="Now_Tapped"
+                  ToolTipService.ToolTip="Abrir «Reproduciendo»">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <Grid Width="58" Height="58">
+                    <Rectangle x:Name="NowGlow" Margin="-16" Opacity="0" IsHitTestVisible="False">
+                        <Rectangle.Fill>
+                            <RadialGradientBrush>
+                                <GradientStop x:Name="NowGlowStop" Color="#AAFF4D62" Offset="0.35" />
+                                <GradientStop x:Name="NowGlowEnd" Color="#00FF4D62" Offset="1" />
+                            </RadialGradientBrush>
+                        </Rectangle.Fill>
+                    </Rectangle>
+                    <Grid CornerRadius="12" RenderTransformOrigin="0.5,0.5">
+                        <Grid.RenderTransform><ScaleTransform x:Name="NowArtScale" /></Grid.RenderTransform>
+                        <Border x:Name="NowTile" Background="#22FFFFFF" />
+                        <FontIcon Glyph="&#xE8D6;" FontSize="22" Opacity="0.45" />
+                        <Image x:Name="NowImage" Stretch="UniformToFill">
+                            <Image.OpacityTransition><ScalarTransition Duration="0:0:0.35" /></Image.OpacityTransition>
+                        </Image>
+                    </Grid>
                 </Grid>
-                <StackPanel VerticalAlignment="Center" MaxWidth="140">
-                    <TextBlock x:Name="NowTitle" Text="Nada en reproducción" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                <StackPanel x:Name="NowText" Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                    <StackPanel.TranslationTransition><Vector3Transition Duration="0:0:0.3" /></StackPanel.TranslationTransition>
+                    <StackPanel.OpacityTransition><ScalarTransition Duration="0:0:0.3" /></StackPanel.OpacityTransition>
+                    <TextBlock x:Name="NowTitle" Text="Nada en reproducción" FontSize="15" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
                     <TextBlock x:Name="NowArtist" FontSize="12" Opacity="0.65" TextTrimming="CharacterEllipsis" />
                 </StackPanel>
-                <StackPanel x:Name="PlayingBars" Orientation="Horizontal" Spacing="2" VerticalAlignment="Center" Visibility="Collapsed">
-                    <Rectangle Width="3" Height="16" Fill="{StaticResource NsAccentBrush}" RadiusX="1.5" RadiusY="1.5" RenderTransformOrigin="0.5,1"><Rectangle.RenderTransform><ScaleTransform x:Name="Bar1" ScaleY="0.4" /></Rectangle.RenderTransform></Rectangle>
-                    <Rectangle Width="3" Height="16" Fill="{StaticResource NsAccentBrush}" RadiusX="1.5" RadiusY="1.5" RenderTransformOrigin="0.5,1"><Rectangle.RenderTransform><ScaleTransform x:Name="Bar2" ScaleY="0.8" /></Rectangle.RenderTransform></Rectangle>
-                    <Rectangle Width="3" Height="16" Fill="{StaticResource NsAccentBrush}" RadiusX="1.5" RadiusY="1.5" RenderTransformOrigin="0.5,1"><Rectangle.RenderTransform><ScaleTransform x:Name="Bar3" ScaleY="0.5" /></Rectangle.RenderTransform></Rectangle>
+                <StackPanel x:Name="PlayingBars" Grid.Column="2" Orientation="Horizontal" Spacing="2" Height="18" VerticalAlignment="Center" Visibility="Collapsed">
+                    <Rectangle Width="3" Height="18" RadiusX="1.5" RadiusY="1.5" RenderTransformOrigin="0.5,1"><Rectangle.RenderTransform><ScaleTransform x:Name="Bar1" ScaleY="0.4" /></Rectangle.RenderTransform></Rectangle>
+                    <Rectangle Width="3" Height="18" RadiusX="1.5" RadiusY="1.5" RenderTransformOrigin="0.5,1"><Rectangle.RenderTransform><ScaleTransform x:Name="Bar2" ScaleY="0.8" /></Rectangle.RenderTransform></Rectangle>
+                    <Rectangle Width="3" Height="18" RadiusX="1.5" RadiusY="1.5" RenderTransformOrigin="0.5,1"><Rectangle.RenderTransform><ScaleTransform x:Name="Bar3" ScaleY="0.5" /></Rectangle.RenderTransform></Rectangle>
+                    <Rectangle Width="3" Height="18" RadiusX="1.5" RadiusY="1.5" RenderTransformOrigin="0.5,1"><Rectangle.RenderTransform><ScaleTransform x:Name="Bar4" ScaleY="0.7" /></Rectangle.RenderTransform></Rectangle>
                 </StackPanel>
-            </StackPanel>
+            </Grid>
 
-            <StackPanel Grid.Column="1" Spacing="2" MaxWidth="720">
-                <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center">
-                    <Button Click="Prev_Click" Background="Transparent" BorderThickness="0" ToolTipService.ToolTip="Anterior" AutomationProperties.Name="Anterior">
-                        <SymbolIcon Symbol="Previous" />
+            <StackPanel Grid.Column="1" Spacing="0" MaxWidth="720" VerticalAlignment="Center">
+                <StackPanel Orientation="Horizontal" Spacing="10" HorizontalAlignment="Center">
+                    <Button x:Name="ShuffleBtn" Click="Shuffle_Click" Style="{StaticResource BarIcon}" VerticalAlignment="Center" ToolTipService.ToolTip="Aleatorio: desactivado" AutomationProperties.Name="Aleatorio: desactivado">
+                        <FontIcon Glyph="&#xE8B1;" FontSize="15" />
                     </Button>
-                    <Button Click="Play_Click" Style="{StaticResource AccentButtonStyle}" Width="44" Height="44" CornerRadius="22" Padding="0"
-                            ToolTipService.ToolTip="Reproducir / Pausa" AutomationProperties.Name="Reproducir o pausar">
-                        <SymbolIcon x:Name="PlayIcon" Symbol="Play" />
+                    <Button Click="Prev_Click" Style="{StaticResource BarIcon}" VerticalAlignment="Center" ToolTipService.ToolTip="Anterior" AutomationProperties.Name="Anterior">
+                        <FontIcon Glyph="&#xE892;" FontSize="17" />
                     </Button>
-                    <Button Click="Next_Click" Background="Transparent" BorderThickness="0" ToolTipService.ToolTip="Siguiente" AutomationProperties.Name="Siguiente">
-                        <SymbolIcon Symbol="Next" />
+                    <Grid Width="48" Height="48">
+                        <Ellipse x:Name="PlayHalo" Fill="{StaticResource NsAccentBrush}" Opacity="0" IsHitTestVisible="False" RenderTransformOrigin="0.5,0.5">
+                            <Ellipse.RenderTransform><ScaleTransform x:Name="PlayHaloScale" /></Ellipse.RenderTransform>
+                        </Ellipse>
+                        <Button Click="Play_Click" Style="{StaticResource AccentButtonStyle}" Width="48" Height="48" CornerRadius="24" Padding="0"
+                                ToolTipService.ToolTip="Reproducir / Pausa" AutomationProperties.Name="Reproducir o pausar">
+                            <SymbolIcon x:Name="PlayIcon" Symbol="Play" />
+                        </Button>
+                    </Grid>
+                    <Button Click="Next_Click" Style="{StaticResource BarIcon}" VerticalAlignment="Center" ToolTipService.ToolTip="Siguiente" AutomationProperties.Name="Siguiente">
+                        <FontIcon Glyph="&#xE893;" FontSize="17" />
+                    </Button>
+                    <Button x:Name="RepeatBtn" Click="Repeat_Click" Style="{StaticResource BarIcon}" VerticalAlignment="Center" ToolTipService.ToolTip="Repetir: desactivado" AutomationProperties.Name="Repetir: desactivado">
+                        <FontIcon x:Name="RepeatIcon" Glyph="&#xE8EE;" FontSize="15" />
                     </Button>
                 </StackPanel>
-                <Grid ColumnSpacing="10">
+                <Grid ColumnSpacing="10" Margin="0,2,0,0">
                     <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="42" />
                         <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="42" />
                     </Grid.ColumnDefinitions>
-                    <TextBlock x:Name="Elapsed" Text="0:00" FontSize="12" Opacity="0.7" VerticalAlignment="Center" />
+                    <TextBlock x:Name="Elapsed" Text="0:00" FontSize="12" Opacity="0.7" VerticalAlignment="Center" HorizontalAlignment="Right" />
                     <Slider x:Name="Progress" Grid.Column="1" Minimum="0" Maximum="1" IsThumbToolTipEnabled="False"
                             ValueChanged="Progress_ValueChanged" />
                     <TextBlock x:Name="Total" Grid.Column="2" Text="0:00" FontSize="12" Opacity="0.7" VerticalAlignment="Center" />
                 </Grid>
             </StackPanel>
 
-            <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right" VerticalAlignment="Center">
-                <Button Background="Transparent" BorderThickness="0" ToolTipService.ToolTip="Añadir a una lista" AutomationProperties.Name="Añadir a lista">
-                    <SymbolIcon Symbol="Add" />
+            <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="2" HorizontalAlignment="Right" VerticalAlignment="Center">
+                <Button Style="{StaticResource BarIcon}" ToolTipService.ToolTip="Añadir a una lista" AutomationProperties.Name="Añadir a lista">
+                    <FontIcon Glyph="&#xE710;" FontSize="16" />
                     <Button.Flyout>
                         <MenuFlyout x:Name="PlaylistMenu" Opening="PlaylistMenu_Opening" />
                     </Button.Flyout>
                 </Button>
-                <Button Click="Save_Click" Background="Transparent" BorderThickness="0" ToolTipService.ToolTip="Guardar en Mi biblioteca" AutomationProperties.Name="Guardar">
-                    <FontIcon x:Name="SaveIcon" Glyph="&#xEB51;" />
+                <Button Click="Save_Click" Style="{StaticResource BarIcon}" ToolTipService.ToolTip="Guardar en Mi biblioteca" AutomationProperties.Name="Guardar">
+                    <FontIcon x:Name="SaveIcon" Glyph="&#xEB51;" FontSize="16" />
                 </Button>
-                <Button Click="Download_Click" Background="Transparent" BorderThickness="0" ToolTipService.ToolTip="Descargar (contenido libre)" AutomationProperties.Name="Descargar">
-                    <SymbolIcon Symbol="Download" />
+                <Button Click="Download_Click" Style="{StaticResource BarIcon}" ToolTipService.ToolTip="Descargar (contenido libre)" AutomationProperties.Name="Descargar">
+                    <FontIcon Glyph="&#xE896;" FontSize="16" />
                 </Button>
-                <Button Click="Lyrics_Click" Background="Transparent" BorderThickness="0" ToolTipService.ToolTip="Mostrar u ocultar la letra" AutomationProperties.Name="Letra">
-                    <TextBlock Text="Letra" FontWeight="SemiBold" />
+                <Button Click="Lyrics_Click" Style="{StaticResource BarIcon}" ToolTipService.ToolTip="Mostrar u ocultar la letra" AutomationProperties.Name="Letra">
+                    <FontIcon Glyph="&#xE8D2;" FontSize="16" />
                 </Button>
-                <Button Click="ShowVideo_Click" Background="Transparent" BorderThickness="0" ToolTipService.ToolTip="Mostrar u ocultar el vídeo" AutomationProperties.Name="Mostrar vídeo">
-                    <SymbolIcon Symbol="SlideShow" />
+                <Button Click="ShowVideo_Click" Style="{StaticResource BarIcon}" ToolTipService.ToolTip="Mostrar u ocultar el vídeo" AutomationProperties.Name="Mostrar vídeo">
+                    <FontIcon Glyph="&#xE714;" FontSize="16" />
                 </Button>
-                <Button Click="Mini_Click" Background="Transparent" BorderThickness="0" ToolTipService.ToolTip="Mini reproductor (siempre visible)" AutomationProperties.Name="Mini reproductor">
-                    <FontIcon Glyph="&#xE8A7;" FontSize="16" />
+                <Button Click="Mini_Click" Style="{StaticResource BarIcon}" ToolTipService.ToolTip="Mini reproductor (siempre visible)" AutomationProperties.Name="Mini reproductor">
+                    <FontIcon Glyph="&#xE8A7;" FontSize="15" />
                 </Button>
-                <SymbolIcon Symbol="Volume" />
-                <Slider x:Name="Volume" Width="130" Minimum="0" Maximum="100" Value="80" ValueChanged="Volume_ValueChanged" />
+                <Border Width="1" Height="22" Margin="8,0" Background="{StaticResource NsLineBrush}" />
+                <FontIcon Glyph="&#xE767;" FontSize="16" Opacity="0.8" />
+                <Slider x:Name="Volume" Width="110" Margin="8,0,0,0" Minimum="0" Maximum="100" Value="80" VerticalAlignment="Center" ValueChanged="Volume_ValueChanged" />
             </StackPanel>
         </Grid>
 
+        <!-- Aviso breve (radio, repetir, aleatorio) encima de la barra -->
+        <Border x:Name="Toast" Grid.Row="1" HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,14" Padding="16,9"
+                CornerRadius="20" Background="{StaticResource NsBarBrush}" BorderBrush="{StaticResource NsLineBrush}" BorderThickness="1"
+                Opacity="0" IsHitTestVisible="False">
+            <Border.OpacityTransition><ScalarTransition Duration="0:0:0.25" /></Border.OpacityTransition>
+            <Border.TranslationTransition><Vector3Transition Duration="0:0:0.25" /></Border.TranslationTransition>
+            <StackPanel Orientation="Horizontal" Spacing="10">
+                <FontIcon x:Name="ToastIcon" Glyph="&#xE8D6;" FontSize="15" Foreground="{StaticResource NsAccentBrush}" />
+                <TextBlock x:Name="ToastText" FontWeight="SemiBold" />
+            </StackPanel>
+        </Border>
+
         <!-- Pantalla «Reproduciendo» -->
         <Grid x:Name="NowSheet" Grid.RowSpan="3" Visibility="Collapsed" Background="{StaticResource NsBgBrush}">
+            <!-- Fondo: la portada en muy baja resolución, ampliada (queda desenfocada) y oscurecida -->
+            <Image x:Name="NpBackdrop" Stretch="UniformToFill" Opacity="0.5" IsHitTestVisible="False" />
+            <Rectangle IsHitTestVisible="False">
+                <Rectangle.Fill>
+                    <LinearGradientBrush StartPoint="0.5,0" EndPoint="0.5,1">
+                        <GradientStop x:Name="NpShadeTop" Color="#660B0C10" Offset="0" />
+                        <GradientStop x:Name="NpShadeBottom" Color="#F20B0C10" Offset="0.85" />
+                    </LinearGradientBrush>
+                </Rectangle.Fill>
+            </Rectangle>
             <Rectangle IsHitTestVisible="False">
                 <Rectangle.Fill>
                     <LinearGradientBrush StartPoint="0.5,0" EndPoint="0.5,0.75">
@@ -474,10 +670,26 @@
                     Click="NowSheetClose_Click" AutomationProperties.Name="Cerrar">
                 <FontIcon Glyph="&#xE70D;" />
             </Button>
-            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="10" MaxWidth="560" Padding="24">
-                <Border Width="340" Height="340" CornerRadius="28" Background="{StaticResource NsPanelBrush}" HorizontalAlignment="Center">
-                    <Image x:Name="NpImage" Stretch="UniformToFill" />
-                </Border>
+            <Grid x:Name="NpLayout" Margin="0,40,0,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition x:Name="NpLyricsCol" Width="0" />
+                </Grid.ColumnDefinitions>
+            <StackPanel x:Name="NpMain" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="10" MaxWidth="560" Padding="24">
+                <Grid Width="340" Height="340" HorizontalAlignment="Center">
+                    <Rectangle Margin="-70" IsHitTestVisible="False">
+                        <Rectangle.Fill>
+                            <RadialGradientBrush>
+                                <GradientStop x:Name="NpArtGlowStop" Color="#88FF4D62" Offset="0.3" />
+                                <GradientStop x:Name="NpArtGlowEnd" Color="#00FF4D62" Offset="1" />
+                            </RadialGradientBrush>
+                        </Rectangle.Fill>
+                    </Rectangle>
+                    <Border CornerRadius="28" Background="{StaticResource NsPanelBrush}" RenderTransformOrigin="0.5,0.5">
+                        <Border.RenderTransform><ScaleTransform x:Name="NpArtScale" /></Border.RenderTransform>
+                        <Image x:Name="NpImage" Stretch="UniformToFill" />
+                    </Border>
+                </Grid>
                 <TextBlock x:Name="NpTitle" FontSize="26" FontWeight="Bold" TextAlignment="Center" TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis" Margin="0,14,0,0" />
                 <TextBlock x:Name="NpArtist" Opacity="0.7" TextAlignment="Center" />
                 <Slider x:Name="NpProgress" Minimum="0" Maximum="1" IsThumbToolTipEnabled="False" ValueChanged="Progress_ValueChanged" Margin="0,10,0,0" />
@@ -486,9 +698,11 @@
                     <TextBlock x:Name="NpTotal" Text="0:00" FontSize="12" Opacity="0.7" HorizontalAlignment="Right" />
                 </Grid>
                 <StackPanel Orientation="Horizontal" Spacing="18" HorizontalAlignment="Center">
-                    <Button Click="Prev_Click" Background="Transparent" BorderThickness="0" Width="56" Height="56" CornerRadius="28" AutomationProperties.Name="Anterior"><SymbolIcon Symbol="Previous" /></Button>
+                    <Button x:Name="NpShuffleBtn" Click="Shuffle_Click" Background="Transparent" BorderThickness="0" Width="48" Height="48" CornerRadius="24" AutomationProperties.Name="Aleatorio: desactivado"><FontIcon Glyph="&#xE8B1;" FontSize="18" /></Button>
+                    <Button Click="Prev_Click" Background="Transparent" BorderThickness="0" Width="56" Height="56" CornerRadius="28" AutomationProperties.Name="Anterior"><FontIcon Glyph="&#xE892;" FontSize="22" /></Button>
                     <Button Click="Play_Click" Style="{StaticResource AccentButtonStyle}" Width="72" Height="72" CornerRadius="36" Padding="0" AutomationProperties.Name="Reproducir o pausar"><SymbolIcon x:Name="NpPlayIcon" Symbol="Play" /></Button>
-                    <Button Click="Next_Click" Background="Transparent" BorderThickness="0" Width="56" Height="56" CornerRadius="28" AutomationProperties.Name="Siguiente"><SymbolIcon Symbol="Next" /></Button>
+                    <Button Click="Next_Click" Background="Transparent" BorderThickness="0" Width="56" Height="56" CornerRadius="28" AutomationProperties.Name="Siguiente"><FontIcon Glyph="&#xE893;" FontSize="22" /></Button>
+                    <Button x:Name="NpRepeatBtn" Click="Repeat_Click" Background="Transparent" BorderThickness="0" Width="48" Height="48" CornerRadius="24" AutomationProperties.Name="Repetir: desactivado"><FontIcon x:Name="NpRepeatIcon" Glyph="&#xE8EE;" FontSize="18" /></Button>
                 </StackPanel>
                 <StackPanel Orientation="Horizontal" Spacing="10" HorizontalAlignment="Center">
                     <Button Click="Save_Click" CornerRadius="14" MinWidth="56" MinHeight="46" AutomationProperties.Name="Guardar"><FontIcon x:Name="NpHeartIcon" Glyph="&#xEB51;" /></Button>
@@ -497,10 +711,20 @@
                         <Button.Flyout><MenuFlyout x:Name="PlaylistMenu2" Opening="PlaylistMenu_Opening" /></Button.Flyout>
                     </Button>
                     <Button Click="Queue_Click" Content="Cola" CornerRadius="14" MinWidth="56" MinHeight="46" />
-                    <Button Click="NowSheetLyrics_Click" Content="Letra" CornerRadius="14" MinWidth="56" MinHeight="46" />
+                    <ToggleButton x:Name="NpLyricsToggle" Click="NowSheetLyrics_Click" Content="Letra" CornerRadius="14" MinWidth="56" MinHeight="46" AutomationProperties.Name="Letra a pantalla completa" />
                     <Button Click="NowSheetVideo_Click" CornerRadius="14" MinWidth="56" MinHeight="46" AutomationProperties.Name="Mostrar vídeo"><SymbolIcon Symbol="SlideShow" /></Button>
                 </StackPanel>
             </StackPanel>
+
+            <!-- Letra a pantalla completa (tipo karaoke): la línea que suena, grande; las demás, apagadas. Pulsar una línea salta a ella -->
+            <Grid x:Name="NpLyricsHost" Grid.Column="1" Visibility="Collapsed" Margin="0,0,48,24">
+                <Grid.OpacityTransition><ScalarTransition Duration="0:0:0.3" /></Grid.OpacityTransition>
+                <ScrollViewer x:Name="NpLyricsScroll" VerticalScrollBarVisibility="Hidden" HorizontalScrollMode="Disabled">
+                    <StackPanel x:Name="NpLyricsLines" Spacing="18" Padding="8,260,24,420" />
+                </ScrollViewer>
+                <TextBlock x:Name="NpLyricsInfo" FontSize="20" Opacity="0.7" TextWrapping="Wrap" VerticalAlignment="Center" Margin="8,0,24,0" />
+            </Grid>
+            </Grid>
         </Grid>
     </Grid>
 </Window>

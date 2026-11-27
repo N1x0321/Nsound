@@ -1,11 +1,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
+import { readFileSync } from 'node:fs';
+import vm from 'node:vm';
 const require = createRequire(import.meta.url);
 require('../src/js/00-core.js');
 require('../src/js/00-import.js');
 require('../src/js/00-catalog.js');
 require('../src/js/00-queue.js');
+require('../src/js/00-personal.js');
 require('../src/js/00-media.js');
 require('../src/js/01-stores.js');
 const LS = globalThis.LS;
@@ -621,4 +624,164 @@ test('aleatorio: no repite hasta haber sonado todas y respeta repetir la lista',
   assert.deepEqual(again.seen, [q[idx].key]);
   assert.equal(LS.pickNextIndex(q, 0, { shuffle: true, rand: () => 0.999 }).index, 4);              // el azar elige entre las que faltan
   assert.equal(LS.pickNextIndex(mk(1), 0, { shuffle: true, repeat: 'all' }).index, 0);               // una sola canción
+});
+
+// ---------- Géneros con listas oficiales de YouTube Music ----------
+test('géneros: cada uno tiene su categoría y «Éxitos» va aparte', () => {
+  for (const g of LS.GENRES.slice(1)) assert.ok(LS.genreSource(g), g);
+  assert.equal(LS.genreSource(LS.GENRES[0]), null);
+  const body = JSON.parse(LS.musicCategoryBody('ggMPabc'));
+  assert.equal(body.browseId, 'FEmusic_moods_and_genres_category');
+  assert.equal(body.params, 'ggMPabc');
+});
+
+test('géneros: categorías de «Moods y géneros»', () => {
+  const nav = (name, id, params) => ({ musicNavigationButtonRenderer: { buttonText: { runs: [{ text: name }] }, clickCommand: { browseEndpoint: { browseId: id, params } } } });
+  const cats = LS.parseYtmMoodCategories({ x: [nav('Dance y electrónica', 'FEmusic_moods_and_genres_category', 'ggMPabc'), nav('Otra', 'FEotro')] });
+  assert.equal(cats.length, 1);
+  assert.equal(LS.findCategory(cats, 'dance y electronica').params, 'ggMPabc');
+  assert.equal(LS.findCategory(cats, 'Jazz'), null);
+  assert.deepEqual(LS.parseYtmMoodCategories('no es json'), []);
+});
+
+test('géneros: la lista oficial actual, nunca clásicos ni de usuarios', () => {
+  const L = (id, title) => ({ id, title });
+  const dance = [L('VLRDCLAK5uy_billion', 'Billion Views Club - EDM'), L('VLPLcomunidad', 'Éxitos actuales del dance de un usuario'), L('VLRDCLAK5uy_actual', 'Éxitos actuales del dance'), L('VLRDCLAK5uy_hits', 'Dance Hits')];
+  assert.equal(LS.pickGenrePlaylist(dance, LS.genreSource('Electrónica').prefer).id, 'VLRDCLAK5uy_actual');
+  const rock = [L('VLRDCLAK5uy_a', 'Rock clásico para sentirse bien'), L('VLRDCLAK5uy_b', 'Grandes clásicos del rock'), L('VLRDCLAK5uy_c', "Maximum Decibels: Today's Rock Hits")];
+  assert.equal(LS.pickGenrePlaylist(rock, LS.genreSource('Rock').prefer).id, 'VLRDCLAK5uy_c');
+  const latin = [L('VLRDCLAK5uy_1', 'Latin Now'), L('VLRDCLAK5uy_2', 'Hot Reggaeton')];
+  assert.equal(LS.pickGenrePlaylist(latin, LS.genreSource('Reggaetón').prefer).id, 'VLRDCLAK5uy_2');
+  assert.equal(LS.pickGenrePlaylist(latin, LS.genreSource('Latino').prefer).id, 'VLRDCLAK5uy_1');
+  assert.equal(LS.pickGenrePlaylist([L('VLRDCLAK5uy_old', 'Hip hop de los 2000'), L('VLRDCLAK5uy_new', 'Street Bangers')], ['nada']).id, 'VLRDCLAK5uy_new');
+  assert.equal(LS.pickGenrePlaylist([L('VLPLx', 'Solo comunidad')], ['x']), null);
+});
+
+test('géneros: primero los artistas que más suenan en tu país', () => {
+  const songs = [{ id: '1', artist: 'Shakira' }, { id: '2', artist: 'Blessd' }, { id: '3', artist: 'Quevedo' }, { id: '4', artist: 'Ryan Castro y Blessd' }, { id: '5', channel: 'Otro' }];
+  assert.deepEqual(LS.boostByArtists(songs, ['Ryan Castro', 'Blessd', 'Feid']).map((s) => s.id), ['4', '2', '1', '3', '5']);
+  assert.deepEqual(LS.boostByArtists(songs, []).map((s) => s.id), ['1', '2', '3', '4', '5']);
+});
+
+// ---------- Radio automática ----------
+test('radio: petición y lectura, sin la semilla ni repetidas', () => {
+  const body = JSON.parse(LS.radioBody('abcdefghijk'));
+  assert.equal(body.playlistId, 'RDAMVMabcdefghijk');
+  const item = (id, title, byline, len) => ({ playlistPanelVideoRenderer: { videoId: id, title: { runs: [{ text: title }] }, longBylineText: { runs: byline.map((t) => ({ text: t })) }, lengthText: { runs: [{ text: len }] }, thumbnail: { thumbnails: [{ url: 'https://lh3.googleusercontent.com/x=w60-h60' }] } } });
+  const r = LS.parseYtmRadio({ c: [item('abcdefghijk', 'Semilla', ['Shakira'], '4:00'), item('AAAAAAAAAAA', 'Hips', ['Shakira', ' • ', 'Oral Fixation', ' • ', '2006'], '3:38'),
+    { playlistPanelVideoWrapperRenderer: { primaryRenderer: item('BBBBBBBBBBB', 'Waka', ['Shakira', ' • ', '2010'], '3:22') } }, item('AAAAAAAAAAA', 'Otra vez', ['Shakira'], '3:38')] }, 'abcdefghijk');
+  assert.deepEqual(r.map((x) => x.id), ['AAAAAAAAAAA', 'BBBBBBBBBBB']);
+  assert.equal(r[0].channel, 'Shakira'); assert.equal(r[0].album, 'Oral Fixation'); assert.equal(r[0].duration, 218);
+  assert.match(r[0].art, /=w544-h544$/);
+  const radio = [{ id: 'A', duration: 200 }, { id: 'B', duration: 0 }, { id: 'C', duration: 7200 }, { id: 'D', duration: 180 }, { id: 'D', duration: 180 }, { id: 'E', duration: 210 }];
+  assert.deepEqual(LS.pickRadio(radio, ['A']).map((x) => x.id), ['D', 'E']);
+});
+
+// ---------- Página de artista: cabecera y parecidos ----------
+test('artista: foto ancha, biografía, oyentes y artistas parecidos', () => {
+  const rel = (id, name) => ({ musicTwoRowItemRenderer: { navigationEndpoint: { browseEndpoint: { browseId: id } }, title: { runs: [{ text: name }] }, thumbnailRenderer: { musicThumbnailRenderer: { thumbnail: { thumbnails: [{ url: 'https://lh3.googleusercontent.com/' + name + '=w226-h226' }] } } } } });
+  const json = { header: { musicImmersiveHeaderRenderer: { title: { runs: [{ text: 'Bad Bunny' }] }, description: { runs: [{ text: 'Cantante ' }, { text: 'puertorriqueño.' }] },
+    thumbnail: { musicThumbnailRenderer: { thumbnail: { thumbnails: [{ url: 'https://yt3.googleusercontent.com/b540', width: 540 }, { url: 'https://yt3.googleusercontent.com/b1920', width: 1920 }, { url: 'https://yt3.googleusercontent.com/b2880', width: 2880 }] } } },
+    monthlyListenerCount: { runs: [{ text: '140 M usuarios mensuales' }] } } },
+    contents: [rel('UCFV8pv7slPIV_ebs6j6SPHw', 'Feid'), rel('UCiY3z8HAGD6BlSNKVn2kSvQ', 'Bad Bunny'), rel('UCxOascdOCWFBIkHFIobOi0A', 'Rauw')] };
+  const p = LS.parseYtmArtistPage(json, 'Bad Bunny');
+  assert.equal(p.banner, 'https://yt3.googleusercontent.com/b1920');
+  assert.equal(p.description, 'Cantante puertorriqueño.');
+  assert.equal(p.listeners, '140 M usuarios mensuales');
+  assert.deepEqual(p.related.map((a) => a.name), ['Feid', 'Rauw']);
+  const subs = LS.parseYtmArtistPage({ header: { musicImmersiveHeaderRenderer: { subscriptionButton: { subscribeButtonRenderer: { subscriberCountText: { runs: [{ text: '53,4 M' }] } } } } } }, 'X');
+  assert.equal(subs.listeners, '53,4 M suscriptores');
+});
+
+// ---------- Historial, Hecho para ti y Tu semana ----------
+const NOW = new Date(2026, 10, 24, 18, 0, 0).getTime();
+const P = (id, artist, daysAgo, title, duration) => ({ item: { src: 'yt', id, title: title || 'Canción ' + id, sub: artist, duration: duration || 180 }, artist, at: NOW - daysAgo * 864e5 });
+test('historial: cuenta tras 30 s, recientes sin repetir y artistas que más suenan', () => {
+  assert.equal(LS.countsAfter(200), 30); assert.equal(LS.countsAfter(20), 10); assert.equal(LS.countsAfter(0), 30);
+  assert.deepEqual(LS.recentDistinct([P('a', 'X', 0), P('b', 'Y', 1), P('a', 'X', 2), P('c', 'Z', 3)], 10).map((i) => i.id), ['a', 'b', 'c']);
+  const top = LS.topArtists([P('a', 'Rosalía', 1), P('b', 'ROSALIA', 2), P('c', 'Feid', 1), P('d', 'Rosalía', 40)], NOW - 30 * 864e5, 5);
+  assert.equal(top[0].artist, 'Rosalía'); assert.equal(top[0].plays, 2); assert.equal(top[1].artist, 'Feid');
+});
+test('Hecho para ti: artistas favoritos y luego canciones recientes de otros', () => {
+  const e = [P('n1', 'Nuevo', 0, 'Recién'), P('bb1', 'Bad Bunny', 1), P('bb2', 'Bad Bunny', 2), P('bb1', 'Bad Bunny', 3), P('f1', 'Feid', 1), P('f1', 'Feid', 4), P('o1', 'Otro', 5, 'Vieja'), P('q1', 'Quevedo', 60), P('q1', 'Quevedo', 61)];
+  const m = LS.mixesFrom(e, NOW);
+  assert.deepEqual(m.map((x) => x.title), ['Mezcla de Bad Bunny', 'Mezcla de Feid', 'Porque escuchaste «Recién»', 'Porque escuchaste «Vieja»']);
+  assert.equal(m[0].seed.id, 'bb1');
+  assert.deepEqual(LS.mixesFrom([], NOW), []);
+  assert.deepEqual(LS.interleave([['a1', 'a2', 'x'], ['b1', 'x', 'b2', 'b3']], (s) => s, [], 10), ['a1', 'b1', 'a2', 'x', 'b2', 'b3']);
+});
+test('Tu semana: 7 días, cambio frente a la anterior, rankings y días', () => {
+  const w = LS.weekSummary([P('a', 'X', 0), P('b', 'Y', 6), P('c', 'Z', 7.9), P('d', 'Z', 20)], NOW);
+  assert.equal(w.plays, 2); assert.equal(w.minutes, 6); assert.equal(w.previous, 3); assert.equal(w.change, 1);
+  assert.equal(w.byDay.length, 7); assert.equal(w.byDay[6], 3);
+  assert.equal(LS.weekSummary([P('m', 'X', 0, 'Mix', 3600)], NOW).minutes, 10);       // una mezcla de 1 h cuenta 10 min
+  const r = LS.weekSummary([P('bb1', 'Bad Bunny', 0), P('bb2', 'Bad Bunny', 1), P('f1', 'Feid', 1), P('f1', 'Feid', 2), P('f1', 'Feid', 3)], NOW, 2);
+  assert.deepEqual(r.topArtists.map((a) => a.artist), ['Feid', 'Bad Bunny']);
+  assert.equal(r.topSongs[0].song.id, 'f1'); assert.equal(r.topSongs[0].plays, 3);
+  assert.equal(LS.weekSummary([], NOW).change, null);
+});
+
+// ---------- Carátulas cuadradas ----------
+test('carátulas: cuadradas de YouTube Music y la misma canción', () => {
+  const sq = 'https://lh3.googleusercontent.com/abc=w544-h544';
+  assert.ok(LS.isSquareCover(sq)); assert.ok(!LS.isSquareCover('https://i.ytimg.com/vi/abcdefghijk/hqdefault.jpg'));
+  assert.equal(LS.tinyCover(sq), 'https://lh3.googleusercontent.com/abc=w48-h48');
+  assert.equal(LS.coverQuery('Shakira - Dai Dai (Official Video)', 'shakiraVEVO'), 'Shakira Dai Dai');
+  const songs = [{ id: 'zzzzzzzzzzz', title: 'Otra', channel: 'Shakira', art: sq }, { id: 'yyyyyyyyyyy', title: 'Dai Dai', channel: 'Shakira', art: 'https://i.ytimg.com/vi/y/hq.jpg' }, { id: 'xxxxxxxxxxx', title: 'Dai Dai', channel: 'Shakira & Burna Boy', art: sq }];
+  assert.equal(LS.pickCoverSong(songs, 'abcdefghijk', 'Shakira - Dai Dai (Official Video)', 'shakiraVEVO').id, 'xxxxxxxxxxx');
+  assert.equal(LS.pickCoverSong([{ id: 'x', title: 'Hips Dont Lie', channel: 'Shakira', art: sq }], 'a', 'Shakira - Dai Dai', 'shakiraVEVO'), null);
+});
+
+// Panel «Música en segundo plano (Android)» con el puente real (02-native.js) y un AndroidBridge que responde como NativeBridge.kt:
+// la respuesta llega como código JavaScript, así que la página recibe objetos y cadenas ya decodificados, no JSON en texto.
+require('../src/js/00-bgpanel.js');
+const bgSetup = (answers = {}) => {
+  const phone = { manufacturer: 'samsung', brand: 'samsung', model: 'SM-A356B', sdk: 36, release: '16', ignoring: false };
+  const replies = Object.assign({ batteryInfo: phone, batteryRequest: 'peticion', autostartSettings: 'fabricante', appSettings: 'detalles',
+    bgReport: 'Móvil: samsung SM-A356B\nAndroid: 16 (API 36)\n' }, answers);
+  const ctx = vm.createContext({});
+  ctx.window = { AndroidBridge: { call: (id, name) => {
+    const ok = name in replies;
+    const literal = JSON.stringify(ok ? replies[name] : 'Orden desconocida: ' + name);
+    queueMicrotask(() => vm.runInContext(`window.__nativeResolve(${id},${ok},${literal})`, ctx));
+  } } };
+  vm.runInContext(readFileSync(new URL('../src/js/02-native.js', import.meta.url), 'utf8'), ctx);
+  const els = Object.fromEntries(['#bgInfo', '#bgSteps', '#bgReport', '#bgCopy'].map((k) => [k, { style: {}, innerHTML: '', textContent: '', value: '' }]));
+  const toasts = [], saved = new Map();
+  const panel = LS.createBgPanel({ call: ctx.LS.Native.call, $: (s) => els[s], esc: String, toast: (m) => toasts.push(m),
+    storage: { getItem: (k) => saved.get(k) ?? null, setItem: (k, v) => saved.set(k, v) } });
+  return { panel, els, toasts };
+};
+
+test('segundo plano: muestra los datos del móvil y los pasos del fabricante', async () => {
+  const { panel, els } = bgSetup();
+  await panel.refresh();
+  assert.match(els['#bgInfo'].innerHTML, /samsung SM-A356B.*Android 16.*activa/);
+  assert.match(els['#bgSteps'].innerHTML, /Pasos para Samsung \(One UI\)/);
+});
+
+test('segundo plano: cada botón avisa según la pantalla que se haya abierto', async () => {
+  const { panel, toasts } = bgSetup();
+  await panel.battery(); await panel.autostart(); await panel.appSettings();
+  assert.deepEqual(toasts, ['Pulsa «Permitir» en el aviso del sistema.', 'Activa Nsound en esa pantalla.', 'En Batería, elige «Sin restricciones».']);
+  const none = bgSetup({ batteryRequest: 'ninguna' });
+  await none.panel.battery();
+  assert.match(none.toasts[0], /^No se pudo abrir esa pantalla/);
+});
+
+test('segundo plano: el informe se escribe tal cual en el cuadro de texto', async () => {
+  const { panel, els, toasts } = bgSetup();
+  await panel.report();
+  assert.equal(els['#bgReport'].value, 'Móvil: samsung SM-A356B\nAndroid: 16 (API 36)\n');
+  assert.equal(els['#bgReport'].style.display, 'block');
+  assert.deepEqual(toasts, []);
+});
+
+test('segundo plano: el aviso de batería sale una vez y solo si sigue restringida', async () => {
+  const { panel, toasts } = bgSetup();
+  await panel.hint(); await panel.hint();
+  assert.equal(toasts.length, 1);
+  const free = bgSetup({ batteryInfo: { ignoring: true } });
+  await free.panel.hint();
+  assert.deepEqual(free.toasts, []);
 });

@@ -11,7 +11,17 @@ public sealed record MusicAlbum(string Id, string Title, string Kind, string Art
 public sealed record MusicArtist(string Id, string Name, string? Art);
 
 /// <summary>Página de un artista: sus canciones más escuchadas, la lista «todas las canciones» (VL…) y sus discos.</summary>
-public sealed record MusicArtistPage(List<YouTubeVideo> Songs, string AllSongsId, List<MusicAlbum> Releases);
+public sealed record MusicArtistPage(List<YouTubeVideo> Songs, string AllSongsId, List<MusicAlbum> Releases)
+{
+    /// <summary>Foto ancha de la cabecera (como en music.youtube.com), o null.</summary>
+    public string? Banner { get; init; }
+    /// <summary>Biografía corta que muestra YouTube Music (suele venir de Wikipedia).</summary>
+    public string Description { get; init; } = "";
+    /// <summary>«140 M usuarios mensuales» o, si no lo dice, «53,4 M suscriptores».</summary>
+    public string Listeners { get; init; } = "";
+    /// <summary>«Puede que también te guste»: artistas parecidos.</summary>
+    public List<MusicArtist> Related { get; init; } = [];
+}
 
 /// <summary>Filtros «Álbumes» y «Artistas» de la búsqueda de YouTube Music, discos y página de artista (solo metadatos públicos).</summary>
 public static partial class YouTubeMusic
@@ -29,7 +39,16 @@ public static partial class YouTubeMusic
     public static string SearchBody(string query, string filter) => JsonSerializer.Serialize(new { context = Context, query = query.Trim(), @params = filter });
 
     /// <summary>Una página de YouTube Music: un álbum (MPREb_…), un artista (UC…) o una lista (VL…).</summary>
-    public static string BrowseBody(string browseId) => JsonSerializer.Serialize(new { context = Context, browseId });
+    public static string BrowseBody(string browseId, string? country = null)
+    {
+        // país (dos letras): las listas de éxitos cambian según el país
+        var body = new Dictionary<string, object> { ["context"] = Context, ["browseId"] = browseId };
+        if (country is not null && CountryCode().IsMatch(country)) body["formData"] = new { selectedValues = new[] { country } };
+        return JsonSerializer.Serialize(body);
+    }
+
+    [GeneratedRegex(@"^[A-Z]{2}$")]
+    private static partial Regex CountryCode();
 
     public static bool IsBrowseId(string? id) => id is not null && BrowseId().IsMatch(id);
 
@@ -207,7 +226,9 @@ public static partial class YouTubeMusic
         var page = new MusicArtistPage([], "", []);
         using var doc = Open(json);
         if (doc is null) return page;
+        page = ReadArtistHeader(doc.RootElement, page);
         var seen = new HashSet<string>();
+        var self = MetadataMatcher.Fold(artist);
         WalkNodes(doc.RootElement, (k, v) =>
         {
             if (k == "musicShelfRenderer")
@@ -220,6 +241,13 @@ public static partial class YouTubeMusic
                 return true;
             }
             if (k != "musicTwoRowItemRenderer") return false;
+            if (v.ValueKind == JsonValueKind.Object && BrowseIdOf(v) is { } uc && uc.StartsWith("UC", StringComparison.Ordinal))
+            {
+                // carrusel «Puede que también te guste»
+                var name = TwoRowTitleRuns(v).FirstOrDefault()?.Trim() ?? "";
+                if (name.Length > 0 && MetadataMatcher.Fold(name) != self && seen.Add(uc)) page.Related.Add(new MusicArtist(uc, name, CardArt(v)));
+                return true;
+            }
             if (v.ValueKind != JsonValueKind.Object || BrowseIdOf(v) is not { } id || !id.StartsWith("MPRE", StringComparison.Ordinal) || !seen.Add(id)) return true;
             var title = v.TryGetProperty("title", out var t) && t.TryGetProperty("runs", out var tr) && tr.ValueKind == JsonValueKind.Array && tr.GetArrayLength() > 0
                 && tr[0].TryGetProperty("text", out var tx) ? tx.GetString()?.Trim() ?? "" : "";
@@ -232,6 +260,35 @@ public static partial class YouTubeMusic
             return true;
         });
         return page;
+    }
+
+    /// <summary>Cabecera de la página de artista: foto ancha, biografía y oyentes.</summary>
+    private static MusicArtistPage ReadArtistHeader(JsonElement root, MusicArtistPage page)
+    {
+        if (!root.TryGetProperty("header", out var header) || header.ValueKind != JsonValueKind.Object) return page;
+        JsonElement h = default;
+        foreach (var p in header.EnumerateObject()) { h = p.Value; break; }
+        if (h.ValueKind != JsonValueKind.Object) return page;
+        static string Text(JsonElement e, string prop)
+            => e.TryGetProperty(prop, out var x) && x.TryGetProperty("runs", out var r) && r.ValueKind == JsonValueKind.Array
+                ? string.Concat(r.EnumerateArray().Select(y => y.TryGetProperty("text", out var t) ? t.GetString() : "")).Trim() : "";
+        string? banner = null;
+        if (h.TryGetProperty("thumbnail", out var th) && th.TryGetProperty("musicThumbnailRenderer", out var mt)
+            && mt.TryGetProperty("thumbnail", out var t2) && t2.TryGetProperty("thumbnails", out var thumbs) && thumbs.ValueKind == JsonValueKind.Array)
+        {
+            // la más grande que no pase de 1920 px de ancho (la de 2880 pesa mucho y no se nota)
+            foreach (var t in thumbs.EnumerateArray())
+                if (t.TryGetProperty("url", out var u) && u.GetString() is { } url && url.StartsWith("https://", StringComparison.Ordinal)
+                    && (!t.TryGetProperty("width", out var w) || w.GetInt32() <= 1920 || banner is null))
+                    banner = url;
+        }
+        var listeners = Text(h, "monthlyListenerCount");
+        if (listeners.Length == 0 && h.TryGetProperty("subscriptionButton", out var sb) && sb.TryGetProperty("subscribeButtonRenderer", out var sr))
+        {
+            var subs = Text(sr, "subscriberCountText");
+            if (subs.Length > 0) listeners = subs + " suscriptores";
+        }
+        return page with { Banner = banner, Description = Text(h, "description"), Listeners = listeners.Replace('\u00a0', ' ') };
     }
 
     private static List<YouTubeVideo> ParseTracksFromNode(JsonElement node, string artist)

@@ -62,6 +62,8 @@ class NativeBridge(private val activity: MainActivity, private val web: WebView)
                         activity.adBlockEnabled = p.optBoolean("enabled", true)
                         resolve(id, true, "\"ok\"")
                     }
+                    "appVersion" -> resolve(id, true, JSONObject.quote(BuildConfig.VERSION_NAME))
+                    "openUrl" -> { activity.openReleasePage(p.getString("url")); resolve(id, true, "\"ok\"") }
                     else -> resolve(id, false, JSONObject.quote("Orden desconocida: $name"))
                 }
             } catch (e: Exception) {

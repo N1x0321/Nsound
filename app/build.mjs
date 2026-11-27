@@ -15,6 +15,10 @@ const js = readdirSync(join(src, 'js')).filter((f) => f.endsWith('.js')).sort()
     .replace(/\nif \(typeof module !== 'undefined' && module\.exports\) module\.exports = LS;\s*$/, '\n'))
   .join('\n');
 
+// Versión de la página (solo la usa el navegador; en las apps manda la nativa). Sin ella no se avisa de versiones nuevas.
+const version = process.env.NSOUND_VERSION || '0.0.0-dev';
+if (!/^[0-9A-Za-z.+-]+$/.test(version)) throw new Error('NSOUND_VERSION no válida: ' + version);
+
 if (/<\/script/i.test(js)) throw new Error('El JS contiene "</script": se rompería el HTML incrustado.');
 
 const logo = 'data:image/png;base64,' + readFileSync(join(src, 'logo.png')).toString('base64');
@@ -22,7 +26,7 @@ const logo = 'data:image/png;base64,' + readFileSync(join(src, 'logo.png')).toSt
 // Funciones de reemplazo para que "$&" y similares dentro del código no se interpreten
 const html = readFileSync(join(src, 'index.template.html'), 'utf8')
   .replace('<!--CSS-->', () => css)
-  .replace('<!--JS-->', () => js)
+  .replace('<!--JS-->', () => js.replace('__NSOUND_VERSION__', () => version))
   .replaceAll('<!--LOGO-->', () => logo);
 
 writeFileSync(join(dist, 'index.html'), html);

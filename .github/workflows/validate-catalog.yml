@@ -25,6 +25,7 @@ jobs:
           python-version: "3.12"
       - run: pip install jsonschema==4.23.0
       - run: python tools/test_title_regex.py
+      - run: python tools/test_ios_release.py
       - run: python tools/validate_catalog.py catalog/*.json
       - name: Escaneo de secretos
         uses: gitleaks/gitleaks-action@v2

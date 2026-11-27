@@ -66,7 +66,7 @@ public static class Themes
         return Contrast(background, white) >= Contrast(background, dark) ? "#FFFFFF" : "#161010";
     }
 
-    private static (double H, double S, double L) ToHsl((byte R, byte G, byte B) c)
+    internal static (double H, double S, double L) ToHsl((byte R, byte G, byte B) c)
     {
         double r = c.R / 255.0, g = c.G / 255.0, b = c.B / 255.0;
         double max = Math.Max(r, Math.Max(g, b)), min = Math.Min(r, Math.Min(g, b)), l = (max + min) / 2, d = max - min;
@@ -76,7 +76,7 @@ public static class Themes
         return (h * 60, s, l);
     }
 
-    private static (byte R, byte G, byte B) FromHsl(double h, double s, double l)
+    internal static (byte R, byte G, byte B) FromHsl(double h, double s, double l)
     {
         double C = (1 - Math.Abs(2 * l - 1)) * s, X = C * (1 - Math.Abs(h / 60 % 2 - 1)), m = l - C / 2;
         var (r, g, b) = h < 60 ? (C, X, 0d) : h < 120 ? (X, C, 0d) : h < 180 ? (0d, C, X) : h < 240 ? (0d, X, C) : h < 300 ? (X, 0d, C) : (C, 0d, X);

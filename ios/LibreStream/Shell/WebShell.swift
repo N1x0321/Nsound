@@ -151,6 +151,15 @@ final class ShellCoordinator: NSObject, WKScriptMessageHandlerWithReply, WKURLSc
         case "setAdBlock":
             setAdBlock(payload["enabled"] as? Bool ?? true)
             replyHandler("ok", nil)
+        case "appVersion":
+            replyHandler(Bundle.main.object(forInfoDictionaryKey: "NsoundVersion") as? String ?? "", nil)
+        case "openUrl":
+            // Solo la página de una versión de Nsound (aviso de versión nueva)
+            guard let s = payload["url"] as? String, s.hasPrefix("https://github.com/N1x0321/Nsound/releases/"), let url = URL(string: s) else {
+                replyHandler(nil, "Dirección no permitida"); return
+            }
+            UIApplication.shared.open(url)
+            replyHandler("ok", nil)
         default:
             replyHandler(nil, "Orden desconocida: \(name)")
         }
