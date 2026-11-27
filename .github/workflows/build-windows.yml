@@ -83,6 +83,28 @@ jobs:
           (Get-FileHash $exe -Algorithm SHA256).Hash.ToLower() + "  $exe" | Out-File "$exe.sha256" -Encoding ascii
           "exe=$exe" >> $env:GITHUB_OUTPUT
 
+      - name: PRUEBA TEMPORAL (instalador y WebView2)
+        if: matrix.arch != 'arm64'
+        timeout-minutes: 10
+        shell: pwsh
+        run: |
+          $exe = (Resolve-Path "${{ steps.setup.outputs.exe }}").Path
+          $guid = '{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}'
+          $keys = "HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\$guid", "HKCU:\Software\Microsoft\EdgeUpdate\Clients\$guid"
+          function Probar($label) {
+            $dir = "$env:RUNNER_TEMP\ns-$label"; $log = "$env:RUNNER_TEMP\$label.log"
+            $p = Start-Process $exe -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART',"/DIR=$dir","/LOG=$log" -PassThru
+            $p.WaitForExit()
+            "== $label : código $($p.ExitCode) ; Nsound.exe $(Test-Path "$dir\Nsound.exe") ; unins000 $(Test-Path "$dir\unins000.exe")"
+            Select-String -Path $log -Pattern 'WebView2|Install mode|64-bit|Windows version' | ForEach-Object { $_.Line }
+            Start-Process "$dir\unins000.exe" -ArgumentList '/VERYSILENT','/NORESTART' -Wait
+            "desinstalado: $(-not (Test-Path "$dir\Nsound.exe"))"
+          }
+          foreach ($k in $keys) { "$k existe: $(Test-Path $k)" }
+          Probar 'con-webview2'
+          foreach ($k in $keys) { if (Test-Path $k) { Remove-Item $k -Recurse -Force } }
+          Probar 'sin-webview2'
+
       - uses: actions/upload-artifact@v4
         with:
           name: LibreStream-windows-${{ matrix.arch }}
