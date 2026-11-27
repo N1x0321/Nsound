@@ -639,7 +639,7 @@
                 </Button>
                 <Border Width="1" Height="22" Margin="8,0" Background="{StaticResource NsLineBrush}" />
                 <FontIcon Glyph="&#xE767;" FontSize="16" Opacity="0.8" />
-                <Slider x:Name="Volume" Width="110" Margin="8,0,0,0" Minimum="0" Maximum="100" Value="80" VerticalAlignment="Center" ValueChanged="Volume_ValueChanged" />
+                <Slider x:Name="Volume" Width="110" Margin="8,0,0,0" Minimum="0" Maximum="100" VerticalAlignment="Center" ValueChanged="Volume_ValueChanged" />
             </StackPanel>
         </Grid>
 

@@ -115,6 +115,7 @@ public sealed partial class MainWindow : Window
         catch (Exception ex) { App.Log("Barra de tareas", ex); }
 
         AdBlock.Enabled = _settings.Current.AdBlock;
+        // El deslizador no lleva valor inicial en el XAML: con él, al cargar la ventana pisaba el volumen guardado con 80
         Volume.Value = _settings.Current.Volume;
         Video.SetMediaPlayer(_player.Player);
         _player.Volume = Volume.Value / 100;
@@ -144,7 +145,7 @@ public sealed partial class MainWindow : Window
         _colorDelay.Tick += (_, _) => Safe("Color", ApplyPendingAccent);
         _searchDelay.Tick += (_, _) => { _searchDelay.Stop(); _ = SearchYouTubeAsync(Search.Text); };
         _saveTimer.Tick += (_, _) => { _saveTimer.Stop(); Safe("Guardar ajustes", _settings.Save); };
-        Closed += (_, _) => Safe("Cierre", () => { _settings.Save(); _timer.Stop(); _heroTimer.Stop(); _thumb?.Dispose(); _mini?.Close(); });
+        Closed += (_, _) => Safe("Cierre", () => { _settings.Save(); _timer.Stop(); _heroTimer.Stop(); _vizTimer.Stop(); _thumb?.Dispose(); _mini?.Close(); });
 
         ShowYouTubeLayer(false);
         RebuildPlaylistNav();
@@ -2177,6 +2178,7 @@ public sealed partial class MainWindow : Window
     {
         if (_kind != "settings") return;
         if (!_settings.Current.EqEnabled) { EqStatus.Text = "Ecualizador desactivado."; return; }
+        if (_settings.Current.EqBands.All(b => b == 0)) { EqStatus.Text = "En «Plano» el sonido no se procesa: elige un ajuste o mueve una banda."; return; }
         var frames = _ytFrames.ToList();
         if (frames.Count == 0) { EqStatus.Text = "Se aplicará cuando reproduzcas algo de YouTube."; return; }
         foreach (var frame in frames)
@@ -2626,7 +2628,7 @@ public sealed partial class MainWindow : Window
     /// <summary>Unas 30 veces por segundo: lleva los niveles del sonido a las barras, la portada, el brillo y el mini.</summary>
     private void VizTick()
     {
-        if (!AppWindow.IsVisible && _mini is null) return;   // escondida junto al reloj: nada que animar
+        if (AppWindow is null || (!AppWindow.IsVisible && _mini is null)) return;   // cerrándose, o escondida junto al reloj: nada que animar
         _analyzer.Meter.Read(_levels);
         double bass = _levels[0], body = Math.Max(_levels[0], _levels[1]);
         var bars = new[] { Bar1, Bar2, Bar3, Bar4 };
