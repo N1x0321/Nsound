@@ -29,7 +29,9 @@
 - 🎬 **Vídeos** con estanterías (series, YouTubers, deporte…), separados de la música.
 - 🔍 **Búsqueda** de canciones, álbumes y artistas; pulsa un álbum y suena entero.
 - 📚 **Mi biblioteca y tus listas** de reproducción, guardadas en tu dispositivo.
-- 🔁 **Repetir y aleatorio** como en las apps de siempre (en móvil; llegan a Windows en la próxima versión).
+- 🔁 **Repetir y aleatorio** como en las apps de siempre.
+- 📻 **Radio automática**, «Hecho para ti», «Tu semana» y página de cada artista.
+- 🔔 **Aviso de versiones nuevas** dentro de la app (desde la beta 11).
 - 🎤 **Letra sincronizada** mientras suena (de [LRCLIB](https://lrclib.net), base de datos abierta).
 - 🎨 **Tu propio color:** varios temas y la opción de elegir el que quieras.
 - 🔒 **Sin cuentas ni anuncios propios.** Lo que guardas (biblioteca, listas) se queda en tu dispositivo.
@@ -44,9 +46,11 @@
 
 | Sistema | Archivo | Notas |
 |---|---|---|
-| **Windows 10 / 11** | [`Nsound-0.8.0-beta.10-windows-x64.zip`](https://github.com/N1x0321/Nsound/releases/download/v0.8.0-beta.10/Nsound-0.8.0-beta.10-windows-x64.zip) | Portátil: extrae el zip y abre **Abrir Nsound**. Para PC ARM, [el zip ARM64](https://github.com/N1x0321/Nsound/releases/download/v0.8.0-beta.10/Nsound-0.8.0-beta.10-windows-arm64.zip). |
-| **Android 7+** | [`Nsound-0.8.0-beta.9-android.apk`](https://github.com/N1x0321/Nsound/releases/download/v0.8.0-beta.9/Nsound-0.8.0-beta.9-android.apk) | Permite «instalar apps de este origen» cuando Android lo pida. |
-| **iPhone** | [`Nsound-0.8.0-beta.9-unsigned.ipa`](https://github.com/N1x0321/Nsound/releases/download/v0.8.0-beta.9/Nsound-0.8.0-beta.9-unsigned.ipa) | Sin firmar: se instala con [SideStore, AltStore o Sideloadly](docs/INSTALAR.md). |
+| **Windows 10 / 11** | [`Nsound-0.8.0-beta.11-windows-x64.zip`](https://github.com/N1x0321/Nsound/releases/download/v0.8.0-beta.11/Nsound-0.8.0-beta.11-windows-x64.zip) | Portátil: extrae el zip y abre **Abrir Nsound**. Para PC ARM, [el zip ARM64](https://github.com/N1x0321/Nsound/releases/download/v0.8.0-beta.11/Nsound-0.8.0-beta.11-windows-arm64.zip). |
+| **Android 7+** | [`Nsound-0.8.0-beta.11-android.apk`](https://github.com/N1x0321/Nsound/releases/download/v0.8.0-beta.11/Nsound-0.8.0-beta.11-android.apk) | Permite «instalar apps de este origen» cuando Android lo pida. |
+| **iPhone** | [`Nsound-0.8.0-beta.11-unsigned.ipa`](https://github.com/N1x0321/Nsound/releases/download/v0.8.0-beta.11/Nsound-0.8.0-beta.11-unsigned.ipa) | Sin firmar: se instala con [SideStore, AltStore o Sideloadly](docs/INSTALAR.md). |
+
+> **¿Tienes en Android la beta 10 o una anterior?** La 11 no se instala encima: exporta tu biblioteca (Biblioteca → Exportar), desinstala, instala e importa. Solo esta vez.
 
 Todas las versiones, sumas de control y notas: [**Releases**](https://github.com/N1x0321/Nsound/releases).
 
