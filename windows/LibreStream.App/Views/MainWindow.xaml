@@ -189,13 +189,22 @@
                                     <ColumnDefinition Width="*" />
                                     <ColumnDefinition Width="Auto" />
                                     <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
-                                <TextBlock x:Name="UpdateText" TextWrapping="Wrap" VerticalAlignment="Center" />
-                                <HyperlinkButton Grid.Column="1" Content="Descargar" Click="UpdateDownload_Click" />
-                                <Button Grid.Column="2" Style="{StaticResource BarIcon}" Width="32" Height="32" Click="UpdateDismiss_Click"
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
+                                <TextBlock x:Name="UpdateText" TextWrapping="Wrap" VerticalAlignment="Center" AutomationProperties.LiveSetting="Polite" />
+                                <!-- «Actualizar ahora» en las copias instaladas; «Descargar» en el zip portable -->
+                                <HyperlinkButton x:Name="UpdateAction" Grid.Column="1" Content="Descargar" Click="UpdateAction_Click" />
+                                <HyperlinkButton x:Name="UpdateManual" Grid.Column="2" Content="Descargar a mano" Click="UpdateManual_Click" Visibility="Collapsed" />
+                                <Button Grid.Column="3" Style="{StaticResource BarIcon}" Width="32" Height="32" Click="UpdateDismiss_Click"
                                         AutomationProperties.Name="Descartar este aviso" ToolTipService.ToolTip="Descartar este aviso">
                                     <FontIcon Glyph="&#xE711;" FontSize="12" />
                                 </Button>
+                                <ProgressBar x:Name="UpdateBar" Grid.Row="1" Grid.ColumnSpan="4" Visibility="Collapsed" Maximum="1" Margin="0,2,10,6"
+                                             AutomationProperties.Name="Progreso de la descarga" />
                             </Grid>
                         </Border>
 

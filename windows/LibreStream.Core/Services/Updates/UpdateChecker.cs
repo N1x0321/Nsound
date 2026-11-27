@@ -3,7 +3,11 @@ using System.Text.Json;
 namespace LibreStream.Core;
 
 /// <summary>Versión más nueva que la instalada y la página donde se descarga.</summary>
-public sealed record AvailableUpdate(string Version, string Url);
+public sealed record AvailableUpdate(string Version, string Url)
+{
+    /// <summary>Etiqueta de la Release («v0.8.0-beta.12»), la última parte de la dirección.</summary>
+    public string Tag => Url[(Url.LastIndexOf('/') + 1)..];
+}
 
 /// <summary>
 /// Aviso de versiones nuevas: pregunta a las Releases públicas de GitHub como máximo una vez al día, sin cuentas ni telemetría.

@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text.Json;
 using Microsoft.ML.OnnxRuntime;
@@ -32,6 +33,8 @@ public sealed class SKeyDetector : IDisposable
     /// <summary>Carga el modelo de <c>Assets/models/skey</c>; null si falta, no coincide el hash o ONNX Runtime falla.</summary>
     public static SKeyDetector? TryLoad()
     {
+        // ONNX Runtime no publica binario de Windows de 32 bits: en x86 se usa el método propio (KeyBpmAnalyzer)
+        if (RuntimeInformation.ProcessArchitecture == Architecture.X86) return null;
         try
         {
             var dir = Path.Combine(AppContext.BaseDirectory, "Assets", "models", "skey");

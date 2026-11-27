@@ -30,7 +30,7 @@ jobs:
     runs-on: windows-latest
     strategy:
       matrix:
-        arch: [x64, arm64]
+        arch: [x64, arm64, x86]   # x86 = Windows 10 de 32 bits (sin S-KEY: ONNX Runtime no tiene binario de 32 bits)
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
@@ -69,6 +69,7 @@ jobs:
         shell: pwsh
         run: |
           # Un solo archivo para quien no quiere zip: instala para el usuario (sin administrador), crea los accesos y se actualiza encima.
+          # No cambies el nombre «Nsound-<versión>-windows-<arch>-setup.exe» ni su .sha256: la app instalada los busca para actualizarse.
           $version = if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:GITHUB_REF_NAME.TrimStart('v') } else { "dev-$($env:GITHUB_SHA.Substring(0,7))" }
           $iscc = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'
           if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE } }
