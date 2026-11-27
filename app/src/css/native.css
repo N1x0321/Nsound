@@ -190,3 +190,18 @@ body.fx .np { background:
 #npLyricsLines.static p { opacity: .9; cursor: default; }
 #npLyrics.on { background: var(--accent); color: #1a0505; }
 @media (prefers-reduced-motion: reduce) { #npLyricsLines p { transition: none; } .np.karaoke .np-lyrics { scroll-behavior: auto; } }
+
+
+/* ---------- Menú: en el móvil, 5 pestañas abajo y Ajustes en la rueda de arriba a la derecha (como Spotify o Apple Music) ---------- */
+#top { display: flex; align-items: center; gap: 10px; }
+#q { flex: 1; min-width: 0; }
+#top .topbtn { display: none; flex: none; width: 44px; height: 44px; padding: 0; border-radius: 50%; align-items: center; justify-content: center;
+  background: rgba(var(--w, 255, 255, 255), .06); border: 1px solid var(--line); color: var(--text); transition: transform .15s ease-out, background .2s ease-out, color .2s ease-out; }
+.topbtn .ic { width: 22px; height: 22px; }
+.topbtn.on { color: var(--accent); background: rgba(var(--w, 255, 255, 255), .1); }
+.topbtn:active { transform: scale(.94); }
+@media (max-width: 800px) {
+  #top .topbtn { display: flex; }
+  #nav [data-page="settings"] { display: none; }
+}
+@media (prefers-reduced-motion: reduce) { .topbtn { transition: none; } }
