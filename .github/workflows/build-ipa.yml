@@ -31,7 +31,7 @@ jobs:
       - name: Interfaz compartida (tests y empaquetado)
         working-directory: .
         run: |
-          node --test app/test/core.test.mjs
+          node --test app/test/core.test.mjs app/test/update.test.mjs
           node app/build.mjs
 
       - name: Seleccionar Xcode
@@ -60,10 +60,12 @@ jobs:
         id: ver
         shell: bash
         run: |
-          # v0.8.0-beta.1 → 0.8.0 (número de versión que entiende iOS); la compilación es el nº de ejecución
+          # v0.8.0-beta.11 → 0.8.11 (tres números, crece en cada beta: ver tools/ios_version.py); la compilación es el nº de ejecución.
+          # NSOUND_VERSION conserva la etiqueta: con ella la app avisa de versiones nuevas.
+          python3 ../tools/test_ios_release.py
           if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
-            V=$(echo "${GITHUB_REF_NAME#v}" | sed -E 's/^([0-9]+\.[0-9]+\.[0-9]+).*/\1/')
-            echo "settings=MARKETING_VERSION=$V CURRENT_PROJECT_VERSION=$GITHUB_RUN_NUMBER" >> "$GITHUB_OUTPUT"
+            V=$(python3 ../tools/ios_version.py "$GITHUB_REF_NAME")
+            echo "settings=MARKETING_VERSION=$V CURRENT_PROJECT_VERSION=$GITHUB_RUN_NUMBER NSOUND_VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
             echo "version=$V" >> "$GITHUB_OUTPUT"; echo "build=$GITHUB_RUN_NUMBER" >> "$GITHUB_OUTPUT"
           else
             echo "settings=" >> "$GITHUB_OUTPUT"
@@ -114,6 +116,7 @@ jobs:
             IPA **sin firmar**. Instálala con Sideloadly, AltStore o TrollStore (se firma en tu dispositivo).
 
       - name: Actualizar la fuente de SideStore / AltStore
+        id: source
         if: startsWith(github.ref, 'refs/tags/v')
         continue-on-error: true   # si falla (p. ej. rama protegida), la versión ya está publicada
         shell: bash
@@ -125,9 +128,10 @@ jobs:
           NAME=$(basename "$IPA")
           SHA=$(cut -d' ' -f1 "$IPA.sha256")
           SIZE=$(stat -f%z "$IPA")
+          cp tools/make_source.py "$RUNNER_TEMP/make_source.py"   # el de esta versión, no el que haya en main
           git fetch origin main
           git checkout -B main origin/main
-          python3 tools/make_source.py --tag "$GITHUB_REF_NAME" --version "${{ steps.ver.outputs.version }}" \
+          python3 "$RUNNER_TEMP/make_source.py" --tag "$GITHUB_REF_NAME" --version "${{ steps.ver.outputs.version }}" \
             --build "${{ steps.ver.outputs.build }}" --ipa "$NAME" --sha256 "$SHA" --size "$SIZE" \
             --notes "Nsound $GITHUB_REF_NAME"
           git config user.name "github-actions"
@@ -136,3 +140,7 @@ jobs:
           git diff --cached --quiet || git commit -m "web: fuente de SideStore/AltStore para $GITHUB_REF_NAME"
           git push origin HEAD:main
           gh workflow run validate-catalog.yml --ref main
+
+      - name: Avisar si la fuente no se actualizó
+        if: steps.source.outcome == 'failure'
+        run: echo "::warning::La versión está publicada pero site/source.json no se actualizó, así que SideStore/AltStore no avisarán. Ver docs/DESARROLLO.md."

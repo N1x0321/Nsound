@@ -5,6 +5,7 @@ Lo ejecuta el flujo de la IPA al publicar una versión. Uso:
   python tools/make_source.py --tag v0.8.0-beta.1 --version 0.8.0 --build 7 --ipa Nsound-0.8.0-beta.1-unsigned.ipa \
          --sha256 <hex> --size <bytes> [--date 2026-11-12] [--notes "texto"] [--out site/source.json]
 `--version` y `--build` deben ser los de la app (CFBundleShortVersionString / CFBundleVersion): así SideStore detecta las actualizaciones.
+La versión se saca de la etiqueta con tools/ios_version.py. Las versiones que ya hubiera en `--out` se conservan en `versions`.
 """
 import argparse
 import datetime
@@ -14,7 +15,22 @@ import os
 SITE = 'https://n1x0321.github.io/Nsound'
 
 
-def build(a):
+def order(v):
+    """Clave para ordenar entradas de `versions`: versión numérica y número de compilación."""
+    numbers = [int(x) for x in str(v.get('version', '0')).split('.') if x.isdigit()]
+    build_number = str(v.get('buildVersion', '0'))
+    return numbers, int(build_number) if build_number.isdigit() else 0
+
+
+def previous_versions(path):
+    """Entradas de `versions` de la fuente ya publicada. Si el fichero está roto, falla en vez de perder el historial."""
+    if not os.path.exists(path):
+        return []
+    with open(path, encoding='utf-8') as f:
+        return list(json.load(f)['apps'][0].get('versions', []))
+
+
+def build(a, previous=()):
     repo = os.environ.get('GITHUB_REPOSITORY', 'N1x0321/Nsound')
     url = f'https://github.com/{repo}/releases/download/{a.tag}/{a.ipa}'
     date = a.date or datetime.date.today().isoformat()
@@ -22,6 +38,11 @@ def build(a):
         'version': a.version, 'buildVersion': str(a.build), 'date': date,
         'localizedDescription': a.notes, 'downloadURL': url, 'size': int(a.size), 'minOSVersion': '16.0', 'sha256': a.sha256,
     }
+    # Repetir una publicación sustituye su entrada; la más nueva va siempre la primera
+    kept = [v for v in previous if v.get('downloadURL') != url
+            and (v.get('version'), v.get('buildVersion')) != (version['version'], version['buildVersion'])]
+    versions = sorted([version, *kept], key=order, reverse=True)
+    latest = versions[0]
     return {
         'name': 'Nsound', 'identifier': 'org.librestream.source', 'subtitle': 'Reproductor personal de música y vídeo',
         'description': 'Fuente de Nsound (beta). Proyecto personal y sin ánimo de lucro; no está afiliado a YouTube ni a ningún servicio de música.',
@@ -33,8 +54,8 @@ def build(a):
             'iconURL': f'{SITE}/logo.png', 'tintColor': 'ff4d62',
             'screenshotURLs': [f'{SITE}/img/nsound/inicio.jpg', f'{SITE}/img/nsound/musica.jpg', f'{SITE}/img/nsound/reproduciendo.jpg'],
             # Formato antiguo (AltStore clásico) además del nuevo (versions)
-            'version': a.version, 'versionDate': date, 'downloadURL': url, 'size': int(a.size),
-            'versions': [version],
+            'version': latest['version'], 'versionDate': latest['date'], 'downloadURL': latest['downloadURL'], 'size': latest['size'],
+            'versions': versions,
             'appPermissions': {'entitlements': [], 'privacy': {}},
         }],
         'news': [],
@@ -53,7 +74,7 @@ def main():
     p.add_argument('--notes', default='Versión de pruebas (beta).')
     p.add_argument('--out', default='site/source.json')
     a = p.parse_args()
-    data = build(a)
+    data = build(a, previous_versions(a.out))
     with open(a.out, 'w', encoding='utf-8', newline='\n') as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
         f.write('\n')
